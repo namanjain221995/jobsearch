@@ -1,0 +1,326 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens.
+ *
+ * One hue does the talking: stamp-ink blue (hue 268). Surfaces are cool bond
+ * paper, text is blue-black ink, and the application pipeline is an ordinal
+ * ramp of that same ink: the further an application has travelled, the more
+ * ink it carries. Only two other hues carry meaning: green for an offer and
+ * red for a rejection. The same status tokens colour badges, stage rails and
+ * every chart series.
+ *
+ * The pipeline ramp was checked as an ordinal ramp (monotone lightness,
+ * adjacent steps >= 0.06 L apart, light end >= 2:1 on the surface) and the
+ * offer / rejected pair for colour-vision-deficiency separation, in both modes.
+ */
+@theme inline {
+  --font-sans:
+    "Archivo Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-status-assigned: var(--status-assigned);
+  --color-status-viewed: var(--status-viewed);
+  --color-status-applying: var(--status-applying);
+  --color-status-applied: var(--status-applied);
+  --color-status-interviewing: var(--status-interviewing);
+  --color-status-offer: var(--status-offer);
+  --color-status-rejected: var(--status-rejected);
+  --color-status-closed: var(--status-closed);
+
+  --color-chart-1: var(--status-assigned);
+  --color-chart-2: var(--status-viewed);
+  --color-chart-3: var(--status-applied);
+  --color-chart-4: var(--status-interviewing);
+  --color-chart-5: var(--status-offer);
+  --color-chart-grid: var(--chart-grid);
+
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
+  --radius-2xl: calc(var(--radius) * 1.5);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 2.5);
+
+  /* Two extra steps between the classic 12 / 14 / 16 so dense tables and long reads each get their own size. */
+  --text-2sm: 0.8125rem;
+  --text-2sm--line-height: 1.125rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.5rem;
+
+  /* Elevation is for things that float (menus, dialogs). Tinted with ink, never neutral grey. */
+  --shadow-xs: 0 1px 1px oklch(0.21 0.03 268 / 0.05);
+  --shadow-sm: 0 1px 2px oklch(0.21 0.03 268 / 0.07);
+  --shadow-md: 0 1px 2px oklch(0.21 0.03 268 / 0.06), 0 6px 16px -6px oklch(0.21 0.03 268 / 0.16);
+  --shadow-lg: 0 2px 4px oklch(0.21 0.03 268 / 0.06), 0 16px 36px -10px oklch(0.21 0.03 268 / 0.24);
+  --shadow-xl: 0 3px 6px oklch(0.21 0.03 268 / 0.07), 0 28px 56px -14px oklch(0.21 0.03 268 / 0.3);
+
+  --animate-rail-fill: rail-fill 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-pulse-dot: pulse-dot 1.4s ease-in-out infinite;
+
+  @keyframes rail-fill {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+:root {
+  --radius: 0.5rem;
+
+  /* Bond paper and ink */
+  --background: oklch(0.984 0.003 262);
+  --foreground: oklch(0.21 0.028 268);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.028 268);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.028 268);
+  --primary: oklch(0.46 0.19 268);
+  --primary-foreground: oklch(0.99 0.004 268);
+  --secondary: oklch(0.955 0.008 262);
+  --secondary-foreground: oklch(0.21 0.028 268);
+  --muted: oklch(0.965 0.006 262);
+  --muted-foreground: oklch(0.5 0.02 265);
+  --accent: oklch(0.955 0.018 268);
+  --accent-foreground: oklch(0.21 0.028 268);
+  --destructive: oklch(0.5 0.19 27);
+  --success: oklch(0.45 0.12 152);
+  --warning: oklch(0.48 0.11 70);
+  --border: oklch(0.915 0.008 262);
+  --border-strong: oklch(0.84 0.014 263);
+  /* Form controls keep a 3:1 boundary against the surface. */
+  --input: oklch(0.66 0.02 264);
+  --ring: oklch(0.46 0.19 268);
+
+  --sidebar: oklch(0.972 0.006 264);
+  --sidebar-foreground: oklch(0.21 0.028 268);
+  --sidebar-primary: oklch(0.46 0.19 268);
+  --sidebar-primary-foreground: oklch(0.99 0.004 268);
+  --sidebar-accent: oklch(0.935 0.02 268);
+  --sidebar-accent-foreground: oklch(0.21 0.028 268);
+  --sidebar-border: oklch(0.915 0.008 262);
+  --sidebar-ring: oklch(0.46 0.19 268);
+
+  /* Application pipeline: one hue, more ink the further along. */
+  --status-assigned: oklch(0.73 0.07 268);
+  --status-viewed: oklch(0.64 0.11 268);
+  --status-applying: oklch(0.55 0.15 268);
+  --status-applied: oklch(0.46 0.19 268);
+  --status-interviewing: oklch(0.35 0.16 268);
+  --status-offer: oklch(0.64 0.16 150);
+  --status-rejected: oklch(0.5 0.19 27);
+  --status-closed: oklch(0.62 0.015 262);
+
+  --chart-grid: oklch(0.93 0.006 262);
+  --watermark-ink: oklch(0.21 0.028 268 / 0.055);
+}
+
+.dark {
+  /* Night desk: deep ink, never neutral black */
+  --background: oklch(0.195 0.028 268);
+  --foreground: oklch(0.94 0.008 262);
+  --card: oklch(0.235 0.03 268);
+  --card-foreground: oklch(0.94 0.008 262);
+  --popover: oklch(0.265 0.032 268);
+  --popover-foreground: oklch(0.94 0.008 262);
+  --primary: oklch(0.73 0.135 268);
+  --primary-foreground: oklch(0.195 0.028 268);
+  --secondary: oklch(0.285 0.03 268);
+  --secondary-foreground: oklch(0.94 0.008 262);
+  --muted: oklch(0.27 0.028 268);
+  --muted-foreground: oklch(0.74 0.02 262);
+  --accent: oklch(0.3 0.05 268);
+  --accent-foreground: oklch(0.94 0.008 262);
+  --destructive: oklch(0.74 0.15 22);
+  --success: oklch(0.76 0.15 152);
+  --warning: oklch(0.8 0.14 80);
+  --border: oklch(0.31 0.025 268);
+  --border-strong: oklch(0.4 0.028 267);
+  --input: oklch(0.54 0.025 266);
+  --ring: oklch(0.73 0.135 268);
+
+  --sidebar: oklch(0.215 0.03 268);
+  --sidebar-foreground: oklch(0.94 0.008 262);
+  --sidebar-primary: oklch(0.73 0.135 268);
+  --sidebar-primary-foreground: oklch(0.195 0.028 268);
+  --sidebar-accent: oklch(0.29 0.045 268);
+  --sidebar-accent-foreground: oklch(0.94 0.008 262);
+  --sidebar-border: oklch(0.31 0.025 268);
+  --sidebar-ring: oklch(0.73 0.135 268);
+
+  /* Same ramp, anchored the other way: the further along, the brighter the ink. */
+  --status-assigned: oklch(0.46 0.1 268);
+  --status-viewed: oklch(0.55 0.125 268);
+  --status-applying: oklch(0.64 0.14 268);
+  --status-applied: oklch(0.73 0.135 268);
+  --status-interviewing: oklch(0.84 0.08 268);
+  --status-offer: oklch(0.665 0.16 150);
+  --status-rejected: oklch(0.58 0.2 25);
+  --status-closed: oklch(0.56 0.015 262);
+
+  --chart-grid: oklch(0.29 0.024 268);
+  --watermark-ink: oklch(0.94 0.008 262 / 0.05);
+
+  --shadow-xs: 0 1px 1px oklch(0.1 0.02 268 / 0.4);
+  --shadow-sm: 0 1px 2px oklch(0.1 0.02 268 / 0.45);
+  --shadow-md: 0 1px 2px oklch(0.1 0.02 268 / 0.4), 0 6px 16px -6px oklch(0.1 0.02 268 / 0.6);
+  --shadow-lg: 0 2px 4px oklch(0.1 0.02 268 / 0.4), 0 16px 36px -10px oklch(0.1 0.02 268 / 0.7);
+  --shadow-xl: 0 3px 6px oklch(0.1 0.02 268 / 0.45), 0 28px 56px -14px oklch(0.1 0.02 268 / 0.75);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: light;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground text-sm antialiased;
+    font-feature-settings: "kern", "liga";
+    font-optical-sizing: auto;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background-color: color-mix(in oklch, var(--primary) 22%, transparent);
+  }
+  /* A visible focus indicator for anything that does not bring its own ring. */
+  :where(a, button, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+}
+
+/* Display voice: the same family, drawn narrower and heavier. Used for page titles and figures. */
+@utility font-display {
+  font-family: var(--font-sans);
+  font-stretch: 80%;
+  font-weight: 640;
+  letter-spacing: -0.012em;
+}
+
+@utility font-figure {
+  font-family: var(--font-sans);
+  font-stretch: 74%;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  font-variant-numeric: lining-nums proportional-nums;
+}
+
+@utility font-label {
+  font-stretch: 90%;
+  font-weight: 560;
+  letter-spacing: 0.002em;
+}
+
+/* Hatched fill for pipeline segments an application never reached before it closed. */
+@utility bg-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--status-closed) 55%, transparent) 0 1.5px,
+    transparent 1.5px 4px
+  );
+}
+
+@layer components {
+  /* Larger hit areas on touch screens without changing the desktop density. */
+  @media (pointer: coarse) {
+    [data-slot="button"][data-size="default"],
+    [data-slot="button"][data-size="lg"],
+    [data-slot="input"],
+    [data-slot="select-trigger"],
+    [data-slot="input-group"] {
+      min-height: 2.5rem;
+    }
+    [data-slot="button"][data-size="icon"],
+    [data-slot="button"][data-size="icon-sm"] {
+      min-height: 2.5rem;
+      min-width: 2.5rem;
+    }
+  }
+
+  .cn-toast {
+    font-family: var(--font-sans);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
