@@ -38,6 +38,9 @@ WORK_DIR = tempfile.mkdtemp(prefix="jobfinder-ui-")      # files the run uploads
 PASSWORD = "Demo-Password-42!"
 STAMP = str(int(time.time()))[-7:]
 MOBILE = A.w < 768
+# The Find Jobs candidate list has two groups since candidates can be brought in from Salesforce (the demo stack has a
+# fake one): this is the group of the portal's own candidates. Other pickers (dialogs) have one group, "Candidates".
+PICKER = "Candidates in the portal"
 SHARED = {}           # what one step leaves for the next (the member invited and the candidate added during the run)
 results = []          # (ok, name, detail)
 problems = []         # unexpected console / network problems
@@ -82,6 +85,23 @@ def watch(page):
     page.on("response", lambda r: note(f"http {r.status}", f"{r.request.method} {r.url}") if r.status >= 400 and "/api/" in r.url else None)
     page.on("requestfailed", lambda r: note("requestfailed", f"{r.method} {r.url} {r.failure}")
             if "/api/" in r.url and "ERR_ABORTED" not in str(r.failure) else None)
+
+
+SALESFORCE_OFF = {"configured": False, "connected": None, "message": "", "checked_at": None, "api_version": "v68.0", "team_lead_scope": "all"}
+
+
+@contextmanager
+def without_salesforce(page):
+    """Where the portal is connected to Salesforce (the demo stack has a fake one) candidates come from there only, and
+    nothing offers to type one in. The dialog for that, "Add Candidate", belongs to a portal without Salesforce: inside
+    this block the page is told that Salesforce is not configured. Pages loaded inside it keep that answer until they
+    are loaded again."""
+    page.route("**/api/salesforce/status", lambda route: route.fulfill(status=200, json=SALESFORCE_OFF))
+    try:
+        yield
+    finally:
+        page.wait_for_load_state("networkidle")
+        page.unroute("**/api/salesforce/status")
 
 
 def new_context(browser):
@@ -453,7 +473,7 @@ def step_member(browser):
 
 NO_AI_TEXT = "No outside AI service is configured on this server. The resume text and the uploaded file stay on this server."
 MANAGER_CONTROLS = re.compile(r"^(Edit Details|Manage Candidate|Move to Another Member|Assign to a Member|Save Profile|Save Details|Delete|Deactivate|Reactivate|"
-                              r"Find Jobs for .*|Add Candidate|Upload Resume.*|Replace Resume.*)$")
+                              r"Find Jobs for .*|Add Candidate|Add Manually|Add from Salesforce|Refresh from Salesforce|Open in Salesforce.*|Upload Resume.*|Replace Resume.*)$")
 
 
 def download_headers(page, candidate_id):
@@ -665,8 +685,9 @@ def step_candidates(browser):
     nav_link(page, "Candidates").click()
     page.wait_for_url(re.compile(r"/tl/candidates$"), timeout=15000)
     page.get_by_role("link", name="Jordan Rivera").filter(visible=True).first.wait_for(timeout=15000)
-    seeded = ["Jordan Rivera", "Elena Petrova", "Samuel Okafor", "Hannah Kim", "Diego Morales"]
-    foreign = ["Aisha Rahman", "Tom Becker", "Grace Liu", "Lucas Meyer", "Victor Hale"]
+    # Amara Nwosu (Team Alpha) and Elif Demir (Team Beta) were brought in from the fake Salesforce when the data was seeded.
+    seeded = ["Jordan Rivera", "Elena Petrova", "Samuel Okafor", "Hannah Kim", "Diego Morales", "Amara Nwosu"]
+    foreign = ["Aisha Rahman", "Tom Becker", "Grace Liu", "Lucas Meyer", "Victor Hale", "Elif Demir"]
     check("the Team Lead's candidate list holds the own team's candidates only", names_listed(page, seeded + foreign, seeded) == set(seeded))
     if not MOBILE:
         page.get_by_role("columnheader", name="Candidate").wait_for(timeout=15000)
@@ -678,10 +699,17 @@ def step_candidates(browser):
     no_overflow(page, "tl candidates")
     shot(page, "tl_candidates")
 
-    # ---- Add Candidate, without a resume: the rules of the API are checked before anything is sent
+    # ---- no candidate is typed in by hand while the portal is connected to Salesforce
+    page.get_by_role("button", name="Add from Salesforce", exact=True).filter(visible=True).first.wait_for(timeout=15000)
+    check("connected to Salesforce: the Candidates page offers 'Add from Salesforce' and nothing to type a candidate in with",
+          page.get_by_role("button", name=re.compile("^Add (Candidate|Manually)")).count() == 0)
+    # ---- Add Candidate (a portal without Salesforce), without a resume: the rules of the API are checked before anything is sent
     posts = []
     page.on("request", lambda r: posts.append(r) if r.method == "POST" and "/api/candidates" in r.url else None)
-    page.get_by_role("button", name="Add Candidate").first.click()
+    manual = without_salesforce(page)
+    manual.__enter__()                                   # until both candidates of this step are added (left below)
+    page.goto(BASE + "/tl/candidates")
+    page.get_by_role("button", name="Add Candidate", exact=True).filter(visible=True).first.click()
     dialog = page.get_by_role("dialog", name="Add Candidate")
     dialog.wait_for(timeout=5000)
     check("the dialog says a candidate has no account and receives nothing", dialog.get_by_text("A candidate has no account and receives nothing from the portal.").is_visible())
@@ -728,7 +756,7 @@ def step_candidates(browser):
 
     # ---- Add Candidate, with a resume and a responsible member
     page.goto(BASE + "/tl/candidates")
-    page.get_by_role("button", name="Add Candidate").first.click()
+    page.get_by_role("button", name="Add Candidate", exact=True).filter(visible=True).first.click()
     dialog = page.get_by_role("dialog", name="Add Candidate")
     dialog.get_by_label("Full name").fill(full)
     dialog.get_by_label(re.compile("^E-mail")).fill(f"casey.{STAMP}@example.com")
@@ -758,6 +786,7 @@ def step_candidates(browser):
           and record["email"] == f"casey.{STAMP}@example.com" and record["phone"] == "+1 (555) 010-7788 x12" and record["notes"] == "Available from next month.\nPrefers mornings.")
     check("the candidate's page says who handles the jobs", page.locator('[data-slot="tag"]').filter(has_text="Resume uploaded").first.is_visible()
           and page.get_by_role("link", name="Omar Haddad").filter(visible=True).first.get_attribute("href") == f"/tl/members/{people['Omar Haddad']['id']}")
+    manual.__exit__(None, None, None)                    # from here on the portal is connected to Salesforce again
     check("a candidate is not an account: no user with that name or address exists", api(page, f"/api/users?q=casey.{STAMP}&page_size=5")["total"] == 0
           and api(page, f"/api/users?q=Casey%20Complete&page_size=5")["total"] == 0)
     SHARED.update(candidate=full, candidate_id=full_id)
@@ -776,7 +805,7 @@ def step_candidates(browser):
     want = {c["name"] for c in everyone if c["assigned_member"] is None}
     ok, shown = filtered("Responsible member", "Unassigned", "unassigned=true", want)
     check("filter 'Unassigned': sent as unassigned=true, lists the candidates nobody is responsible for",
-          ok and shown == want == {"Hannah Kim", "Diego Morales", bare} and "member=unassigned" in page.url, str(sorted(shown)))
+          ok and shown == want == {"Hannah Kim", "Diego Morales", "Amara Nwosu", bare} and "member=unassigned" in page.url, str(sorted(shown)))
     want = {c["name"] for c in everyone if c["assigned_member"] is None and not c["has_resume"]}
     ok, shown = filtered("Resume", "No resume", "has_resume=false", want)
     check("filter 'No resume' on top of it: sent as has_resume=false", ok and shown == want == {"Diego Morales", bare}, str(sorted(shown)))
@@ -784,7 +813,7 @@ def step_candidates(browser):
     names_listed(page, known, known)
     want = {c["name"] for c in everyone if c["has_resume"]}
     ok, shown = filtered("Resume", "Resume uploaded", "has_resume=true", want)
-    check("filter 'Resume uploaded': sent as has_resume=true", ok and shown == want and len(want) == 5, str(sorted(shown)))
+    check("filter 'Resume uploaded': sent as has_resume=true", ok and shown == want and len(want) == 6, str(sorted(shown)))
     page.get_by_role("button", name="Clear filters").click()
     names_listed(page, known, known)
     page.get_by_role("combobox", name="Responsible member").click()
@@ -1011,8 +1040,8 @@ def step_candidates(browser):
         check("assigning from the 'Unassigned' list is confirmed although the row leaves the list", True)
     except Exception:
         check("assigning from the 'Unassigned' list is confirmed although the row leaves the list", False, "no toast")
-    shown = names_listed(page, known, {"Hannah Kim", "Diego Morales", bare})
-    check("the candidate is no longer listed as unassigned", shown == {"Hannah Kim", "Diego Morales", bare} and page.get_by_role("dialog").count() == 0, str(sorted(shown)))
+    shown = names_listed(page, known, {"Hannah Kim", "Diego Morales", "Amara Nwosu", bare})
+    check("the candidate is no longer listed as unassigned", shown == {"Hannah Kim", "Diego Morales", "Amara Nwosu", bare} and page.get_by_role("dialog").count() == 0, str(sorted(shown)))
     page.get_by_role("button", name="Clear filters").click()
     page.get_by_role("searchbox", name="Search candidates").fill(full)
     row = page.locator("tr, li").filter(has=page.get_by_role("link", name=full, exact=True)).filter(visible=True).last
@@ -1040,9 +1069,9 @@ def step_candidates(browser):
     check("it is listed under 'Deactivated candidates', marked as deactivated", row.locator('[data-slot="tag"]').filter(has_text="Deactivated").is_visible())
     spage = ctx.new_page()
     spage.goto(BASE + "/tl/search")
-    spage.get_by_role("group", name="Candidates").get_by_role("checkbox").first.wait_for(timeout=15000)
+    spage.get_by_role("group", name=PICKER, exact=True).get_by_role("checkbox").first.wait_for(timeout=15000)
     spage.get_by_role("searchbox", name="Search candidates").fill(bare)
-    spage.get_by_text("No candidates match this search").wait_for(timeout=15000)
+    spage.get_by_text("Nobody in the portal matches this search").wait_for(timeout=15000)
     check("a deactivated candidate is not offered in the search form", True)
     spage.goto(BASE + f"/tl/candidates/{bare_id}")
     spage.get_by_role("heading", level=1, name=bare).wait_for(timeout=15000)
@@ -1075,28 +1104,37 @@ def step_search_form(browser):
     limit = api(page, "/api/searches/options")["limits"]["max_members_per_search"]
     omar = next(u for u in api(page, "/api/users?role=MEMBER&page_size=50")["items"] if u["email"] == "omar@example.com")
     page.goto(BASE + "/tl/search")
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name=PICKER, exact=True)
     group.get_by_role("checkbox").first.wait_for(timeout=15000)
     page.wait_for_load_state("networkidle")
+    check("connected to Salesforce: the candidate list of the search form has no button to type a candidate in with",
+          page.get_by_role("button", name=re.compile("^Add (Candidate|Manually)")).count() == 0)
     check("the picker says how many candidates may be chosen (the API's limit)", page.get_by_text(f"0 selected of {limit} allowed").is_visible(), str(limit))
     check("nothing is selected yet, so there is no 'Selected candidates' section", page.get_by_role("region", name="Selected candidates").count() == 0)
     page.get_by_role("button", name="Start Search").click()
     check("a search without a candidate is refused in the form", page.get_by_role("alert").filter(has_text="Choose at least one candidate.").first.is_visible())
 
-    # Add Candidate from inside the form
+    # Add Candidate from inside the form: offered by a portal without Salesforce only
     searches = []
     page.on("request", lambda r: searches.append(r) if r.method == "POST" and r.url.endswith("/api/searches") else None)
-    page.get_by_role("button", name="Add Candidate").filter(visible=True).first.click()
-    dialog = page.get_by_role("dialog", name="Add Candidate")
-    dialog.get_by_label("Full name").fill(name)
-    dialog.get_by_role("button", name="Add Candidate").click()
-    toast(page, f"{name} added")
-    dialog.wait_for(state="hidden", timeout=10000)
     chosen = page.get_by_role("region", name="Selected candidates")
+    with without_salesforce(page):
+        page.goto(BASE + "/tl/search")
+        page.get_by_role("group", name="Candidates", exact=True).get_by_role("checkbox").first.wait_for(timeout=15000)
+        page.get_by_role("button", name="Add Candidate", exact=True).filter(visible=True).first.click()
+        dialog = page.get_by_role("dialog", name="Add Candidate")
+        dialog.get_by_label("Full name").fill(name)
+        dialog.get_by_role("button", name="Add Candidate").click()
+        toast(page, f"{name} added")
+        dialog.wait_for(state="hidden", timeout=10000)
+        chosen.get_by_text(name).first.wait_for(timeout=10000)
+        check("a candidate added from the search form is chosen for the search at once, and the form stays where it was",
+              page.url.endswith("/tl/search") and page.get_by_text(f"1 selected of {limit} allowed").is_visible() and len(searches) == 0
+              and page.get_by_role("dialog", name="AI Job Search Started").count() == 0)
+    # connected to Salesforce again: the new candidate is one of the portal's own, and is chosen from that group
+    page.goto(BASE + "/tl/search")
+    group.get_by_role("checkbox", name=re.compile(re.escape(name))).check(timeout=15000)
     chosen.get_by_text(name).first.wait_for(timeout=10000)
-    check("a candidate added from the search form is chosen for the search at once, and the form stays where it was",
-          page.url.endswith("/tl/search") and page.get_by_text(f"1 selected of {limit} allowed").is_visible() and len(searches) == 0
-          and page.get_by_role("dialog", name="AI Job Search Started").count() == 0)
     record = candidate_named(page, name)
     entry = chosen.get_by_role("listitem").filter(has_text=name)
     member_box = entry.get_by_role("combobox", name="Responsible member, who handles the jobs found")
@@ -1313,7 +1351,7 @@ def run_search(page, area, candidates, titles, per_candidate, review, expect_ski
     """Fill the search form and start it. Returns the progress window locator."""
     page.goto(BASE + f"{area}/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name=PICKER, exact=True)
     group.get_by_role("checkbox").first.wait_for(timeout=15000)
     for name in candidates:
         group.get_by_role("checkbox", name=re.compile(name)).check()
@@ -1341,13 +1379,13 @@ def step_search(browser):
 
     page.goto(BASE + "/tl/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name=PICKER, exact=True)
     group.get_by_role("checkbox").first.wait_for(timeout=15000)
     names = group.inner_text()
     check("team lead sees only their own team's candidates in the list",
-          all(n in names for n in ("Jordan Rivera", "Elena Petrova", "Samuel Okafor", "Hannah Kim", "Diego Morales"))
-          and not any(n in names for n in ("Aisha Rahman", "Tom Becker", "Grace Liu", "Lucas Meyer", "Victor Hale")))
-    check("the list holds candidates, not members", group.get_by_role("checkbox").count() == 5 and group.get_by_role("checkbox", name=re.compile("^(Maya Chen|Noah Patel|Omar Haddad)")).count() == 0)
+          all(n in names for n in ("Jordan Rivera", "Elena Petrova", "Samuel Okafor", "Hannah Kim", "Diego Morales", "Amara Nwosu"))
+          and not any(n in names for n in ("Aisha Rahman", "Tom Becker", "Grace Liu", "Lucas Meyer", "Victor Hale", "Elif Demir")))
+    check("the list holds candidates, not members", group.get_by_role("checkbox").count() == 6 and group.get_by_role("checkbox", name=re.compile("^(Maya Chen|Noah Patel|Omar Haddad)")).count() == 0)
     check("each candidate row says who handles the candidate, or that nobody does",
           "Handled by Noah Patel" in group.get_by_role("listitem").filter(has_text="Samuel Okafor").inner_text()
           and "No responsible member" in group.get_by_role("listitem").filter(has_text="Hannah Kim").inner_text())
@@ -1606,7 +1644,7 @@ def step_review(browser):
     titles = ["Account Executive"] if not MOBILE else ["Backend Engineer"]
     page.goto(BASE + "/tl/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name=PICKER, exact=True)
     group.get_by_role("checkbox").first.wait_for(timeout=15000)
     group.get_by_role("checkbox", name=re.compile("Jordan Rivera")).check()
     group.get_by_role("checkbox", name=re.compile("Diego Morales")).check()
@@ -1998,7 +2036,7 @@ def step_misc(browser):
     page.wait_for_url(re.compile(r"/tl/candidates/[0-9a-f-]{36}"), timeout=15000)
     page.get_by_role("link", name="Find Jobs for Samuel").click()
     page.wait_for_url(re.compile(r"/tl/search\?candidate=[0-9a-f-]{36}$"), timeout=15000)
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name=PICKER, exact=True)
     group.get_by_role("checkbox").first.wait_for(timeout=15000)
     try:
         expect(group.get_by_role("checkbox", name=re.compile("Samuel Okafor"))).to_be_checked(timeout=10000)
@@ -2084,7 +2122,7 @@ def step_stubbed(browser):
     page.route(re.compile(r"/api/searches$"), lambda route: route.fulfill(status=429, json={"error": refusal, "detail": ""})
                if route.request.method == "POST" else route.continue_())
     page.goto(BASE + "/tl/search")
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name=PICKER, exact=True)
     group.get_by_role("checkbox", name=re.compile("Samuel Okafor")).wait_for(timeout=15000)
     group.get_by_role("checkbox", name=re.compile("Samuel Okafor")).check()
     with expecting("429", "/api/searches"):
@@ -2698,7 +2736,7 @@ def step_admin_more(browser):
 
     # search presets
     page.goto(BASE + "/admin/search")
-    page.get_by_role("group", name="Candidates").wait_for(timeout=15000)
+    page.get_by_role("group", name=PICKER, exact=True).wait_for(timeout=15000)
     page.get_by_label("Results per candidate").fill("7")
     page.get_by_role("button", name=re.compile("^Presets")).click()
     preset = f"E2E preset {STAMP}"
@@ -2716,10 +2754,10 @@ def step_admin_more(browser):
     check("a preset can be deleted", True)
     check("an Admin can pick a whole team in the search form", page.get_by_role("combobox", name="Whole team").is_visible())
     page.get_by_role("combobox", name="Whole team").click()
-    check("a whole team is counted in active candidates", page.get_by_role("option", name=re.compile(r"^Team Beta \(4 active candidates\)$")).is_visible(),
+    check("a whole team is counted in active candidates", page.get_by_role("option", name=re.compile(r"^Team Beta \(5 active candidates\)$")).is_visible(),
           " | ".join(o.inner_text().strip() for o in page.get_by_role("option").all()))
     page.keyboard.press("Escape")
-    people = page.get_by_role("group", name="Candidates")
+    people = page.get_by_role("group", name=PICKER, exact=True)
     people.get_by_role("checkbox").first.wait_for(timeout=15000)
     check("an Admin's candidate list spans the teams and names each candidate's team", "Team Alpha" in people.inner_text() and "Team Beta" in people.inner_text())
     ctx.close()

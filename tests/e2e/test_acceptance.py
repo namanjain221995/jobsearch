@@ -1,4 +1,5 @@
-"""Acceptance scenarios 1 to 7 of the brief, driven through the real web app in a browser.
+"""Acceptance scenarios 1 to 7 of the brief, and scenario 8 (a candidate brought in from Salesforce), driven through the
+real web app in a browser.
 
 Members are recruiters (accounts); candidates are the people who need a job (records, never accounts). A Team Lead
 creates candidates with their resume, assigns each to one member, runs searches for candidates; the responsible
@@ -23,6 +24,8 @@ pytestmark = pytest.mark.skipif(not BASE, reason="set E2E_BASE_URL, or run tests
 DEMO_PASSWORD = "Demo-Password-42!"
 NEW_PASSWORD = "Scenario-Pass-77!"
 STAMP = str(int(time.time()))[-6:]
+# The Find Jobs candidate list has two groups (the demo stack has a fake Salesforce): the portal's own candidates are here.
+PICKER = "Candidates in the portal"
 STATE: dict = {}                     # what one scenario leaves for the next
 RESUME = ("Casey Example\nMachine Learning Engineer with 3 years of experience.\n"
           "Skills: Python, PyTorch, TensorFlow, scikit-learn, SQL, AWS, Docker, Kubernetes, MLOps, NLP.\n"
@@ -218,12 +221,22 @@ def test_scenario_2_team_lead_creates_a_member_who_sees_only_their_own_dashboard
     lead.close()
 
 
-def start_search(session, candidate: str, titles: str, per_candidate: str, mode: str):
+SALESFORCE_OFF = {"configured": False, "connected": None, "message": "", "checked_at": None, "api_version": "v68.0", "team_lead_scope": "all"}
+
+
+def without_salesforce(session) -> None:
+    """Scenarios 1 to 7 are those of the brief, in which a Team Lead types a candidate in and uploads the resume. A portal
+    that is connected to Salesforce (the demo stack has a fake one) takes candidates from there only, which is scenario 8.
+    This person's browser is told that Salesforce is not configured, so the portal offers "Add Candidate" as it does then."""
+    session.context.route("**/api/salesforce/status", lambda route: route.fulfill(status=200, json=SALESFORCE_OFF))
+
+
+def start_search(session, candidate: str, titles: str, per_candidate: str, mode: str, picker: str = PICKER):
     """Team Lead: Find Jobs for one candidate of the own team. Returns the progress window."""
     page = session.page
     page.goto(BASE + "/tl/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name=picker, exact=True)
     group.get_by_role("checkbox").first.wait_for(timeout=15000)
     group.get_by_role("checkbox", name=re.compile(re.escape(candidate))).check()
     page.get_by_role("region", name="Selected candidates").get_by_text(candidate).first.wait_for(timeout=5000)
@@ -241,6 +254,7 @@ def start_search(session, candidate: str, titles: str, per_candidate: str, mode:
 def test_scenario_3_team_lead_adds_a_candidate_with_resume_and_the_search_assigns_verified_jobs(browser, problems):
     need("member_email")
     lead = Session(browser, problems)
+    without_salesforce(lead)
     page = lead.login(STATE["lead_email"], NEW_PASSWORD, "/tl/dashboard")
     candidate, contact = f"Casey Candidate {STAMP}", f"casey.{STAMP}@example.com"
     # "Resume is available": the Team Lead creates the candidate, uploads the resume and chooses the responsible member in one dialog.
@@ -249,7 +263,7 @@ def test_scenario_3_team_lead_adds_a_candidate_with_resume_and_the_search_assign
         handle.write(RESUME)
     page.goto(BASE + "/tl/candidates")
     page.wait_for_load_state("networkidle")
-    page.get_by_role("button", name="Add Candidate").first.click()
+    page.get_by_role("button", name="Add Candidate", exact=True).first.click()
     dialog = page.get_by_role("dialog", name="Add Candidate")
     dialog.get_by_label("Full name").fill(candidate)
     dialog.get_by_label(re.compile("^E-mail")).fill(contact)
@@ -291,11 +305,11 @@ def test_scenario_3_team_lead_adds_a_candidate_with_resume_and_the_search_assign
     # The Team Lead searches for the candidate.
     page.goto(BASE + "/tl/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Candidates")
+    group = page.get_by_role("group", name="Candidates", exact=True)                  # one group: no Salesforce for this person
     group.get_by_role("checkbox").first.wait_for(timeout=15000)
     assert group.get_by_role("checkbox").count() == 1                                 # only this Team Lead's team is offered
     assert "Jordan Rivera" not in group.inner_text() and "Aisha Rahman" not in group.inner_text()
-    window = start_search(lead, candidate, "Machine Learning Engineer", "50", "Find & Assign Matching Jobs")
+    window = start_search(lead, candidate, "Machine Learning Engineer", "50", "Find & Assign Matching Jobs", picker="Candidates")
     assert window.get_by_text(candidate).first.is_visible()
     for label in ("Requested", "Discovered", "Verified", "Duplicates removed", "Matched", "Assigned"):
         assert window.locator(f'[data-slot="run-counter"][data-label="{label}"]').is_visible(), label
@@ -552,7 +566,8 @@ def test_scenario_6_nobody_reaches_another_team_or_another_members_candidate_by_
     status, records = lead.api(f"/api/candidates?team_id={team}&page_size=200")
     assert status == 200 and all(c["team"]["name"] == "Team Alpha" for c in records["items"])
     status, records = lead.api("/api/candidates?page_size=200")
-    assert records["total"] == 5 and all(c["team"]["name"] == "Team Alpha" for c in records["items"])
+    # the five seeded by hand and Amara Nwosu, brought in from the (fake) Salesforce when the demo data was seeded
+    assert records["total"] == 6 and all(c["team"]["name"] == "Team Alpha" for c in records["items"])
     alpha = {c["name"]: c for c in records["items"]}
     jordan, samuel = alpha["Jordan Rivera"], alpha["Samuel Okafor"]
 
@@ -667,3 +682,111 @@ def test_scenario_7_a_review_search_continues_when_the_popup_is_closed_and_assig
     assert {r["job"]["id"] for r in chosen} <= {item["job"]["id"] for item in mine["items"]}
     noah.close()
     lead.close()
+
+
+def test_scenario_8_team_lead_brings_a_candidate_in_from_salesforce_and_the_member_finds_resume_and_jobs(browser, problems):
+    """Salesforce is the in-process fake of the demo stack (tests/e2e/salesforce_fake.py): no request leaves this machine."""
+    name = "Ines Carvalho"                                                            # Active, with a PDF resume, not in the portal yet
+    lead = Session(browser, problems)
+    page = lead.login("lead.alpha@example.com", DEMO_PASSWORD, "/tl/dashboard")
+    status, before = lead.api(f"/api/candidates?q={name.replace(' ', '%20')}&page_size=50")
+    assert status == 200 and before["total"] == 0, "the demo data already holds the candidate: start from freshly seeded data"
+    status, people = lead.api("/api/users?role=MEMBER&page_size=50")
+    omar_id = next(u["id"] for u in people["items"] if u["email"] == "omar@example.com")
+    omar = Session(browser, problems)                                                 # Omar Haddad holds no candidate so far
+    opage = omar.login("omar@example.com", DEMO_PASSWORD, "/member/dashboard")
+    asked = []                                                                        # a member's pages never ask about Salesforce
+    omar.context.on("request", lambda r: asked.append(r.url) if "/api/salesforce" in r.url else None)
+    assert omar.api("/api/candidates")[1]["total"] == 0 and omar.api("/api/assignments")[1]["total"] == 0
+
+    # Find Jobs: the Team Lead types the name; the portal does not know her, Salesforce does.
+    page.goto(BASE + "/tl/search")
+    page.wait_for_load_state("networkidle")
+    salesforce = page.locator('[data-slot="salesforce-import"]')
+    salesforce.get_by_role("heading", name="From Salesforce").wait_for(timeout=15000)
+    assert page.get_by_role("button", name=re.compile("^Add (Candidate|Manually)")).count() == 0   # candidates come from Salesforce only
+    page.get_by_role("searchbox", name="Search candidates").fill("ines")
+    page.get_by_role("group", name=PICKER, exact=True).get_by_text("Nobody in the portal matches this search").wait_for(timeout=15000)
+    row = salesforce.locator('[data-slot="salesforce-row"]').filter(has_text=name)
+    row.wait_for(timeout=15000)
+    found = row.inner_text()
+    assert "Resume in Salesforce" in found and "Bring in" in found and "In the portal" not in found, found
+    with page.expect_response(lambda r: r.url.endswith("/api/candidates/import-salesforce") and r.request.method == "POST") as info:
+        row.get_by_role("button").click()                                             # bring her in, with the resume
+    assert info.value.status == 201
+    sent, answer = info.value.request.post_data_json, info.value.json()
+    assert sent["salesforce_id"] == "001E2E000000009AAA" and sent["team_id"] is None  # a Team Lead's own team is used
+    assert answer["sync"]["created"] is True and answer["sync"]["resume"] == "imported"
+    candidate_id = answer["id"]
+    lead.toast(f"{name} brought in from Salesforce")
+    chosen = page.get_by_role("region", name="Selected candidates").get_by_role("listitem").filter(has_text=name)
+    chosen.wait_for(timeout=15000)                                                    # chosen for the search at once
+    assert chosen.locator('[data-slot="tag"]').filter(has_text="Resume uploaded").is_visible()
+    assert page.get_by_text(re.compile(re.escape(name) + r" has no\s+resume")).count() == 0
+    page.get_by_text(re.compile(re.escape(name) + r" has no\s+responsible member")).wait_for(timeout=5000)
+    row.get_by_text("Selected").wait_for(timeout=15000)                               # the Salesforce row says where she is now
+    assert "In the portal" in row.inner_text()
+
+    # The responsible member is chosen right there, and saved to the candidate.
+    chosen.get_by_role("combobox", name="Responsible member, who handles the jobs found").click()
+    page.get_by_role("option", name="Omar Haddad", exact=True).click()
+    lead.toast(f"Omar Haddad is now responsible for {name}")
+    status, record = lead.api(f"/api/candidates/{candidate_id}")
+    assert status == 200 and record["source"] == "salesforce" and record["salesforce_id"] == "001E2E000000009AAA"
+    assert record["salesforce_url"] == "https://salesforce.example.com/001E2E000000009AAA"
+    assert record["team"]["name"] == "Team Alpha" and record["assigned_member"]["id"] == omar_id
+    assert record["has_resume"] is True and record["resume_has_file"] is True and record["email"] == "ines.carvalho@example.com"
+    status, resume = lead.api(f"/api/candidates/{candidate_id}/resume")
+    assert status == 200 and resume["source"] == "salesforce" and resume["filename"].lower().endswith(".pdf")
+    assert name in resume["text"] and "Machine Learning Engineer" in resume["text"]  # the file's text was read
+
+    # The search runs with that resume.
+    field = page.get_by_label(re.compile("^Job titles"))
+    field.fill("Machine Learning Engineer")
+    field.press("Enter")
+    page.get_by_label("Results per candidate").fill("50")
+    page.get_by_role("radio", name=re.compile("Find & Assign Matching Jobs")).check()
+    page.get_by_role("button", name="Start Search").click()
+    window = page.get_by_role("dialog", name="AI Job Search Started")
+    window.wait_for(timeout=15000)
+    assert window.get_by_text(name).first.is_visible()
+    window.locator('[data-slot="tag"][data-status="completed"]').first.wait_for(timeout=120000)
+    assigned = int(window.locator('[data-slot="run-counter"][data-label="Assigned"] [data-slot="run-counter-value"]').first.inner_text().replace(",", ""))
+    assert assigned > 0
+    status, runs = lead.api("/api/searches?page_size=1")
+    newest = runs["items"][0]
+    assert newest["status"] == "completed" and newest["assigned_count"] == assigned and newest["candidate_count"] == 1
+    status, detail = lead.api(f"/api/searches/{newest['id']}")
+    assert [t["candidate"]["id"] for t in detail["targets"]] == [candidate_id]
+    assert detail["targets"][0]["resume_id"] == resume["id"]                         # the resume that came from Salesforce
+    lead.close()
+
+    # The member finds the candidate under My Candidates, with the resume and the jobs, without signing in again.
+    opage.goto(BASE + "/member/candidates")
+    card = opage.locator('[data-slot="candidate-card"]').filter(has_text=name)
+    card.wait_for(timeout=15000)
+    assert opage.locator('[data-slot="candidate-card"]').count() == 1
+    assert card.locator('[data-slot="source-tag"]').filter(visible=True).count() == 1  # marked as brought in from Salesforce
+    status, mine = omar.api("/api/candidates")
+    assert status == 200 and [c["id"] for c in mine["items"]] == [candidate_id]
+    assert mine["items"][0]["source"] == "salesforce" and mine["items"][0]["has_resume"] is True
+    assert mine["items"][0]["salesforce_id"] is None and mine["items"][0]["salesforce_url"] is None     # no way into Salesforce for a member
+    assert omar.api(f"/api/candidates/{candidate_id}/resume/download")[0] == 200     # the file to attach when applying
+    opage.goto(BASE + f"/member/candidates/{candidate_id}?tab=resume")
+    opage.get_by_role("link", name="Download File").filter(visible=True).first.wait_for(timeout=15000)
+    assert opage.get_by_text("Open in Salesforce").count() == 0 and opage.get_by_role("button", name="Refresh from Salesforce").count() == 0
+    opage.goto(BASE + f"/member/candidates/{candidate_id}")                          # the candidate's page lists the jobs
+    opage.locator('[data-slot="job-card"]').filter(visible=True).first.wait_for(timeout=15000)
+    assert omar.kpi("Total Assigned") == assigned
+    opage.goto(BASE + "/member/jobs")
+    opage.locator('[data-slot="job-card"]').filter(visible=True).first.wait_for(timeout=15000)
+    assert name in opage.locator('[data-slot="job-card"]').filter(visible=True).first.inner_text()
+    status, own = omar.api("/api/assignments?page_size=200")
+    assert own["total"] == assigned
+    assert all(item["candidate"]["id"] == candidate_id and item["member"]["id"] == omar_id for item in own["items"])
+    assert any("Machine Learning Engineer" in item["job"]["title"] for item in own["items"])
+    assert all(item["match_score"] >= newest["min_match_score"] for item in own["items"])
+    assert asked == [], asked
+    omar.allowed += ["http 403: GET", "status of 403"]                                # and the API refuses a member who asks all the same
+    assert omar.api("/api/salesforce/status")[0] == 403 and omar.api("/api/salesforce/candidates?q=ines")[0] == 403
+    omar.close()

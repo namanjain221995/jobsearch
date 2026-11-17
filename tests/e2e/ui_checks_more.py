@@ -1101,8 +1101,11 @@ def step_ai_notice(browser):
     no_overflow(page, "Admin candidate detail with the resume notice")
 
     # the Add Candidate dialog says the same once a file has been chosen (nothing is created here: the dialog is cancelled)
+    # (the dialog belongs to a portal without Salesforce: where it is connected, candidates come from there only)
+    page.route("**/api/salesforce/status", lambda route: route.fulfill(status=200, json={
+        "configured": False, "connected": None, "message": "", "checked_at": None, "api_version": "v68.0", "team_lead_scope": "all"}))
     page.goto(BASE + "/admin/candidates")
-    vis(page.get_by_role("button", name="Add Candidate")).first.click()
+    vis(page.get_by_role("button", name="Add Candidate", exact=True)).first.click()
     dialog = page.get_by_role("dialog", name="Add Candidate")
     dialog.wait_for(timeout=T)
     check("Add Candidate, no file chosen yet: no notice", dialog.get_by_role("status").filter(has_text="text from this resume").count() == 0)

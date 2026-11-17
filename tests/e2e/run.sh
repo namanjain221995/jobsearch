@@ -2,10 +2,13 @@
 # Browser tests against a self-contained demo stack: the demo API (synthetic data, no network, no AI cost)
 # and a production build of the web app. Nothing here touches the real database or the real servers.
 #
-#   tests/e2e/run.sh                 everything (about 17 minutes)
-#   tests/e2e/run.sh acceptance      the seven acceptance scenarios of the brief, for the candidate model (about 2 minutes)
+#   tests/e2e/run.sh                 everything (about 20 minutes)
+#   tests/e2e/run.sh acceptance      the seven acceptance scenarios of the brief, for the candidate model, and an eighth
+#                                    for a candidate brought in from Salesforce (about 2 minutes)
 #   tests/e2e/run.sh crawl           every page for every role at 1280 px and 390 px
-#   tests/e2e/run.sh checks          the two check lists at 1280 px and 390 px
+#   tests/e2e/run.sh checks          the three check lists at 1280 px and 390 px
+#
+# Salesforce in the demo stack is an in-process fake (tests/e2e/salesforce_fake.py); the real one is never contacted.
 #
 # Ports: E2E_API_PORT (default 8011) and E2E_WEB_PORT (default 3011). Both must be free.
 set -uo pipefail
@@ -76,7 +79,7 @@ run() {                            # run <name> <command...>
 }
 
 if [ "$WHAT" = "all" ] || [ "$WHAT" = "acceptance" ]; then
-  run "acceptance scenarios 1 to 7 (1280 px)" env E2E_BASE_URL="$BASE" "$PY" -m pytest tests/e2e/test_acceptance.py -q
+  run "acceptance scenarios 1 to 8 (1280 px)" env E2E_BASE_URL="$BASE" "$PY" -m pytest tests/e2e/test_acceptance.py -q
 fi
 if [ "$WHAT" = "all" ] || [ "$WHAT" = "crawl" ]; then
   run "every page for every role, 1280 px" "$PY" tests/e2e/ui_crawl.py --base "$BASE" --w 1280 --h 900
@@ -89,6 +92,8 @@ if [ "$WHAT" = "all" ] || [ "$WHAT" = "checks" ]; then
     run "check list, $1 px" "$PY" tests/e2e/ui_checks.py --base "$BASE" --w "$1" --h "$2"
     fresh_api
     run "second check list, $1 px" "$PY" tests/e2e/ui_checks_more.py --base "$BASE" --w "$1" --h "$2"
+    fresh_api
+    run "third check list (Salesforce), $1 px" "$PY" tests/e2e/ui_checks_salesforce.py --base "$BASE" --w "$1" --h "$2"
   done
 fi
 

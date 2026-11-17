@@ -17,7 +17,8 @@
   jobs in varied statuses, recorded by their responsible member; Hannah's jobs are all still "ASSIGNED".
   Jordan also has a finished "review" search with nothing assigned from it.
 - Salesforce is replaced by an in-process fake with twelve synthetic candidates (tests/e2e/salesforce_fake.py lists
-  them): search "ch", "am", "de" ... as lead.alpha@example.com. Two are already in the portal: Amara Nwosu in Team
+  them, and a crowd of 21 closed "Zimmer" records for the "more matches than shown" case): search "ch", "am", "de" ...
+  as lead.alpha@example.com. Two are already in the portal: Amara Nwosu in Team
   Alpha and Elif Demir in Team Beta, both brought in through the real import code when the demo data is seeded."""
 import argparse
 import asyncio

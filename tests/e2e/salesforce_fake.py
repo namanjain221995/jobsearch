@@ -19,7 +19,12 @@ The twelve candidates (all on example.com):
     Ines Carvalho    Active       PDF resume
     Jamal Rahimi     In Progress  no resume    (found only with status=all)
   No team lead in Salesforce:
-    Keiko Tanabe     Active       PDF resume"""
+    Keiko Tanabe     Active       PDF resume
+
+Beside the twelve there is a crowd of 21 people with the family name Zimmer (Ada Zimmer ... Uwe Zimmer), all with the
+status Closed, without a team lead and without a resume. They exist for one thing: a search with more matches than
+the web app asks for at once (20), so that the API answers `limit_reached: true`. With "Active candidates only"
+(the default) none of them is ever found, and neither their names nor their addresses contain "ch"."""
 from datetime import datetime, timezone
 
 from app.portal.services.salesforce import ID_PATTERN, SfCandidate, SfResume
@@ -43,6 +48,10 @@ _PEOPLE = [
     (11, "Keiko Tanabe", "Active", "Full Stack Developer", "Full Stack Developer", "Green Card / Permanent Resident", "Green Card", 6.0, "Remote", "All over USA", "Associate", None, "pdf"),
     (12, "Chloe Benson", "Placed", "Business Analyst", "Business Analyst", "", "OPT", 2.5, "Hybrid", "Ohio or nearby states", "Entry Level", ALPHA, "docx"),
 ]
+# One more than the web app's page of results (SALESFORCE_PAGE = 20 in frontend/src/lib/salesforce.ts).
+CROWD = ["Ada", "Ben", "Cora", "Dan", "Eva", "Finn", "Gus", "Hana", "Ivo", "Jon", "Kai",
+         "Lea", "Max", "Nia", "Otto", "Pia", "Quin", "Rosa", "Sven", "Tess", "Uwe"]
+_PEOPLE += [(101 + i, f"{first} Zimmer", "Closed", "", "Other", "", "", None, "", "", "", None, None) for i, first in enumerate(CROWD)]
 
 
 class FakeSalesforce:
@@ -57,7 +66,7 @@ class FakeSalesforce:
             sid = f"001E2E000000{n:03d}AAA"
             first, last = name.lower().split()
             self.people[sid] = SfCandidate(
-                id=sid, name=name, email=f"{first}.{last}@example.com", phone=f"(555) 01{n:02d}-0{n:03d}", candidate_status=status,
+                id=sid, name=name, email=f"{first}.{last}@example.com", phone=f"(555) 01{n % 100:02d}-0{n:03d}", candidate_status=status,
                 technology=technology, niche=niche, preferred_locations=locations, preferred_job_type=job_type, years_experience=years,
                 work_authorization=authorization, visa_status=visa, sponsorship_required=n == 2, experience_level=level,
                 assigned_recruiter="Rita Recruiter" if n % 2 else "Sam Sourcer", marketing_team_lead=lead[0] if lead else "",

@@ -17,10 +17,12 @@ ROUTES = {
                                    "/admin/members", "/admin/members/{member}", "/admin/members/{member}?tab=candidates", "/admin/members/{member}?tab=jobs", "/admin/members/{member}?tab=activity",
                                    "/admin/candidates", "/admin/candidates?member=unassigned&resume=no", "/admin/candidates/{candidate}", *["/admin/candidates/{candidate}" + t for t in CANDIDATE_TABS],
                                    "/admin/candidates/{bare}?tab=profile",
+                                   "/admin/candidates?source=salesforce", "/admin/candidates/{salesforce}", "/admin/candidates/{salesforce}?tab=profile",
                                    "/admin/jobs", "/admin/jobs/{job}", "/admin/search", "/admin/search?candidate={candidate}", "/admin/searches", "/admin/searches/{search}", "/admin/assignments",
                                    "/admin/invitations", "/admin/activity", "/admin/settings", "/admin/settings?tab=integrations", "/admin/settings?tab=account"]),
   "tl": ("lead.alpha@example.com", ["/tl/dashboard", "/tl/candidates", "/tl/candidates?member=unassigned&resume=no", "/tl/candidates/{candidate}", *["/tl/candidates/{candidate}" + t for t in CANDIDATE_TABS],
-                                    "/tl/candidates/{bare}?tab=profile", "/tl/members", "/tl/members/{member}", "/tl/members/{member}?tab=candidates", "/tl/members/{member}?tab=jobs",
+                                    "/tl/candidates/{bare}?tab=profile", "/tl/candidates?source=salesforce", "/tl/candidates/{salesforce}",
+                                    "/tl/candidates/{salesforce}?tab=profile", "/tl/members", "/tl/members/{member}", "/tl/members/{member}?tab=candidates", "/tl/members/{member}?tab=jobs",
                                     "/tl/members/{member}?tab=activity", "/tl/search", "/tl/search?candidate={candidate}", "/tl/searches", "/tl/searches/{search}",
                                     "/tl/jobs", "/tl/jobs?tab=jobs", "/tl/jobs/{job}", "/tl/assignments", "/tl/assignments?applied=true", "/tl/analytics", "/tl/invitations", "/tl/settings"]),
   # /member/profile no longer exists as a page of its own: it must land on the account settings.
@@ -108,6 +110,8 @@ with sync_playwright() as pw:
         people.sort(key=lambda c: -c["stats"]["assigned"])
         ids["candidate"] = people[0]["id"] if people else ""
         ids["bare"] = next((c["id"] for c in people if not c["has_resume"]), ids["candidate"])
+        if role != "member":      # a candidate that was brought in from Salesforce (the demo data holds one per team): marker, Salesforce block, resume source
+            ids["salesforce"] = next((c["id"] for c in people if c.get("source") == "salesforce"), "")
         missing = [k for k, v in ids.items() if not v]
         if missing:
             problems += 1
