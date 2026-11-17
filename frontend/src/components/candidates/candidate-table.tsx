@@ -6,6 +6,7 @@ import { Contact, SearchX } from "lucide-react";
 
 import { CandidateActions } from "@/components/candidates/candidate-actions";
 import { CandidateInactiveTag, ResponsibleMember, ResumeTag } from "@/components/candidates/candidate-meta";
+import { SourceTag } from "@/components/candidates/salesforce-panel";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { FilterBar, FilterSelect } from "@/components/shared/filters";
 import { SearchInput } from "@/components/shared/search-input";
@@ -16,6 +17,7 @@ import { useNow } from "@/hooks/use-now";
 import { formatPercent, formatRelative } from "@/lib/format";
 import type { ListState } from "@/lib/list-state";
 import { useCandidates, useTeams, useUsers } from "@/lib/queries";
+import { SOURCE_OPTIONS, useSalesforceStatus, withSource } from "@/lib/salesforce";
 import type { AssignmentStats, Candidate, CandidateListParams, CandidateRow } from "@/lib/types";
 import { toPositiveInt } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
@@ -25,6 +27,7 @@ export const CANDIDATE_LIST_DEFAULTS = {
   team: "",
   member: "",
   resume: "",
+  source: "",
   active: "true",
   sort: "name",
   page: "1",
@@ -137,8 +140,11 @@ export function CandidateTable({
     { enabled: !memberId && Boolean(scopeTeamId), refetchInterval: false },
   );
 
+  // Where the portal is connected to Salesforce, candidates are brought in from there and the list can be narrowed by source.
+  const salesforce = useSalesforceStatus().data?.configured === true;
+
   const unassigned = !memberId && state.member === UNASSIGNED;
-  const params: CandidateListParams = {
+  const base: CandidateListParams = {
     team_id: teamId ?? (isAdmin ? state.team || undefined : undefined),
     assigned_member_id: memberId ?? (unassigned ? undefined : state.member || undefined),
     unassigned: unassigned ? true : undefined,
@@ -149,9 +155,10 @@ export function CandidateTable({
     page: toPositiveInt(state.page, 1),
     page_size: toPositiveInt(state.page_size, 25),
   };
+  const params = withSource(base, state.source);
   const candidates = useCandidates(params);
-  const filtered = Boolean(state.q || state.team || state.member || state.resume || state.active !== "true");
-  const clear = () => setState({ q: "", team: "", member: "", resume: "", active: "true" });
+  const filtered = Boolean(state.q || state.team || state.member || state.resume || state.source || state.active !== "true");
+  const clear = () => setState({ q: "", team: "", member: "", resume: "", source: "", active: "true" });
   const href = (id: string) => `${area}/candidates/${id}`;
 
   const nameCell = (candidate: Candidate) => (
@@ -161,6 +168,7 @@ export function CandidateTable({
           {candidate.name}
         </Link>
         <CandidateInactiveTag candidate={candidate} />
+        <SourceTag candidate={candidate} />
       </span>
       <Contacts candidate={candidate} />
     </div>
@@ -238,6 +246,9 @@ export function CandidateTable({
           />
         )}
         <FilterSelect label="Resume" allLabel="With or without resume" value={state.resume} onChange={(resume) => setState({ resume })} options={RESUME_OPTIONS} />
+        {(salesforce || state.source) && (
+          <FilterSelect label="Source" allLabel="Any source" value={state.source} onChange={(source) => setState({ source })} options={SOURCE_OPTIONS} />
+        )}
         <FilterSelect label="Active or deactivated" value={state.active} onChange={(active) => setState({ active })} options={ACTIVE_OPTIONS} />
         <FilterSelect label="Sort" value={state.sort} onChange={(sort) => setState({ sort })} options={SORTS} />
         {actions && <div className="ml-auto flex flex-wrap gap-2">{actions}</div>}
@@ -265,7 +276,11 @@ export function CandidateTable({
             <EmptyState
               icon={Contact}
               title="No candidates yet"
-              description="Add the first candidate: the person you are finding a job for. Then upload their resume and run a search."
+              description={
+                salesforce
+                  ? "Find a candidate in Salesforce to bring them in. Their details, profile and resume come with them; then choose the responsible member and run a search."
+                  : "Add the first candidate: the person you are finding a job for. Then upload their resume and run a search."
+              }
               action={emptyAction}
             />
           )

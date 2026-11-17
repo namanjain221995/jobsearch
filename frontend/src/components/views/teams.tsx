@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Ellipsis, MailPlus, Pencil, Plus, Power, PowerOff, UserCog, UserMinus, UsersRound } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -9,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { z } from "@/lib/zod";
 
-import { AddCandidateDialog } from "@/components/candidates/candidate-dialog";
+import { useAddCandidate } from "@/components/candidates/add-candidate";
 import { CANDIDATE_LIST_DEFAULTS, CandidateTable } from "@/components/candidates/candidate-table";
 import { InvitationDialog, type InvitationPreset } from "@/components/people/invitation-dialog";
 import { CompletionMeter, MEMBER_LIST_DEFAULTS, MemberTable } from "@/components/people/member-table";
@@ -464,24 +463,12 @@ function TeamMembersTab({ team }: { team: Team }) {
 }
 
 function TeamCandidatesTab({ team }: { team: Team }) {
-  const router = useRouter();
   const listState = useLocalListState(CANDIDATE_LIST_DEFAULTS);
-  const [adding, setAdding] = useState(false);
-  const add = (
-    <Button onClick={() => setAdding(true)} disabled={!team.is_active} title={team.is_active ? undefined : "This team is deactivated"}>
-      <Plus data-icon="inline-start" />
-      Add Candidate
-    </Button>
-  );
+  const add = useAddCandidate({ teamId: team.id, disabledReason: team.is_active ? undefined : "This team is deactivated" });
   return (
     <>
-      <CandidateTable listState={listState} teamId={team.id} actions={add} emptyAction={add} />
-      <AddCandidateDialog
-        open={adding}
-        onOpenChange={setAdding}
-        teamId={team.id}
-        onCreated={(candidate) => router.push(`/admin/candidates/${candidate.id}?tab=profile`)}
-      />
+      <CandidateTable listState={listState} teamId={team.id} actions={add.buttons} emptyAction={add.buttons} />
+      {add.dialogs}
     </>
   );
 }

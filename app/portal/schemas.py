@@ -344,6 +344,7 @@ class ResumeOut(Model):
     uploaded_by: UserRef | None = None
     parsed_profile: dict = {}                      # skills, job_titles, education extracted from the text
     text: str | None = None                        # only on the single-resume endpoints
+    source: Literal["upload", "salesforce"] = "upload"      # uploaded in the portal, or copied from Salesforce
 
 
 # ---------------------------------------------------------------- candidates
@@ -412,6 +413,70 @@ class CandidateOut(Model):
     created_at: datetime
     updated_at: datetime
     stats: AssignmentStats = AssignmentStats()
+    source: Literal["manual", "salesforce"] = "manual"      # typed in, or brought in from Salesforce
+    salesforce_id: str | None = None               # the Person Account id; managers only (null for a Member)
+    salesforce_url: str | None = None              # opens the record in Salesforce; managers only
+    salesforce_synced_at: datetime | None = None   # last import or refresh from Salesforce
+
+
+# ---------------------------------------------------------------- Salesforce (read-only)
+SalesforceId = Annotated[str, Field(pattern=r"^[A-Za-z0-9]{18}$")]
+TeamLeadScope = Literal["all", "own"]
+ResumeSync = Literal["imported", "unchanged", "none", "kept_local", "refused_type", "refused_size", "unreadable", "unavailable"]
+
+
+class SalesforceStatus(Model):
+    configured: bool
+    connected: bool | None = None                  # null when not configured; otherwise a check at most a minute old
+    message: str = ""
+    checked_at: datetime | None = None
+    api_version: str = ""
+    team_lead_scope: TeamLeadScope = "all"
+
+
+class SalesforceCandidate(Model):
+    """A candidate as found in Salesforce (a Person Account), with whether it is already in the portal."""
+    salesforce_id: str
+    name: str
+    email: str = ""
+    phone: str = ""
+    candidate_status: str = ""
+    technology: str = ""
+    niche: str = ""
+    work_authorization: str = ""
+    visa_status: str = ""
+    years_experience: float | None = None
+    preferred_job_type: str = ""
+    preferred_locations: str = ""
+    experience_level: str = ""
+    assigned_recruiter: str = ""
+    marketing_team_lead: str = ""
+    has_resume: bool = False
+    imported_candidate_id: uuid.UUID | None = None      # only when the caller may see that candidate
+    imported_elsewhere: bool = False               # in the portal, in a team the caller cannot see (nothing more is told)
+    importable: bool = True
+
+
+class SalesforceSearchOut(Model):
+    items: list[SalesforceCandidate] = []
+    limit_reached: bool = False                    # there may be more matches: narrow the search
+
+
+class SalesforceImportIn(Model):
+    salesforce_id: SalesforceId
+    team_id: uuid.UUID | None = None               # required for an Admin when the candidate is new; a Team Lead's own team is used
+    assigned_member_id: uuid.UUID | None = None    # an active MEMBER of that team
+
+
+class SalesforceSync(Model):
+    created: bool = False
+    updated_fields: list[str] = []                 # written from Salesforce in this call
+    kept_fields: list[str] = []                    # Salesforce differs, the local edit was kept
+    resume: ResumeSync = "none"
+
+
+class CandidateSyncOut(CandidateOut):
+    sync: SalesforceSync = SalesforceSync()
 
 
 # ---------------------------------------------------------------- jobs
@@ -944,6 +1009,7 @@ class SettingsOut(Model):
     profile_extra_fields: list[ExtraField] = []    # optional extra candidate-profile fields defined by the Admin
     invitation_hours: int = 48
     password_min_length: int = 10                  # from the environment (PASSWORD_MIN_LENGTH); shown, not editable here
+    salesforce_team_lead_scope: TeamLeadScope = "all"      # which Salesforce candidates a Team Lead can find: all, or only their own
 
 
 class SettingsUpdate(Model):
@@ -955,6 +1021,7 @@ class SettingsUpdate(Model):
     deep_search_default: bool | None = None
     disabled_sources: list[str] | None = None
     profile_extra_fields: list[ExtraField] | None = Field(default=None, max_length=20)
+    salesforce_team_lead_scope: TeamLeadScope | None = None
 
     @field_validator("profile_extra_fields")
     @classmethod
@@ -972,6 +1039,7 @@ class IntegrationsOut(Model):
     worker: dict                                   # online, last_seen, browser, active_searches
     email: dict                                    # backend: smtp | console | none
     queue: dict                                    # redis reachable
+    salesforce: SalesforceStatus = SalesforceStatus(configured=False)
 
 
 class HealthOut(Model):

@@ -16,7 +16,7 @@ from ..models import Candidate, CandidateProfile, JobAssignment, Resume, Team, U
 from ..schemas import AssignmentStats, CandidateCreate, CandidateOut, CandidateProfileSummary, CandidateUpdate
 from . import people
 from .audit import audit, notify
-from .common import stats_by, team_ref, teams_by_id, user_ref, users_by_id
+from .common import stats_by, team_ref, teams_by_id, user_ref, users_by_id, viewer
 
 
 async def candidates_out(db: AsyncSession, candidates: list[Candidate]) -> list[CandidateOut]:
@@ -32,8 +32,11 @@ async def candidates_out(db: AsyncSession, candidates: list[Candidate]) -> list[
     users = await users_by_id(db, {c.assigned_member_id for c in candidates} | {c.created_by for c in candidates})
     teams = await teams_by_id(db, {c.team_id for c in candidates})
     out = []
+    seen_by = viewer.get()
+    manager = seen_by is None or seen_by[0] != "MEMBER"       # the Salesforce id and link are for managers
     for c in candidates:
         resume, profile = resumes.get(c.id), profiles.get(c.id)
+        instance = (c.salesforce_snapshot or {}).get("instance_url") if c.salesforce_id and manager else None
         summary = CandidateProfileSummary(
             desired_titles=profile.desired_titles or [], preferred_states=profile.preferred_states or [],
             years_experience=float(profile.years_experience) if profile.years_experience is not None else None,
@@ -45,7 +48,8 @@ async def candidates_out(db: AsyncSession, candidates: list[Candidate]) -> list[
             profile_completion=people.profile_completion(profile, resume is not None)[0], profile_summary=summary,
             last_assigned_at=newest.get(c.id),
             created_by=user_ref(users.get(c.created_by)), created_at=c.created_at, updated_at=c.updated_at,
-            stats=stats.get(c.id) or AssignmentStats()))
+            stats=stats.get(c.id) or AssignmentStats(), source=c.source, salesforce_id=c.salesforce_id if manager else None,
+            salesforce_url=f"{instance}/{c.salesforce_id}" if instance else None, salesforce_synced_at=c.salesforce_synced_at))
     return out
 
 
@@ -60,7 +64,7 @@ async def member_for(db: AsyncSession, principal: Principal, candidate: Candidat
     return member
 
 
-def _hand_over(db: AsyncSession, actor: User, candidate: Candidate, member: User | None, ip: str = "", reason: str = "") -> None:
+def hand_over(db: AsyncSession, actor: User, candidate: Candidate, member: User | None, ip: str = "", reason: str = "") -> None:
     """Set (or clear) the responsible member, with the audit entry and the notification to the new member."""
     previous = candidate.assigned_member_id
     if previous == (member.id if member else None):
@@ -97,7 +101,7 @@ async def create_candidate(db: AsyncSession, principal: Principal, data: Candida
     await people.get_profile(db, candidate.id)
     audit(db, principal.user, "candidate.created", "candidate", candidate.id, team.id, {}, ip)
     if data.assigned_member_id is not None:
-        _hand_over(db, principal.user, candidate, await member_for(db, principal, candidate, data.assigned_member_id), ip)
+        hand_over(db, principal.user, candidate, await member_for(db, principal, candidate, data.assigned_member_id), ip)
     return candidate
 
 
@@ -130,7 +134,7 @@ async def update_candidate(db: AsyncSession, principal: Principal, candidate: Ca
             raise HTTPException(400, "The destination team is deactivated")
         old_team = candidate.team_id
         if "assigned_member_id" not in sent or data.assigned_member_id is None:
-            _hand_over(db, principal.user, candidate, None, ip, "candidate_moved_to_another_team")
+            hand_over(db, principal.user, candidate, None, ip, "candidate_moved_to_another_team")
         candidate.team_id = team.id
         # The candidate's jobs and their history move along, so the new team's lead manages the whole pipeline.
         await db.execute(update(JobAssignment).where(JobAssignment.candidate_id == candidate.id).values(team_id=team.id))
@@ -138,7 +142,7 @@ async def update_candidate(db: AsyncSession, principal: Principal, candidate: Ca
               {"from_team": str(old_team) if old_team else None}, ip)
     if "assigned_member_id" in sent:
         member = await member_for(db, principal, candidate, data.assigned_member_id) if data.assigned_member_id is not None else None
-        _hand_over(db, principal.user, candidate, member, ip)
+        hand_over(db, principal.user, candidate, member, ip)
     if data.is_active is not None and data.is_active != candidate.is_active:
         candidate.is_active = data.is_active                # logical: jobs, searches and history stay
         audit(db, principal.user, "candidate.activated" if data.is_active else "candidate.deactivated", "candidate",

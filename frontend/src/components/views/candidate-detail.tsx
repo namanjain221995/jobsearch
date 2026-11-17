@@ -8,6 +8,7 @@ import { CandidateActions } from "@/components/candidates/candidate-actions";
 import { CandidateInactiveTag, ResponsibleMember, ResumeTag } from "@/components/candidates/candidate-meta";
 import { CandidateProfileCompletion, CandidateProfilePanel } from "@/components/candidates/profile-form";
 import { CandidateResumePanel } from "@/components/candidates/resume-upload";
+import { SalesforcePanel, SourceTag } from "@/components/candidates/salesforce-panel";
 import { InterviewOutcomesChart, PendingVsAppliedChart, StatusDistributionChart } from "@/components/charts/distribution";
 import { PipelineFunnel } from "@/components/charts/pipeline-funnel";
 import { ApplicationsOverTimeChart, WeeklyActivityChart } from "@/components/charts/time-series";
@@ -26,6 +27,7 @@ import { SEARCH_LIST_DEFAULTS, SearchHistoryTable } from "@/components/views/sea
 import { formatDate } from "@/lib/format";
 import { useLocalListState } from "@/lib/list-state";
 import { useCandidate, useCandidateAnalytics } from "@/lib/queries";
+import { isFromSalesforce } from "@/lib/salesforce";
 import type { Candidate } from "@/lib/types";
 import { useUrlState } from "@/lib/url-state";
 
@@ -192,6 +194,7 @@ export function CandidateDetailView({ candidateId }: { candidateId: string }) {
           <>
             <CandidateInactiveTag candidate={candidate} />
             <ResumeTag hasResume={candidate.has_resume} />
+            <SourceTag candidate={candidate} />
           </>
         }
         description={
@@ -238,6 +241,11 @@ export function CandidateDetailView({ candidateId }: { candidateId: string }) {
           <Panel title="Details">
             <CandidateFacts candidate={candidate} memberHref={memberHref} />
           </Panel>
+          {isFromSalesforce(candidate) && (
+            <Panel title="Salesforce" description="This candidate was brought in from Salesforce.">
+              <SalesforcePanel candidate={candidate} />
+            </Panel>
+          )}
           <CandidateAnalyticsPanels candidateId={candidate.id} />
         </TabsContent>
 
@@ -251,7 +259,14 @@ export function CandidateDetailView({ candidateId }: { candidateId: string }) {
               <Panel title="Job preferences" description="What searches for this candidate look for.">
                 <CandidateProfilePanel candidateId={candidate.id} candidateName={candidate.name} />
               </Panel>
-              <Panel title="Resume" description="PDF, DOCX or TXT. Uploading a new file replaces the current one.">
+              <Panel
+                title="Resume"
+                description={
+                  isFromSalesforce(candidate)
+                    ? "PDF, DOCX or TXT. Uploading a new file replaces the current one, and a refresh from Salesforce keeps it until Salesforce has a newer file."
+                    : "PDF, DOCX or TXT. Uploading a new file replaces the current one."
+                }
+              >
                 <CandidateResumePanel candidateId={candidate.id} candidateName={candidate.name} />
               </Panel>
             </div>

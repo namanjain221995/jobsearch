@@ -420,6 +420,8 @@ function Form({ options }: { options: SearchOptions }) {
                 showTeam={isAdmin}
                 max={maxCandidates}
                 onAdd={() => setAdding(true)}
+                salesforce
+                salesforceTeamId={teamId || undefined}
               />
               {candidatesError && <FormMessage>{candidatesError}</FormMessage>}
               {tooManyCandidates && (

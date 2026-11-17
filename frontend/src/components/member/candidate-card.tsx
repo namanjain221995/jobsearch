@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Mail, Phone } from "lucide-react";
 
 import { CandidateInactiveTag, ResumeTag } from "@/components/candidates/candidate-meta";
+import { SourceTag } from "@/components/candidates/salesforce-panel";
 import { formatDate } from "@/lib/format";
 import { memberCandidateHref } from "@/lib/member-candidates";
 import type { AssignmentStats, Candidate } from "@/lib/types";
@@ -124,6 +125,7 @@ export function CandidateCard({ candidate }: { candidate: Candidate }) {
         <div className="flex flex-wrap items-center gap-1.5">
           <CandidateInactiveTag candidate={candidate} />
           <ResumeTag hasResume={Boolean(candidate.has_resume)} short />
+          <SourceTag candidate={candidate} />
         </div>
       </div>
       <CandidateContact candidate={candidate} raised className="text-2sm" />

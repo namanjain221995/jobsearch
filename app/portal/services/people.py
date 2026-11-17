@@ -186,13 +186,15 @@ async def resume_out(db: AsyncSession, resume: Resume, include_text: bool) -> Re
                      has_file=bool(await has_file(db, [resume.id])) and resume_extension(resume.filename) is not None,
                      version=resume.version, truncated=resume.truncated, created_at=resume.created_at,
                      uploaded_by=user_ref(uploader), parsed_profile=resume.parsed_profile or {},
-                     text=resume.text if include_text else None)
+                     text=resume.text if include_text else None, source=resume.source or "upload")
 
 
 async def save_resume(db: AsyncSession, settings: Settings, candidate: Candidate, uploader: User, filename: str, data: bytes,
-                      content_type: str, ip: str = "") -> Resume:
+                      content_type: str, ip: str = "", *, salesforce_content_version_id: str | None = None) -> Resume:
     """Extract the text, store text + structured profile + the uploaded file, and make it the candidate's current
-    resume. Text and file of the replaced version are erased (its metadata stays as history)."""
+    resume. Text and file of the replaced version are erased (its metadata stays as history).
+    With `salesforce_content_version_id` the file is a copy of that Salesforce file (source "salesforce")."""
+    from_salesforce = salesforce_content_version_id is not None
     try:
         text, truncated = await extract_text_safely(filename, data, settings.max_upload_bytes)      # limited child process
     except ResumeError as exc:
@@ -208,13 +210,15 @@ async def save_resume(db: AsyncSession, settings: Settings, candidate: Candidate
         await db.flush()
     resume = Resume(candidate_id=candidate.id, filename=filename[:200], content_type=(content_type or "")[:100], size_bytes=len(data),
                     sha256=hashlib.sha256(data).hexdigest(), text=text, file_data=data, truncated=truncated, version=version,
-                    is_current=True, uploaded_by=uploader.id,
+                    is_current=True, uploaded_by=uploader.id, source="salesforce" if from_salesforce else "upload",
+                    salesforce_content_version_id=salesforce_content_version_id,
                     parsed_profile={"skills": parsed.skills, "job_titles": parsed.job_titles, "education": parsed.education})
     db.add(resume)
     profile = await get_profile(db, candidate.id)
     if not profile.skills and parsed.skills:
         profile.skills = parsed.skills[:60]           # a starting point the Team Lead can correct
-    audit(db, uploader, "resume.uploaded", "candidate", candidate.id, candidate.team_id, {"version": version, "size_bytes": len(data)}, ip)
+    audit(db, uploader, "resume.imported_salesforce" if from_salesforce else "resume.uploaded", "candidate", candidate.id,
+          candidate.team_id, {"version": version, "size_bytes": len(data)}, ip)
     return resume
 
 

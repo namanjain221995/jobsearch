@@ -7,6 +7,7 @@ import { Contact, SearchX } from "lucide-react";
 import { CandidateInactiveTag, ResumeTag } from "@/components/candidates/candidate-meta";
 import { ProfileFacts } from "@/components/candidates/profile-form";
 import { ResumeView } from "@/components/candidates/resume-upload";
+import { SourceTag } from "@/components/candidates/salesforce-panel";
 import { Watermarked } from "@/components/jobs/watermark";
 import { MEMBER_JOB_DEFAULTS, MemberAssignmentList, NoJobsYet } from "@/components/member/assignment-list";
 import { CandidateCard, CandidateContact } from "@/components/member/candidate-card";
@@ -243,6 +244,7 @@ export function MemberCandidateView({ candidateId }: { candidateId: string }) {
           <>
             <CandidateInactiveTag candidate={data} />
             <ResumeTag hasResume={data.has_resume} />
+            <SourceTag candidate={data} />
           </>
         }
         className="mb-4"

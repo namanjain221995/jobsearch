@@ -15,7 +15,10 @@
                 Victor Hale (unassigned and deactivated).
   Every candidate except Diego has a resume whose file can be downloaded (a .txt file). Jordan, Samuel and Aisha have
   jobs in varied statuses, recorded by their responsible member; Hannah's jobs are all still "ASSIGNED".
-  Jordan also has a finished "review" search with nothing assigned from it."""
+  Jordan also has a finished "review" search with nothing assigned from it.
+- Salesforce is replaced by an in-process fake with twelve synthetic candidates (tests/e2e/salesforce_fake.py lists
+  them): search "ch", "am", "de" ... as lead.alpha@example.com. Two are already in the portal: Amara Nwosu in Team
+  Alpha and Elif Demir in Team Beta, both brought in through the real import code when the demo data is seeded."""
 import argparse
 import asyncio
 import hashlib
@@ -43,9 +46,11 @@ from app.portal.search_runner import RunnerDeps, execute_search
 from app.portal.security import utcnow
 from app.portal.services import assignments as assignments_service
 from app.portal.services import jobs as jobs_service
+from app.portal.services import salesforce_sync
 from app.search_engine import SearchEngine
 from tests.conftest import RESUME, FakeAI, FakeBrowser
 from tests.e2e.fixtures import SEEDS, handler
+from tests.e2e.salesforce_fake import IMPORTED_ALPHA, IMPORTED_BETA, FakeSalesforce
 
 URL = os.environ.get("E2E_DATABASE_URL", "postgresql+asyncpg://jobfinder:jobfinder@127.0.0.1:55432/jobfinder_e2e")
 PLAIN = URL.replace("postgresql+asyncpg://", "postgresql://", 1)
@@ -88,7 +93,7 @@ async def prepare_database(reset: bool) -> None:
         await conn.close()
 
 
-async def seed(sessions, deps: RunnerDeps) -> None:
+async def seed(sessions, deps: RunnerDeps, salesforce: FakeSalesforce) -> None:
     hashed = security.hash_password(PASSWORD)
     ids: dict[str, object] = {}
     async with sessions() as db:
@@ -132,6 +137,16 @@ async def seed(sessions, deps: RunnerDeps) -> None:
                                                   "job_titles": ["Machine Learning Engineer", "Software Engineer"], "education": ["B.S. Computer Science"]}))
                 ids[slug] = candidate
         ids["admin"] = admin
+        await db.commit()
+
+    # Two candidates that came from (the fake) Salesforce, one per team, through the real import code.
+    async with sessions() as db:
+        for salesforce_id, lead in ((IMPORTED_ALPHA, ids["lead_alpha"]), (IMPORTED_BETA, ids["lead_beta"])):
+            principal = Principal(await db.get(User, lead.id), None)
+            fetched = salesforce_sync.Fetched(candidate=await salesforce.get_candidate(salesforce_id), instance_url=salesforce.instance_url)
+            await salesforce_sync.fetch_resume(salesforce, deps.settings, fetched, set())
+            candidate = await salesforce_sync.new_candidate(db, principal, fetched, None, None, "")
+            await salesforce_sync.apply(db, deps.settings, principal, candidate, fetched, "", created=True)
         await db.commit()
 
     # Real searches (synthetic network) so results, match explanations and assignments are genuine pipeline output.
@@ -224,7 +239,9 @@ def main() -> None:
                                   ai_factory=lambda: fake_ai, sources=["greenhouse", "lever"], browser=FakeBrowser(available=False))
             engine.limiter.intervals = {}
             holder["deps"] = RunnerDeps(sessions=app_.state.sessions, engine=engine, settings=cfg)
-            await seed(app_.state.sessions, holder["deps"])
+            await app_.state.salesforce.aclose()
+            app_.state.salesforce = FakeSalesforce()          # the demo stack never talks to the real Salesforce
+            await seed(app_.state.sessions, holder["deps"], app_.state.salesforce)
             try:
                 yield
             finally:

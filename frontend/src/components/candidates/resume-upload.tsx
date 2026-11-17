@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type DragEvent } from "react";
-import { Download, FileText, Trash2, Upload } from "lucide-react";
+import { Cloud, Download, FileText, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -22,6 +22,7 @@ import {
   useUploadCandidateResume,
 } from "@/lib/queries";
 import { RESUME_ACCEPT, RESUME_FORMATS, resumeFileProblem } from "@/lib/resume-file";
+import { resumeSource } from "@/lib/salesforce";
 import type { Resume } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -81,16 +82,23 @@ export function ResumeText({ resume }: { resume: Resume }) {
   );
 }
 
+/** The current resume: its file, and where it came from (read from Salesforce, or uploaded in the portal). */
 function ResumeFacts({ resume }: { resume: Resume }) {
+  const fromSalesforce = resumeSource(resume) === "salesforce";
   return (
     <div className="flex min-w-0 items-start gap-2.5">
       <FileText className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-col gap-1">
         <p className="text-sm font-medium break-all">{resume.filename}</p>
         <p className="text-xs text-muted-foreground">
-          Version {resume.version}, {formatBytes(resume.size_bytes)}, uploaded {formatDateTime(resume.created_at)}
+          Version {resume.version}, {formatBytes(resume.size_bytes)},{" "}
+          {fromSalesforce ? "brought in from Salesforce" : "uploaded"} {formatDateTime(resume.created_at)}
           {resume.uploaded_by ? ` by ${resume.uploaded_by.name}` : ""}
         </p>
+        <Tag data-slot="resume-source" data-source={fromSalesforce ? "salesforce" : "upload"}>
+          {fromSalesforce ? <Cloud aria-hidden="true" /> : <Upload aria-hidden="true" />}
+          {fromSalesforce ? "From Salesforce" : "Uploaded here"}
+        </Tag>
       </div>
     </div>
   );

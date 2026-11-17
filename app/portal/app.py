@@ -23,9 +23,10 @@ from .cache import AnalyticsCache
 from .db import make_engine, make_sessionmaker
 from .limits import RequestGuardMiddleware
 from .queue import SearchQueue
-from .routers import admin, assignments, auth, candidates, invitations, jobs, searches, teams, users
+from .routers import admin, assignments, auth, candidates, invitations, jobs, salesforce, searches, teams, users
 from .security import RateLimiter
 from .services.emailer import Emailer
+from .services.salesforce import SalesforceClient
 
 log = logging.getLogger("jobfinder.api")
 access = logging.getLogger("jobfinder.request")
@@ -68,6 +69,8 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
         cache_module.install(app.state.cache)
         app.state.limiter = RateLimiter(client)
         app.state.emailer = Emailer(settings)
+        app.state.salesforce = SalesforceClient(settings)                    # read-only; signs in on first use
+        app.state.salesforce_cache = {}                                      # identical candidate searches, for a few seconds
         app.state.queue = queue if queue is not None else SearchQueue(settings)
         if queue is None:
             await app.state.queue.connect()
@@ -95,6 +98,7 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
         cache_module.install(None)
+        await app.state.salesforce.aclose()
         await app.state.http.aclose()
         if queue is None:
             await app.state.queue.close()
@@ -152,7 +156,7 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
-    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, admin):
+    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin):
         app.include_router(module.router)
     return app
 

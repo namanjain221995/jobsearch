@@ -2,7 +2,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     bootstrap_admin_email: str = ""
     bootstrap_admin_password: str = ""
     bootstrap_admin_name: str = "Administrator"
+
+    # Salesforce (strictly read-only). JWT bearer flow: a connected app's consumer key, the integration user, the
+    # login URL (also the token audience) and the RSA private key (PEM) in base64. All four empty = switched off.
+    sf_client_id: str = ""
+    sf_username: str = ""
+    sf_login_url: str = ""
+    sf_private_key_b64: str = Field(default="", validation_alias=AliasChoices("sf_private_key_b64", "private_key_b64"))
+    salesforce_searches_per_minute: int = 60         # Salesforce candidate searches one user may run per minute
 
     # Portal: team searches.
     max_members_per_search: int = 10
@@ -157,6 +165,10 @@ class Settings(BaseSettings):
     @property
     def secure_cookies(self) -> bool:
         return self.cookie_secure or self.is_production
+
+    @property
+    def salesforce_configured(self) -> bool:
+        return bool(self.sf_client_id and self.sf_username and self.sf_login_url and self.sf_private_key_b64)
 
     @property
     def smtp_configured(self) -> bool:

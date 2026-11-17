@@ -16,6 +16,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, deferred, mapped_column, rel
 ROLES = ("ADMIN", "TEAM_LEAD", "MEMBER")
 ASSIGNMENT_STATUSES = ("ASSIGNED", "VIEWED", "APPLYING", "APPLIED", "INTERVIEWING", "OFFER", "REJECTED", "WITHDRAWN", "SKIPPED")
 SEARCH_STATUSES = ("queued", "running", "completed", "partial", "failed", "cancelled")
+RESUME_SOURCES = ("upload", "salesforce")
 VERIFICATION_STATUSES = ("verified", "unverified", "failed", "closed")
 
 
@@ -150,12 +151,23 @@ class Candidate(Base):
     assigned_member_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))   # the responsible member
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_text("true"), nullable=False)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    # Set when the candidate was brought in from Salesforce (a Person Account's 18-character id). One Salesforce
+    # candidate exists at most once in the whole portal. The snapshot holds the values last written from Salesforce,
+    # so a refresh can tell a local edit from an unchanged field (see services/salesforce_sync.py).
+    salesforce_id: Mapped[str | None] = mapped_column(String(18))
+    salesforce_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    salesforce_snapshot: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
     created_at: Mapped[datetime] = created()
     updated_at: Mapped[datetime] = updated()
     __table_args__ = (
         Index("ix_candidates_team_id", "team_id"),
         Index("ix_candidates_assigned_member_id", "assigned_member_id"),
+        Index("uq_candidates_salesforce_id", "salesforce_id", unique=True, postgresql_where=sa_text("salesforce_id IS NOT NULL")),
     )
+
+    @property
+    def source(self) -> str:
+        return "salesforce" if self.salesforce_id else "manual"
 
 
 class CandidateProfile(Base):
@@ -196,8 +208,11 @@ class Resume(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     is_current: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_text("true"), nullable=False)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    source: Mapped[str] = mapped_column(String(20), default="upload", server_default="upload", nullable=False)     # upload | salesforce
+    salesforce_content_version_id: Mapped[str | None] = mapped_column(String(18))     # the Salesforce file version this resume is a copy of
     created_at: Mapped[datetime] = created()
     __table_args__ = (
+        CheckConstraint(_in("source", RESUME_SOURCES), name="ck_resumes_source"),
         Index("ix_resumes_candidate_id", "candidate_id"),
         Index("uq_resumes_current", "candidate_id", unique=True, postgresql_where=sa_text("is_current")),
     )

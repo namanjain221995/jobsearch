@@ -107,6 +107,37 @@ An Admin can add up to 20 extra profile fields under Settings (text, number, yes
 
 When this model was introduced (migration `c4d2a9e71f36`), every member account that held job-seeker data (a resume, searches, jobs, or a profile with at least one field filled in) became a candidate carrying the same name, in the same team, assigned to that same member, so nothing was lost; a member who only had the empty profile created at invitation stayed a plain member; `docs/candidate-api.md` describes the API.
 
+## Salesforce (read-only)
+
+Candidates already exist in the company's Salesforce as Person Accounts, so a Team Lead or Admin does not type them in again. In the Find Jobs form and on the Candidates page they type a name (or e-mail or phone) into a search box, the matching Salesforce candidates appear with their key details, and choosing one brings it into the portal: details, the job-search profile and the newest active resume file. The Candidates page can list the candidates that were brought in this way (`source=salesforce`). Creating a candidate by hand and uploading or replacing a resume in the portal work as before. `docs/salesforce-api.md` is the API contract, with the mapping and the refresh rule.
+
+**The portal only reads Salesforce.** The only requests it can send are `GET` requests to the REST data API and the one sign-in `POST` to `/services/oauth2/token`. This is built into the client (`app/portal/services/salesforce.py`): every call goes through one function that refuses any other method, and the HTTP client itself refuses any request that is neither a `GET` nor that sign-in. Nothing is ever created, changed or deleted in Salesforce.
+
+Settings (all in `.env`; leave them empty to switch the integration off):
+
+| Variable | Purpose |
+| --- | --- |
+| `SF_CLIENT_ID` | consumer key of the connected app |
+| `SF_USERNAME` | user name of the integration user (a read-only profile is enough and recommended) |
+| `SF_LOGIN_URL` | `https://login.salesforce.com`, `https://test.salesforce.com` or the org's My Domain URL; also the audience of the sign-in token |
+| `PRIVATE_KEY_B64` (or `SF_PRIVATE_KEY_B64`) | the connected app's RSA private key in PEM, base64 on one line |
+| `SALESFORCE_SEARCHES_PER_MINUTE` | searches one signed-in user may run per minute (default 60) |
+
+Sign-in is the OAuth JWT bearer flow (RS256). The access token is kept in memory only, reused until shortly before it expires and renewed once when Salesforce answers 401. The API version (`v68.0`) is one constant. Requests have timeouts and at most four run at the same time. Identical searches are answered from memory for ten seconds. A Salesforce failure is reported as 502 or 503 with a plain sentence; Salesforce's own error text is never passed on. Logs hold an operation name, a status code and Salesforce's error code: never a query, a name, a token or a response body. Admin → Integrations shows whether Salesforce is configured and reachable (`GET /api/salesforce/status`, checked at most once a minute).
+
+What is read, with an explicit field list in every query (`FIELDS(ALL)` is never used, and no record is ever fetched whole):
+
+- Account (Person Accounts only): `Id`, `Name`, `PersonEmail`, `Phone`, `Candidate_Status__c`, `Technology__c`, `Niche__c`, `Niches__r.Name`, `Preferred_Job_Positions__c`, `Preferred_Job_Locations__c`, `Preferred_Job_Type__c`, `Total_Years_of_Experience__c`, `Work_Authorization__c`, `Current_Visa_Status__c`, `Sponsorship_Required_For_VISA__c`, `Targeted_Experience_Level__c`, `Assigned_Recruiter__r.Name`, `Assigned_Marketing_Team_Lead__r.Name`, `Assigned_Marketing_Team_Lead__r.Email__c`, `LastModifiedDate`.
+- `Resume__c`: `Id`, `Candidate__c`, `Is_Active__c`, `Resume_Status__c`, `CreatedDate`; of the file attached to it (`ContentDocumentLink` → `ContentDocument`) the extension, size, latest version id and modification date; and the file's bytes (`ContentVersion/<id>/VersionData`). Only the newest active resume with status Uploaded or Approved, only PDF and DOCX, only up to the upload limit (10 MB), and only when the bytes are what the extension says. The file then goes through the same pipeline as an uploaded resume.
+
+What is never read: the Account object also holds identity-document numbers, bank details, account passwords, the date of birth and protected personal characteristics. None of these fields is named anywhere in the code. A whitelist in the client lists every field that may be read (a few more than are used today); a query naming any other field cannot be built, and a test fails if any query sent contains a field outside that list.
+
+Who may search: Admins and Team Leads. Members never reach a Salesforce endpoint (403). The Admin setting `salesforce_team_lead_scope` (Settings, `PATCH /api/settings`) decides what a Team Lead finds: `all` (default) every Salesforce candidate, or `own` only candidates whose `Assigned_Marketing_Team_Lead__r.Email__c` equals the Team Lead's sign-in e-mail (compared without regard to case). The same rule applies to import and refresh. An Admin always sees all. One Salesforce candidate exists at most once in the portal: a Team Lead who picks a candidate that another team already brought in is told only that it is already in the portal.
+
+Refreshing a candidate from Salesforce does not destroy local work: a field is written again only while it is empty or still holds the value Salesforce gave it last time, an empty Salesforce value never erases anything, and a resume uploaded in the portal is replaced only by a Salesforce file that was changed after that upload. The original text of the preferred locations is kept in the candidate's notes.
+
+The database part is migration `e7b31f08a5c2` (`candidates.salesforce_id`, unique when set, `salesforce_synced_at`, `salesforce_snapshot`; `resumes.source`, `resumes.salesforce_content_version_id`). Run `alembic upgrade head` before starting an API or worker that has this code.
+
 ## Searching and assigning
 
 1. A Team Lead (or Admin) picks candidates, optionally overrides the search criteria, and chooses **Find & Assign Matching Jobs** or **Search first, review, then assign**. The result count is per candidate. A candidate needs no responsible member to be searched.
@@ -227,6 +258,7 @@ See `.env.example` for every variable. The ones you are most likely to set:
 | `MAX_ACTIVE_SEARCHES_PER_USER`, `MAX_ACTIVE_SEARCHES` | Queued and running searches per person (3) and in total (12) |
 | `MAX_MEMBERS_PER_SEARCH`, `MAX_RESULTS_PER_SEARCH_RUN`, `MAX_AI_CALLS_PER_SEARCH` | Cost and concurrency limits (`MAX_MEMBERS_PER_SEARCH` counts candidates per search; the name is historical) |
 | `API_ORIGIN` (frontend) | Where Next.js forwards `/api/*` (default `http://127.0.0.1:8010`) |
+| `SF_CLIENT_ID`, `SF_USERNAME`, `SF_LOGIN_URL`, `PRIVATE_KEY_B64` | Salesforce, read-only (see "Salesforce (read-only)"); empty = off |
 | `ANALYTICS_CACHE_SECONDS` | Lifetime of cached team and organization analytics in Redis (default 60, 0 turns the cache off) |
 | `LOG_FORMAT`, `LOG_LEVEL` | `json` (default, one object per line) or `text`; `INFO` by default |
 
@@ -308,7 +340,7 @@ switched off in the commands above.
 
 ## API
 
-Interactive documentation: `http://127.0.0.1:8010/api/docs`. `docs/candidate-api.md` lists the candidate endpoints and every field renamed when candidates were introduced. The contract is exported with `python -m app.portal.export_openapi > openapi.json`. Errors have one shape: `{"error": "...", "detail": "...", "fields": {...}}`.
+Interactive documentation: `http://127.0.0.1:8010/api/docs`. `docs/candidate-api.md` lists the candidate endpoints and every field renamed when candidates were introduced. `docs/salesforce-api.md` describes the Salesforce search, import and refresh. The contract is exported with `python -m app.portal.export_openapi > openapi.json`. Errors have one shape: `{"error": "...", "detail": "...", "fields": {...}}`.
 
 ## The earlier single-user app
 

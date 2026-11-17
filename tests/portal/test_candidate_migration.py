@@ -151,6 +151,8 @@ async def run_scenario() -> None:
     await conn.close()
 
     # ---- the migrated rows through the API, under the new model
+    alembic("upgrade", "head")              # the API needs today's schema; later revisions only add columns, and the
+    #                                         downgrade below passes back through them
     settings = Settings(_env_file=None, database_url=URL, openai_api_key="", anthropic_api_key="", public_base_url="http://testserver",
                         prewarm_on_start=False, browser_enabled=False, email_backend="", smtp_host="", app_env="test")
 

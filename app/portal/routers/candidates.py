@@ -14,11 +14,12 @@ from sqlalchemy.orm import undefer
 from ...config import Settings
 from ..deps import Principal, any_user, candidate_in_scope, candidate_scope, client_ip, get_db, get_settings, managers
 from ..models import ApplicationEvent, Candidate, JobAssignment, JobPosting, Resume
-from ..schemas import (ActivityItem, CandidateAnalytics, CandidateCreate, CandidateOut, CandidateUpdate, Day, Message, Page, ProfileIn,
-                       ProfileOut, ResumeOut)
+from ..schemas import (ActivityItem, CandidateAnalytics, CandidateCreate, CandidateOut, CandidateSyncOut, CandidateUpdate, Day, Message,
+                       Page, ProfileIn, ProfileOut, ResumeOut, SalesforceImportIn)
 from ..services import analytics, people
 from ..services import assignments as assignments_service
 from ..services import candidates as service
+from ..services import salesforce_sync as sync
 from ..services import settings as settings_service
 from ..services.audit import audit
 from ..services.common import candidate_ref, paginate, user_ref, users_by_id
@@ -38,6 +39,7 @@ async def list_candidates(principal: Principal = Depends(any_user), db: AsyncSes
                           team_id: uuid.UUID | None = None, assigned_member_id: uuid.UUID | None = None,
                           unassigned: bool | None = None, active: bool | None = None, has_resume: bool | None = None,
                           q: str | None = Query(default=None, max_length=100),
+                          source: str | None = Query(default=None, pattern="^(manual|salesforce)$"),
                           sort: str = Query(default="name", pattern="^(name|recent|updated|newest_job|not_applied)$"), page: int = 1, page_size: int = 50):
     """Filters only ever narrow the caller's scope. `unassigned=true`: candidates without a responsible member;
     `unassigned=false`: those with one. Sorts: `name`, `recent` (created), `updated`, `newest_job` (newest active
@@ -54,6 +56,8 @@ async def list_candidates(principal: Principal = Depends(any_user), db: AsyncSes
     if has_resume is not None:
         current = exists().where(Resume.candidate_id == Candidate.id, Resume.is_current)
         stmt = stmt.where(current if has_resume else ~current)
+    if source is not None:                               # `salesforce`: the candidates brought in from Salesforce
+        stmt = stmt.where(Candidate.salesforce_id.is_not(None) if source == "salesforce" else Candidate.salesforce_id.is_(None))
     if q and q.strip():
         like = f"%{q.strip()}%"
         stmt = stmt.where(or_(Candidate.name.ilike(like), Candidate.email.ilike(like), Candidate.phone.ilike(like)))
@@ -71,6 +75,64 @@ async def create_candidate(data: CandidateCreate, request: Request, principal: P
     out = (await service.candidates_out(db, [candidate]))[0]
     await db.commit()
     return out
+
+
+# ---------------------------------------------------------------- Salesforce (read-only source)
+async def _synced(db: AsyncSession, request: Request, settings: Settings, principal: Principal, candidate: Candidate | None,
+                  fetched: sync.Fetched, data: SalesforceImportIn | None) -> CandidateSyncOut:
+    """Read the resume from Salesforce, then write everything in one transaction."""
+    client, ip = request.app.state.salesforce, client_ip(request)
+    await sync.fetch_resume(client, settings, fetched, await sync.known_versions(db, candidate.id) if candidate else set())
+    fetched.instance_url = getattr(client, "instance_url", "") or ""
+    created = candidate is None
+    if candidate is None:
+        candidate = await sync.new_candidate(db, principal, fetched, data.team_id, data.assigned_member_id, ip)
+    result = await sync.apply(db, settings, principal, candidate, fetched, ip, created=created)
+    await db.flush()
+    await db.refresh(candidate)
+    out = (await service.candidates_out(db, [candidate]))[0]
+    await db.commit()
+    return CandidateSyncOut(**out.model_dump(), sync=result)
+
+
+@router.post("/import-salesforce", response_model=CandidateSyncOut, status_code=201,
+             responses={200: {"model": CandidateSyncOut, "description": "The candidate was already in the portal and has been refreshed"},
+                        404: {"description": "No such Salesforce candidate (or not one this Team Lead may find)"},
+                        409: {"description": "Already in the portal, in a team the caller cannot see"},
+                        502: {"description": "Salesforce answered with an error"}, 503: {"description": "Salesforce is not configured or not reachable"}})
+async def import_salesforce_candidate(data: SalesforceImportIn, request: Request, response: Response,
+                                      principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db),
+                                      settings: Settings = Depends(get_settings)):
+    """Bring a Salesforce candidate (a Person Account) into the portal: details, mapped job-search profile and the
+    newest active resume file. Salesforce is only read. Already in the caller's scope: refreshed and returned (200).
+    In another team: 409 for a Team Lead, with no detail. A resume that cannot be taken over (wrong type, too
+    large, unreadable) does not stop the import: `sync.resume` says what happened."""
+    if principal.is_team_lead and not principal.user.team_id:
+        raise HTTPException(403, "You do not have access to this resource")
+    only_of = await sync.team_lead_filter(db, settings, principal)
+    found = await sync.fetch_candidate(request.app.state.salesforce, settings, data.salesforce_id, only_of)
+    candidate = await sync.existing(db, found.id)
+    if candidate is not None and not sync.can_see_local(principal, candidate.team_id):
+        raise HTTPException(409, "This candidate is already in the portal.")
+    out = await _synced(db, request, settings, principal, candidate, sync.Fetched(candidate=found), data)
+    response.status_code = 201 if out.sync.created else 200
+    return out
+
+
+@router.post("/{candidate_id}/salesforce-refresh", response_model=CandidateSyncOut,
+             responses={404: {"description": "No such candidate, or the Salesforce record is gone"},
+                        409: {"description": "The candidate did not come from Salesforce"},
+                        502: {"description": "Salesforce answered with an error"}, 503: {"description": "Salesforce is not configured or not reachable"}})
+async def refresh_candidate_from_salesforce(candidate_id: uuid.UUID, request: Request, principal: Principal = Depends(managers),
+                                            db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
+    """Read details, profile and resume again. A field changed in the portal since the last sync is kept, and a
+    resume uploaded in the portal is only replaced by a Salesforce file that is newer than it."""
+    candidate = await candidate_in_scope(db, principal, candidate_id, write=True)
+    if not candidate.salesforce_id:
+        raise HTTPException(409, "This candidate did not come from Salesforce")
+    only_of = await sync.team_lead_filter(db, settings, principal)
+    found = await sync.fetch_candidate(request.app.state.salesforce, settings, candidate.salesforce_id, only_of)
+    return await _synced(db, request, settings, principal, candidate, sync.Fetched(candidate=found), None)
 
 
 @router.get("/{candidate_id}", response_model=CandidateOut)

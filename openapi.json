@@ -1098,6 +1098,49 @@
       "title": "Resume Has File",
       "type": "boolean"
      },
+     "salesforce_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salesforce Id"
+     },
+     "salesforce_synced_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salesforce Synced At"
+     },
+     "salesforce_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salesforce Url"
+     },
+     "source": {
+      "default": "manual",
+      "enum": [
+       "manual",
+       "salesforce"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
      "stats": {
       "$ref": "#/components/schemas/AssignmentStats",
       "default": {
@@ -1241,6 +1284,188 @@
      "stats"
     ],
     "title": "CandidateRow",
+    "type": "object"
+   },
+   "CandidateSyncOut": {
+    "properties": {
+     "assigned_member": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "email": {
+      "default": "",
+      "title": "Email",
+      "type": "string"
+     },
+     "has_resume": {
+      "default": false,
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "is_active": {
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "last_assigned_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Assigned At"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "notes": {
+      "default": "",
+      "title": "Notes",
+      "type": "string"
+     },
+     "phone": {
+      "default": "",
+      "title": "Phone",
+      "type": "string"
+     },
+     "profile_completion": {
+      "default": 0,
+      "title": "Profile Completion",
+      "type": "integer"
+     },
+     "profile_summary": {
+      "$ref": "#/components/schemas/CandidateProfileSummary",
+      "default": {
+       "desired_titles": [],
+       "preferred_states": [],
+       "work_authorization": "Other / Prefer Not to Say"
+      }
+     },
+     "resume_has_file": {
+      "default": false,
+      "title": "Resume Has File",
+      "type": "boolean"
+     },
+     "salesforce_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salesforce Id"
+     },
+     "salesforce_synced_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salesforce Synced At"
+     },
+     "salesforce_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salesforce Url"
+     },
+     "source": {
+      "default": "manual",
+      "enum": [
+       "manual",
+       "salesforce"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats",
+      "default": {
+       "applied": 0,
+       "assigned": 0,
+       "closed": 0,
+       "completion_rate": 0.0,
+       "interviews": 0,
+       "link_opens": 0,
+       "not_applied": 0,
+       "offers": 0,
+       "viewed": 0
+      }
+     },
+     "sync": {
+      "$ref": "#/components/schemas/SalesforceSync",
+      "default": {
+       "created": false,
+       "kept_fields": [],
+       "resume": "none",
+       "updated_fields": []
+      }
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "is_active",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "CandidateSyncOut",
     "type": "object"
    },
    "CandidateUpdate": {
@@ -1566,6 +1791,15 @@
       "additionalProperties": true,
       "title": "Queue",
       "type": "object"
+     },
+     "salesforce": {
+      "$ref": "#/components/schemas/SalesforceStatus",
+      "default": {
+       "api_version": "",
+       "configured": false,
+       "message": "",
+       "team_lead_scope": "all"
+      }
      },
      "sources": {
       "items": {
@@ -4616,6 +4850,15 @@
       "title": "Size Bytes",
       "type": "integer"
      },
+     "source": {
+      "default": "upload",
+      "enum": [
+       "upload",
+       "salesforce"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
      "text": {
       "anyOf": [
        {
@@ -4656,6 +4899,277 @@
      "created_at"
     ],
     "title": "ResumeOut",
+    "type": "object"
+   },
+   "SalesforceCandidate": {
+    "description": "A candidate as found in Salesforce (a Person Account), with whether it is already in the portal.",
+    "properties": {
+     "assigned_recruiter": {
+      "default": "",
+      "title": "Assigned Recruiter",
+      "type": "string"
+     },
+     "candidate_status": {
+      "default": "",
+      "title": "Candidate Status",
+      "type": "string"
+     },
+     "email": {
+      "default": "",
+      "title": "Email",
+      "type": "string"
+     },
+     "experience_level": {
+      "default": "",
+      "title": "Experience Level",
+      "type": "string"
+     },
+     "has_resume": {
+      "default": false,
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "importable": {
+      "default": true,
+      "title": "Importable",
+      "type": "boolean"
+     },
+     "imported_candidate_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Imported Candidate Id"
+     },
+     "imported_elsewhere": {
+      "default": false,
+      "title": "Imported Elsewhere",
+      "type": "boolean"
+     },
+     "marketing_team_lead": {
+      "default": "",
+      "title": "Marketing Team Lead",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "niche": {
+      "default": "",
+      "title": "Niche",
+      "type": "string"
+     },
+     "phone": {
+      "default": "",
+      "title": "Phone",
+      "type": "string"
+     },
+     "preferred_job_type": {
+      "default": "",
+      "title": "Preferred Job Type",
+      "type": "string"
+     },
+     "preferred_locations": {
+      "default": "",
+      "title": "Preferred Locations",
+      "type": "string"
+     },
+     "salesforce_id": {
+      "title": "Salesforce Id",
+      "type": "string"
+     },
+     "technology": {
+      "default": "",
+      "title": "Technology",
+      "type": "string"
+     },
+     "visa_status": {
+      "default": "",
+      "title": "Visa Status",
+      "type": "string"
+     },
+     "work_authorization": {
+      "default": "",
+      "title": "Work Authorization",
+      "type": "string"
+     },
+     "years_experience": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Years Experience"
+     }
+    },
+    "required": [
+     "salesforce_id",
+     "name"
+    ],
+    "title": "SalesforceCandidate",
+    "type": "object"
+   },
+   "SalesforceImportIn": {
+    "properties": {
+     "assigned_member_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assigned Member Id"
+     },
+     "salesforce_id": {
+      "pattern": "^[A-Za-z0-9]{18}$",
+      "title": "Salesforce Id",
+      "type": "string"
+     },
+     "team_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Id"
+     }
+    },
+    "required": [
+     "salesforce_id"
+    ],
+    "title": "SalesforceImportIn",
+    "type": "object"
+   },
+   "SalesforceSearchOut": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SalesforceCandidate"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit_reached": {
+      "default": false,
+      "title": "Limit Reached",
+      "type": "boolean"
+     }
+    },
+    "title": "SalesforceSearchOut",
+    "type": "object"
+   },
+   "SalesforceStatus": {
+    "properties": {
+     "api_version": {
+      "default": "",
+      "title": "Api Version",
+      "type": "string"
+     },
+     "checked_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Checked At"
+     },
+     "configured": {
+      "title": "Configured",
+      "type": "boolean"
+     },
+     "connected": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Connected"
+     },
+     "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+     },
+     "team_lead_scope": {
+      "default": "all",
+      "enum": [
+       "all",
+       "own"
+      ],
+      "title": "Team Lead Scope",
+      "type": "string"
+     }
+    },
+    "required": [
+     "configured"
+    ],
+    "title": "SalesforceStatus",
+    "type": "object"
+   },
+   "SalesforceSync": {
+    "properties": {
+     "created": {
+      "default": false,
+      "title": "Created",
+      "type": "boolean"
+     },
+     "kept_fields": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Kept Fields",
+      "type": "array"
+     },
+     "resume": {
+      "default": "none",
+      "enum": [
+       "imported",
+       "unchanged",
+       "none",
+       "kept_local",
+       "refused_type",
+       "refused_size",
+       "unreadable",
+       "unavailable"
+      ],
+      "title": "Resume",
+      "type": "string"
+     },
+     "updated_fields": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Updated Fields",
+      "type": "array"
+     }
+    },
+    "title": "SalesforceSync",
     "type": "object"
    },
    "SearchCreate": {
@@ -5393,6 +5907,15 @@
       "title": "Profile Extra Fields",
       "type": "array"
      },
+     "salesforce_team_lead_scope": {
+      "default": "all",
+      "enum": [
+       "all",
+       "own"
+      ],
+      "title": "Salesforce Team Lead Scope",
+      "type": "string"
+     },
      "watermark_enabled": {
       "default": true,
       "title": "Watermark Enabled",
@@ -5508,6 +6031,21 @@
        }
       ],
       "title": "Profile Extra Fields"
+     },
+     "salesforce_team_lead_scope": {
+      "anyOf": [
+       {
+        "enum": [
+         "all",
+         "own"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salesforce Team Lead Scope"
      },
      "watermark_enabled": {
       "anyOf": [
@@ -7706,6 +8244,23 @@
      },
      {
       "in": "query",
+      "name": "source",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(manual|salesforce)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Source"
+      }
+     },
+     {
+      "in": "query",
       "name": "sort",
       "required": false,
       "schema": {
@@ -7798,6 +8353,70 @@
      }
     },
     "summary": "Create Candidate",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/import-salesforce": {
+   "post": {
+    "description": "Bring a Salesforce candidate (a Person Account) into the portal: details, mapped job-search profile and the\nnewest active resume file. Salesforce is only read. Already in the caller's scope: refreshed and returned (200).\nIn another team: 409 for a Team Lead, with no detail. A resume that cannot be taken over (wrong type, too\nlarge, unreadable) does not stop the import: `sync.resume` says what happened.",
+    "operationId": "import_salesforce_candidate_api_candidates_import_salesforce_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SalesforceImportIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CandidateSyncOut"
+        }
+       }
+      },
+      "description": "The candidate was already in the portal and has been refreshed"
+     },
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CandidateSyncOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "404": {
+      "description": "No such Salesforce candidate (or not one this Team Lead may find)"
+     },
+     "409": {
+      "description": "Already in the portal, in a team the caller cannot see"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     },
+     "502": {
+      "description": "Salesforce answered with an error"
+     },
+     "503": {
+      "description": "Salesforce is not configured or not reachable"
+     }
+    },
+    "summary": "Import Salesforce Candidate",
     "tags": [
      "candidates"
     ]
@@ -8315,6 +8934,62 @@
      }
     },
     "summary": "Download Candidate Resume",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/salesforce-refresh": {
+   "post": {
+    "description": "Read details, profile and resume again. A field changed in the portal since the last sync is kept, and a\nresume uploaded in the portal is only replaced by a Salesforce file that is newer than it.",
+    "operationId": "refresh_candidate_from_salesforce_api_candidates__candidate_id__salesforce_refresh_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CandidateSyncOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "404": {
+      "description": "No such candidate, or the Salesforce record is gone"
+     },
+     "409": {
+      "description": "The candidate did not come from Salesforce"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     },
+     "502": {
+      "description": "Salesforce answered with an error"
+     },
+     "503": {
+      "description": "Salesforce is not configured or not reachable"
+     }
+    },
+    "summary": "Refresh Candidate From Salesforce",
     "tags": [
      "candidates"
     ]
@@ -9196,6 +9871,102 @@
     "summary": "Read Notification",
     "tags": [
      "admin"
+    ]
+   }
+  },
+  "/api/salesforce/candidates": {
+   "get": {
+    "description": "Person Accounts whose name, e-mail or phone contains `q`. Fewer than two characters: nothing, and Salesforce\nis not asked. Under the setting `salesforce_team_lead_scope = own` a Team Lead only finds candidates whose\nmarketing team lead in Salesforce has the Team Lead's own sign-in e-mail address.",
+    "operationId": "search_salesforce_candidates_api_salesforce_candidates_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 80,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "default": "active",
+       "pattern": "^(active|all)$",
+       "title": "Status",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 10,
+       "maximum": 25,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SalesforceSearchOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Salesforce Candidates",
+    "tags": [
+     "salesforce"
+    ]
+   }
+  },
+  "/api/salesforce/status": {
+   "get": {
+    "description": "Whether Salesforce is set up and answering (checked at most once a minute). Never fails because of Salesforce.",
+    "operationId": "salesforce_status_api_salesforce_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SalesforceStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Salesforce Status",
+    "tags": [
+     "salesforce"
     ]
    }
   },

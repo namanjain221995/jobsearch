@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { ResumeTag } from "@/components/candidates/candidate-meta";
 import { MemberSelect } from "@/components/candidates/member-select";
+import { resultKeys, SalesforceImport } from "@/components/candidates/salesforce-import";
 import { FormMessage } from "@/components/shared/form-fields";
 import { SearchInput } from "@/components/shared/search-input";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/shared/states";
@@ -15,6 +16,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/api";
 import { useCandidates, useUpdateCandidate, useUploadCandidateResume } from "@/lib/queries";
 import { RESUME_ACCEPT, resumeFileProblem } from "@/lib/resume-file";
+import { syncResumeSentence, useSalesforceStatus, type SalesforceSync } from "@/lib/salesforce";
 import type { Candidate } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +47,10 @@ const MAX_PAGE_SIZE = 200;
  * works the same for five candidates or five thousand; the selection is kept separately,
  * so a chosen candidate stays chosen when the search text changes.
  * A Team Lead only ever receives their own team's candidates from the API.
+ *
+ * With `salesforce` the same search box also looks in Salesforce: the list then has two groups,
+ * "In the portal" and "From Salesforce", and choosing a person from the second brings them into
+ * the portal and ticks them. When the portal is not connected to Salesforce the list is as before.
  */
 export function CandidatePicker({
   selected,
@@ -53,6 +59,8 @@ export function CandidatePicker({
   showTeam = false,
   max,
   onAdd,
+  salesforce = false,
+  salesforceTeamId,
   className,
 }: {
   selected: ReadonlyMap<string, PickedCandidate>;
@@ -64,9 +72,17 @@ export function CandidatePicker({
   max?: number;
   /** Shows "Add Candidate" beside the search box. */
   onAdd?: () => void;
+  /** Also search Salesforce, and bring a person chosen there into the portal. */
+  salesforce?: boolean;
+  /** Admin: the team already chosen in the form around this, which a person from Salesforce is brought into. */
+  salesforceTeamId?: string;
   className?: string;
 }) {
   const groupId = useId();
+  const portalTitleId = useId();
+  const connection = useSalesforceStatus(salesforce);
+  // Two groups whenever the Salesforce one has something to show (results, or why there are none).
+  const grouped = salesforce && (connection.isError || connection.data?.configured === true);
   const [query, setQuery] = useState("");
   const [pageSize, setPageSize] = useState(PAGE_STEP);
   const candidates = useCandidates(
@@ -84,6 +100,25 @@ export function CandidatePicker({
 
   const items = candidates.data?.items ?? [];
   const allShownSelected = items.length > 0 && items.every((candidate) => selected.has(candidate.id));
+  const selectedIds = new Set(selected.keys());
+
+  /** A person chosen under "From Salesforce": now a portal candidate, brought in just now or earlier. */
+  const takeFromSalesforce = (candidate: Candidate, how: "imported" | "existing", sync?: SalesforceSync) => {
+    if (!candidate.is_active) {
+      return `${candidate.name} is deactivated in the portal. Reactivate them on the Candidates page to search for them.`;
+    }
+    if (!selected.has(candidate.id)) {
+      if (atLimit) return `${candidate.name} is in the portal, but this list already holds ${max} candidates. Remove one to choose them.`;
+      onChange(new Map(selected).set(candidate.id, toPicked(candidate)));
+    }
+    if (how === "imported") {
+      toast.success(`${candidate.name} brought in from Salesforce`, {
+        description: candidate.has_resume
+          ? "Details, profile and resume are in the portal."
+          : `${syncResumeSentence(sync?.resume) || "No resume came with them."} Upload one under Selected candidates.`,
+      });
+    }
+  };
 
   const selectShown = () => {
     const next = new Map(selected);
@@ -95,9 +130,15 @@ export function CandidatePicker({
   };
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div className={cn("flex flex-col gap-2", className)} onKeyDown={resultKeys}>
       <div className="flex flex-wrap items-center gap-2">
-        <SearchInput label="Search candidates" placeholder="Search name, e-mail or phone" value={query} onChange={setQuery} className="sm:w-72" />
+        <SearchInput
+          label="Search candidates"
+          placeholder="Search name, e-mail or phone"
+          value={query}
+          onChange={setQuery}
+          className="sm:w-72"
+        />
         <span className="text-2sm text-muted-foreground tabular-nums" aria-live="polite">
           {selected.size} selected{max !== undefined ? ` of ${max} allowed` : ""}
         </span>
@@ -113,13 +154,18 @@ export function CandidatePicker({
           {onAdd && (
             <Button type="button" variant="outline" size="sm" onClick={onAdd}>
               <Plus data-icon="inline-start" />
-              Add Candidate
+              {grouped ? "Add Manually" : "Add Candidate"}
             </Button>
           )}
         </div>
       </div>
 
-      <div role="group" aria-label="Candidates" className="max-h-72 overflow-y-auto overscroll-contain rounded-lg border bg-card">
+      {grouped && (
+        <h4 id={portalTitleId} className="font-label text-sm">
+          In the portal
+        </h4>
+      )}
+      <div role="group" aria-label={grouped ? "Candidates in the portal" : "Candidates"} className="max-h-72 overflow-y-auto overscroll-contain rounded-lg border bg-card">
         {candidates.isPending ? (
           <LoadingSkeleton variant="rows" count={4} />
         ) : candidates.isError ? (
@@ -128,10 +174,18 @@ export function CandidatePicker({
           <EmptyState
             compact
             icon={Contact}
-            title={query ? "No candidates match this search" : "No candidates to choose from"}
-            description={query ? "Check the spelling or clear the search." : "Add a candidate first: the person you are finding a job for."}
+            title={query ? (grouped ? "Nobody in the portal matches this search" : "No candidates match this search") : "No candidates to choose from"}
+            description={
+              grouped
+                ? query
+                  ? "Look under From Salesforce below to bring the candidate in."
+                  : "Type a name above to find the candidate in Salesforce and bring them in."
+                : query
+                  ? "Check the spelling or clear the search."
+                  : "Add a candidate first: the person you are finding a job for."
+            }
             action={
-              !query && onAdd ? (
+              !query && onAdd && !grouped ? (
                 <Button type="button" size="sm" onClick={onAdd}>
                   <Plus data-icon="inline-start" />
                   Add Candidate
@@ -155,7 +209,17 @@ export function CandidatePicker({
                       disabled && "cursor-not-allowed opacity-60",
                     )}
                   >
-                    <Checkbox id={id} checked={checked} disabled={disabled} onCheckedChange={() => toggle(candidate)} />
+                    <Checkbox
+                      id={id}
+                      data-result=""
+                      checked={checked}
+                      disabled={disabled}
+                      onCheckedChange={() => toggle(candidate)}
+                      // A checkbox is ticked with Space. Enter chooses too, as it does for a row from Salesforce.
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !disabled) toggle(candidate);
+                      }}
+                    />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-sm font-medium">{candidate.name}</span>
                       <span className="truncate text-2sm text-muted-foreground">
@@ -189,6 +253,17 @@ export function CandidatePicker({
         <p className="text-2sm text-muted-foreground">
           You have reached the limit of {max} candidates. Remove one to choose another.
         </p>
+      )}
+      {salesforce && (
+        <SalesforceImport
+          heading
+          className="mt-2"
+          query={query}
+          defaultTeamId={salesforceTeamId}
+          chosenIds={selectedIds}
+          full={atLimit}
+          onChosen={takeFromSalesforce}
+        />
       )}
     </div>
   );

@@ -352,6 +352,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/candidates/import-salesforce": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Salesforce Candidate
+         * @description Bring a Salesforce candidate (a Person Account) into the portal: details, mapped job-search profile and the
+         *     newest active resume file. Salesforce is only read. Already in the caller's scope: refreshed and returned (200).
+         *     In another team: 409 for a Team Lead, with no detail. A resume that cannot be taken over (wrong type, too
+         *     large, unreadable) does not stop the import: `sync.resume` says what happened.
+         */
+        post: operations["import_salesforce_candidate_api_candidates_import_salesforce_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/candidates/{candidate_id}": {
         parameters: {
             query?: never;
@@ -466,6 +489,27 @@ export interface paths {
         get: operations["download_candidate_resume_api_candidates__candidate_id__resume_download_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/salesforce-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Candidate From Salesforce
+         * @description Read details, profile and resume again. A field changed in the portal since the last sync is kept, and a
+         *     resume uploaded in the portal is only replaced by a Salesforce file that is newer than it.
+         */
+        post: operations["refresh_candidate_from_salesforce_api_candidates__candidate_id__salesforce_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -730,6 +774,48 @@ export interface paths {
         put?: never;
         /** Read Notification */
         post: operations["read_notification_api_notifications__notification_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/salesforce/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Salesforce Candidates
+         * @description Person Accounts whose name, e-mail or phone contains `q`. Fewer than two characters: nothing, and Salesforce
+         *     is not asked. Under the setting `salesforce_team_lead_scope = own` a Team Lead only finds candidates whose
+         *     marketing team lead in Salesforce has the Team Lead's own sign-in e-mail address.
+         */
+        get: operations["search_salesforce_candidates_api_salesforce_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/salesforce/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Salesforce Status
+         * @description Whether Salesforce is set up and answering (checked at most once a minute). Never fails because of Salesforce.
+         */
+        get: operations["salesforce_status_api_salesforce_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1573,6 +1659,18 @@ export interface components {
              * @default false
              */
             resume_has_file: boolean;
+            /** Salesforce Id */
+            salesforce_id?: string | null;
+            /** Salesforce Synced At */
+            salesforce_synced_at?: string | null;
+            /** Salesforce Url */
+            salesforce_url?: string | null;
+            /**
+             * Source
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "salesforce";
             /**
              * @default {
              *       "applied": 0,
@@ -1646,6 +1744,106 @@ export interface components {
             member?: components["schemas"]["UserRef"] | null;
             stats: components["schemas"]["AssignmentStats"];
             team?: components["schemas"]["TeamRef"] | null;
+        };
+        /** CandidateSyncOut */
+        CandidateSyncOut: {
+            assigned_member?: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by?: components["schemas"]["UserRef"] | null;
+            /**
+             * Email
+             * @default
+             */
+            email: string;
+            /**
+             * Has Resume
+             * @default false
+             */
+            has_resume: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Last Assigned At */
+            last_assigned_at?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Phone
+             * @default
+             */
+            phone: string;
+            /**
+             * Profile Completion
+             * @default 0
+             */
+            profile_completion: number;
+            /**
+             * @default {
+             *       "desired_titles": [],
+             *       "preferred_states": [],
+             *       "work_authorization": "Other / Prefer Not to Say"
+             *     }
+             */
+            profile_summary: components["schemas"]["CandidateProfileSummary"];
+            /**
+             * Resume Has File
+             * @default false
+             */
+            resume_has_file: boolean;
+            /** Salesforce Id */
+            salesforce_id?: string | null;
+            /** Salesforce Synced At */
+            salesforce_synced_at?: string | null;
+            /** Salesforce Url */
+            salesforce_url?: string | null;
+            /**
+             * Source
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "salesforce";
+            /**
+             * @default {
+             *       "applied": 0,
+             *       "assigned": 0,
+             *       "closed": 0,
+             *       "completion_rate": 0,
+             *       "interviews": 0,
+             *       "link_opens": 0,
+             *       "not_applied": 0,
+             *       "offers": 0,
+             *       "viewed": 0
+             *     }
+             */
+            stats: components["schemas"]["AssignmentStats"];
+            /**
+             * @default {
+             *       "created": false,
+             *       "kept_fields": [],
+             *       "resume": "none",
+             *       "updated_fields": []
+             *     }
+             */
+            sync: components["schemas"]["SalesforceSync"];
+            team?: components["schemas"]["TeamRef"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * CandidateUpdate
@@ -1776,6 +1974,15 @@ export interface components {
             queue: {
                 [key: string]: unknown;
             };
+            /**
+             * @default {
+             *       "api_version": "",
+             *       "configured": false,
+             *       "message": "",
+             *       "team_lead_scope": "all"
+             *     }
+             */
+            salesforce: components["schemas"]["SalesforceStatus"];
             /** Sources */
             sources: {
                 [key: string]: unknown;
@@ -3061,6 +3268,12 @@ export interface components {
             };
             /** Size Bytes */
             size_bytes: number;
+            /**
+             * Source
+             * @default upload
+             * @enum {string}
+             */
+            source: "upload" | "salesforce";
             /** Text */
             text?: string | null;
             /**
@@ -3071,6 +3284,166 @@ export interface components {
             uploaded_by?: components["schemas"]["UserRef"] | null;
             /** Version */
             version: number;
+        };
+        /**
+         * SalesforceCandidate
+         * @description A candidate as found in Salesforce (a Person Account), with whether it is already in the portal.
+         */
+        SalesforceCandidate: {
+            /**
+             * Assigned Recruiter
+             * @default
+             */
+            assigned_recruiter: string;
+            /**
+             * Candidate Status
+             * @default
+             */
+            candidate_status: string;
+            /**
+             * Email
+             * @default
+             */
+            email: string;
+            /**
+             * Experience Level
+             * @default
+             */
+            experience_level: string;
+            /**
+             * Has Resume
+             * @default false
+             */
+            has_resume: boolean;
+            /**
+             * Importable
+             * @default true
+             */
+            importable: boolean;
+            /** Imported Candidate Id */
+            imported_candidate_id?: string | null;
+            /**
+             * Imported Elsewhere
+             * @default false
+             */
+            imported_elsewhere: boolean;
+            /**
+             * Marketing Team Lead
+             * @default
+             */
+            marketing_team_lead: string;
+            /** Name */
+            name: string;
+            /**
+             * Niche
+             * @default
+             */
+            niche: string;
+            /**
+             * Phone
+             * @default
+             */
+            phone: string;
+            /**
+             * Preferred Job Type
+             * @default
+             */
+            preferred_job_type: string;
+            /**
+             * Preferred Locations
+             * @default
+             */
+            preferred_locations: string;
+            /** Salesforce Id */
+            salesforce_id: string;
+            /**
+             * Technology
+             * @default
+             */
+            technology: string;
+            /**
+             * Visa Status
+             * @default
+             */
+            visa_status: string;
+            /**
+             * Work Authorization
+             * @default
+             */
+            work_authorization: string;
+            /** Years Experience */
+            years_experience?: number | null;
+        };
+        /** SalesforceImportIn */
+        SalesforceImportIn: {
+            /** Assigned Member Id */
+            assigned_member_id?: string | null;
+            /** Salesforce Id */
+            salesforce_id: string;
+            /** Team Id */
+            team_id?: string | null;
+        };
+        /** SalesforceSearchOut */
+        SalesforceSearchOut: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SalesforceCandidate"][];
+            /**
+             * Limit Reached
+             * @default false
+             */
+            limit_reached: boolean;
+        };
+        /** SalesforceStatus */
+        SalesforceStatus: {
+            /**
+             * Api Version
+             * @default
+             */
+            api_version: string;
+            /** Checked At */
+            checked_at?: string | null;
+            /** Configured */
+            configured: boolean;
+            /** Connected */
+            connected?: boolean | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Team Lead Scope
+             * @default all
+             * @enum {string}
+             */
+            team_lead_scope: "all" | "own";
+        };
+        /** SalesforceSync */
+        SalesforceSync: {
+            /**
+             * Created
+             * @default false
+             */
+            created: boolean;
+            /**
+             * Kept Fields
+             * @default []
+             */
+            kept_fields: string[];
+            /**
+             * Resume
+             * @default none
+             * @enum {string}
+             */
+            resume: "imported" | "unchanged" | "none" | "kept_local" | "refused_type" | "refused_size" | "unreadable" | "unavailable";
+            /**
+             * Updated Fields
+             * @default []
+             */
+            updated_fields: string[];
         };
         /** SearchCreate */
         SearchCreate: {
@@ -3437,6 +3810,12 @@ export interface components {
              */
             profile_extra_fields: components["schemas"]["ExtraField"][];
             /**
+             * Salesforce Team Lead Scope
+             * @default all
+             * @enum {string}
+             */
+            salesforce_team_lead_scope: "all" | "own";
+            /**
              * Watermark Enabled
              * @default true
              */
@@ -3460,6 +3839,8 @@ export interface components {
             max_results_per_search_run?: number | null;
             /** Profile Extra Fields */
             profile_extra_fields?: components["schemas"]["ExtraField"][] | null;
+            /** Salesforce Team Lead Scope */
+            salesforce_team_lead_scope?: ("all" | "own") | null;
             /** Watermark Enabled */
             watermark_enabled?: boolean | null;
         };
@@ -4426,6 +4807,7 @@ export interface operations {
                 active?: boolean | null;
                 has_resume?: boolean | null;
                 q?: string | null;
+                source?: string | null;
                 sort?: string;
                 page?: number;
                 page_size?: number;
@@ -4486,6 +4868,76 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    import_salesforce_candidate_api_candidates_import_salesforce_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesforceImportIn"];
+            };
+        };
+        responses: {
+            /** @description The candidate was already in the portal and has been refreshed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateSyncOut"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateSyncOut"];
+                };
+            };
+            /** @description No such Salesforce candidate (or not one this Team Lead may find) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Already in the portal, in a team the caller cannot see */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Salesforce answered with an error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Salesforce is not configured or not reachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4821,6 +5273,65 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    refresh_candidate_from_salesforce_api_candidates__candidate_id__salesforce_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateSyncOut"];
+                };
+            };
+            /** @description No such candidate, or the Salesforce record is gone */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The candidate did not come from Salesforce */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Salesforce answered with an error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Salesforce is not configured or not reachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5371,6 +5882,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_salesforce_candidates_api_salesforce_candidates_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesforceSearchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    salesforce_status_api_salesforce_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesforceStatus"];
                 };
             };
         };

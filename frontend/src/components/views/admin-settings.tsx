@@ -13,6 +13,7 @@ import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
 import { Tag } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -31,9 +32,10 @@ import {
 } from "@/lib/forms";
 import { EXTRA_FIELD_TYPE_LABELS, EXTRA_FIELD_TYPES } from "@/lib/options";
 import { useHealth, useIntegrations, usePortalSettings, useUpdatePortalSettings } from "@/lib/queries";
+import { salesforceStatusOf, TEAM_LEAD_SCOPES, teamLeadScopeOf } from "@/lib/salesforce";
 import type { ExtraField, Integrations, PortalSettings } from "@/lib/types";
 import { useUrlState } from "@/lib/url-state";
-
+import { cn } from "@/lib/utils";
 const whole = (min: number, max: number) =>
   z
     .string()
@@ -108,6 +110,7 @@ const makeSchema = (saved: ExtraField[]) =>
       max_members_per_search: whole(1, 50),
       max_results_per_search_run: whole(1, 5000),
       invitation_hours: whole(1, 720),
+      salesforce_team_lead_scope: z.enum(["all", "own"]),
       profile_extra_fields: z.array(fieldRow),
     })
     .superRefine((values, context) => {
@@ -143,6 +146,7 @@ const toValues = (settings: PortalSettings): Values => ({
   max_members_per_search: String(settings.max_members_per_search),
   max_results_per_search_run: String(settings.max_results_per_search_run),
   invitation_hours: String(settings.invitation_hours),
+  salesforce_team_lead_scope: teamLeadScopeOf(settings),
   profile_extra_fields: settings.profile_extra_fields.map(toRow),
 });
 
@@ -391,10 +395,12 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
   const schema = useMemo(() => makeSchema(savedFields), [savedFields]);
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: toValues(settings) });
   const { errors, isDirty } = form.formState;
+  const scopeId = useId();
 
   const onSubmit = form.handleSubmit((values) => {
     save.mutate(
       {
+        salesforce_team_lead_scope: values.salesforce_team_lead_scope,
         watermark_enabled: values.watermark_enabled,
         deep_search_default: values.deep_search_default,
         default_target_count: Number(values.default_target_count),
@@ -485,8 +491,40 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
         </div>
       </Panel>
 
-      <ExtraFieldsPanel form={form} saved={savedFields} refusals={extraFieldRefusals(save.error)} />
+      <Panel
+          title="Salesforce"
+          description="Which candidates a Team Lead can find in Salesforce and bring into their team. An Admin always sees all of them."
+        >
+          <Controller
+            control={form.control}
+            name="salesforce_team_lead_scope"
+            render={({ field }) => (
+              <RadioGroup value={field.value} onValueChange={field.onChange} aria-label="Candidates a Team Lead can find in Salesforce" className="gap-3 sm:grid-cols-2">
+                {TEAM_LEAD_SCOPES.map((option) => {
+                  const id = `${scopeId}-${option.value}`;
+                  return (
+                    <label
+                      key={option.value}
+                      htmlFor={id}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3 rounded-lg border bg-card p-3.5 transition-colors hover:bg-muted/50 has-[button:focus-visible]:border-ring has-[button:focus-visible]:ring-3 has-[button:focus-visible]:ring-ring/50",
+                        field.value === option.value && "border-primary bg-accent/50",
+                      )}
+                    >
+                      <RadioGroupItem id={id} value={option.value} className="mt-0.5" />
+                      <span className="flex flex-col gap-1">
+                        <span className="text-sm font-medium">{option.label}</span>
+                        <span className="text-2sm text-muted-foreground">{option.text}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </RadioGroup>
+            )}
+          />
+      </Panel>
 
+      <ExtraFieldsPanel form={form} saved={savedFields} refusals={extraFieldRefusals(save.error)} />
       <Panel title="Invitations">
         <TextField
           label="Hours an invitation link stays valid"
@@ -640,6 +678,8 @@ function IntegrationsPanels({ data, settings }: { data: Integrations; settings: 
   const lastSeen =
     typeof worker.last_seen === "number" ? formatDateTime(new Date(worker.last_seen * 1000)) : worker.last_seen ? formatDateTime(worker.last_seen) : null;
   const emailBackend = email.backend ?? "none";
+  const salesforce = salesforceStatusOf(data);
+  const scope = TEAM_LEAD_SCOPES.find((option) => option.value === salesforce.team_lead_scope);
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -704,6 +744,33 @@ function IntegrationsPanels({ data, settings }: { data: Integrations; settings: 
             No e-mail leaves the server. Whoever creates an invitation or a reset link is shown the link and has to pass it on.
           </p>
         )}
+      </Panel>
+
+      <Panel
+        title="Salesforce"
+        description="Where Team Leads and Admins find candidates and bring them into the portal. Credentials are set on the server and never shown here."
+        className="lg:col-span-2"
+      >
+        <Facts
+          rows={[
+            ["Connection", <State key="c" ok={salesforce.configured} yes="Configured" no="Not configured on the server" />],
+            ...(salesforce.configured
+              ? ([
+                  ["Salesforce", <State key="r" ok={salesforce.connected === true} yes="Reachable" no="Not reachable" />],
+                  ...(salesforce.message ? [["Last check", salesforce.message]] : []),
+                  ...(salesforce.checked_at ? [["Checked", formatDateTime(salesforce.checked_at)]] : []),
+                  ...(salesforce.api_version ? [["API version", salesforce.api_version]] : []),
+                  ["Access", <Tag key="a">Read-only</Tag>],
+                  ...(scope ? [["Team Leads can find", scope.label]] : []),
+                ] as Array<[string, React.ReactNode]>)
+              : []),
+          ]}
+        />
+        <p className="mt-3 max-w-[80ch] text-2sm text-muted-foreground">
+          {salesforce.configured
+            ? "The portal only reads Salesforce: candidates, their details and their resume files. Nothing is written back."
+            : "Without the Salesforce settings on the server, nothing about Salesforce is offered: candidates are added manually."}
+        </p>
       </Panel>
 
       <Panel title="Search index" description="Postings the search engine has read from the sources and keeps to search through.">

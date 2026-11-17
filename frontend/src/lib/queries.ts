@@ -517,7 +517,7 @@ export function useCandidate(id: string | undefined) {
 }
 
 /** Everything that shows a candidate, their member or their counts. */
-function invalidateCandidates(client: QueryClient): Promise<unknown> {
+export function invalidateCandidates(client: QueryClient): Promise<unknown> {
   return Promise.all(
     [qk.candidates, qk.users, qk.teams, qk.assignments, ["analytics"], ["activity"], qk.notifications].map((queryKey) =>
       client.invalidateQueries({ queryKey }),

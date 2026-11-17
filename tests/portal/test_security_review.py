@@ -839,7 +839,7 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
     import importlib
     import pkgutil
     from app.portal import routers
-    from app.portal.routers import admin, assignments, auth, candidates, invitations, jobs, searches, teams, users
+    from app.portal.routers import admin, assignments, auth, candidates, invitations, jobs, salesforce, searches, teams, users
 
     def reached(dependant, found):
         for inner in dependant.dependencies:
@@ -848,7 +848,7 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
         return found
 
     protection = {}
-    modules = (auth, invitations, teams, users, candidates, jobs, searches, assignments, admin)
+    modules = (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin)
     with_routes = {info.name for info in pkgutil.iter_modules(routers.__path__)
                    if hasattr(importlib.import_module(f"{routers.__name__}.{info.name}"), "router")}
     assert with_routes == {module.__name__.rsplit(".", 1)[1] for module in modules}       # a new router module cannot stay outside this test
@@ -862,7 +862,11 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
     # Every way to change a candidate, its profile or its resume needs the session (and with it the CSRF token and Origin).
     changing = {key for key in protection if key[0] != "GET" and key[1].startswith("/api/candidates")}
     assert changing == {("POST", "/api/candidates"), ("PATCH", "/api/candidates/{candidate_id}"), ("PATCH", "/api/candidates/{candidate_id}/profile"),
-                        ("POST", "/api/candidates/{candidate_id}/resume"), ("DELETE", "/api/candidates/{candidate_id}/resume")}
+                        ("POST", "/api/candidates/{candidate_id}/resume"), ("DELETE", "/api/candidates/{candidate_id}/resume"),
+                        ("POST", "/api/candidates/import-salesforce"), ("POST", "/api/candidates/{candidate_id}/salesforce-refresh")}
+    # Salesforce: two read routes, both behind the session; the portal has no route that could write to Salesforce.
+    assert {key: level for key, level in protection.items() if key[1].startswith("/api/salesforce")} == {
+        ("GET", "/api/salesforce/status"): "session", ("GET", "/api/salesforce/candidates"): "session"}
     assert {protection[key] for key in protection if key[1].startswith("/api/candidates")} == {"session"}
     assert not any(path.startswith(("/api/resumes", "/api/members")) or path.endswith("/profile") and path.startswith("/api/users")
                    for _, path in protection)                                              # the routes the candidate ones replaced are gone
