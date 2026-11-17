@@ -1044,6 +1044,7 @@ class IntegrationsOut(Model):
     email: dict                                    # backend: smtp | console | none
     queue: dict                                    # redis reachable
     salesforce: SalesforceStatus = SalesforceStatus(configured=False)
+    aws_web_search: "AwsWebSearchStatus | None" = None
 
 
 class HealthOut(Model):
@@ -1051,3 +1052,101 @@ class HealthOut(Model):
     database: bool
     redis: bool
     worker_online: bool
+
+
+# ---------------------------------------------------------------- AWS web search (managers)
+_US_PLAIN = {"united states", "usa", "us", "remote", "remote us", "remote, us", "remote (us)", "nationwide"}
+
+
+def _us_location(value: str) -> str:
+    from ..job_normalizer import US_STATES
+    text = " ".join(str(value).split()).strip(" ,")
+    if not text or len(text) > 60 or not re.fullmatch(r"[A-Za-z .,'()-]+", text):
+        raise ValueError("Locations are US cities or states, e.g. 'Austin, TX' or 'Texas'")
+    names = {n.lower() for n in US_STATES.values()}
+    last = text.rsplit(",", 1)[-1].strip()
+    if text.lower() in _US_PLAIN or text.lower() in names or text.upper() in US_STATES \
+            or ("," in text and (last.upper() in US_STATES or last.lower() in names)):
+        return text
+    raise ValueError(f"'{text}' is not a US location: use 'City, ST', a state, 'Remote' or 'United States'")
+
+
+class WebSearchJobsIn(Model):
+    """POST /api/web-search/jobs. Runs AWS web search queries, verifies every hit against the employer's live feed
+    and returns only verified jobs. Nothing of the AWS results is stored."""
+    keywords: str = Field(min_length=2, max_length=150)
+    locations: list[str] = Field(default_factory=list, max_length=5)
+    work_mode: Literal["remote", "hybrid", "onsite", "any"] = "any"
+    limit: int = Field(default=20, ge=1, le=50)
+    candidate_id: uuid.UUID | None = None
+
+    @field_validator("keywords")
+    @classmethod
+    def _keywords(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if len(v) < 2 or not re.search(r"[A-Za-z]", v) or re.search(r"[<>{}\[\]\\|`]|https?:", v):
+            raise ValueError("Enter job title keywords (letters, numbers and simple punctuation)")
+        return v
+
+    @field_validator("locations")
+    @classmethod
+    def _locations(cls, v: list[str]) -> list[str]:
+        return list(dict.fromkeys(_us_location(x) for x in v))
+
+
+class WebSearchJobOut(Model):
+    title: str
+    company: str
+    location: str
+    work_mode: str
+    posted_at: str = ""
+    employer_url: str                  # the posting on the employer's own ATS / site (also the source URL)
+    apply_url: str = ""
+    source: str                        # the employer feed that verified it (Greenhouse, Lever, ...)
+    verification: str
+    verified_at: str = ""
+    score: int
+    score_source: str                  # "heuristic" (keyword match against the resume / profile, the engine's ranking)
+    reason: str = ""
+    matching_skills: list[str] = []
+    missing_skills: list[str] = []
+    discovered_via: Literal["aws_web_search"] = "aws_web_search"
+
+
+class WebSearchStats(Model):
+    queries_used: int                  # units of the monthly allowance this request used
+    results_seen: int
+    duplicates: int
+    dropped_generic: int               # search / category / aggregator pages: never vacancies
+    dropped_unverifiable: int          # not listed (any more) in the employer's live feed, or the feed could not be read
+    dropped_not_relevant: int
+    dropped_filtered: int              # outside the US, other work mode, eligibility
+    verified: int
+    returned: int
+    monthly_used: int
+    monthly_limit: int
+    monthly_remaining: int
+
+
+class WebSearchJobsOut(Model):
+    jobs: list[WebSearchJobOut]
+    stats: WebSearchStats
+    warnings: list[str] = []
+    candidate_id: uuid.UUID | None = None
+
+
+class AwsWebSearchStatus(Model):
+    enabled: bool
+    region: str
+    web_search_id: str
+    month: str = ""
+    used: int = 0
+    limit: int = 0
+    reserve: int = 0
+    remaining: int = 0
+    remaining_for_searches: int = 0
+    counter_available: bool = False
+    note: str = ""
+
+
+IntegrationsOut.model_rebuild()

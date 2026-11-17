@@ -15,6 +15,7 @@ from ..schemas import (Day, AdminAnalytics, AuditOut, HealthOut, IntegrationsOut
 from ..security import utcnow
 from ..services import analytics
 from ..services import settings as settings_service
+from ..services import web_search as web_search_service
 from ..services.audit import audit
 from . import salesforce as salesforce_router
 from ..services.common import paginate, team_ref, teams_by_id, user_ref, users_by_id
@@ -146,7 +147,8 @@ async def integrations(request: Request, principal: Principal = Depends(admin_on
                "stored_postings": int(stored)},
         worker=worker or {"online": False},
         email={"backend": request.app.state.emailer.backend, "from": settings.smtp_from if settings.smtp_configured else ""},
-        queue={"redis": await queue.ping()}, salesforce=await salesforce_router.status_out(request, db, settings))
+        queue={"redis": await queue.ping()}, salesforce=await salesforce_router.status_out(request, db, settings),
+        aws_web_search=await web_search_service.status(settings, getattr(request.app.state, "aws_search", None)))
 
 
 @router.get("/health", response_model=HealthOut)

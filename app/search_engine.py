@@ -43,6 +43,8 @@ from .job_verifier import Budget, PageVerifier, job_from_extraction
 from .providers import registry, workday
 from .providers.base import BoardNotFound, Ctx, HostLimiter, RobotsCache, SourceError, now_iso
 from .providers.boards import seed_pairs
+from .providers import aws_web_search
+from .providers.aws_web_search import AWS, AwsWebSearch, AwsWebSearchError, employer_posting_address
 from .providers.paid import (GOOGLE_JOBS, TINYFISH, SerpApiClient, TinyFishClient, aggregator_hosts, serp_item)
 from .providers.registry import BOARD_LEAD_SOURCES, SPECS, Unit
 from .providers.searxng import SearxClient, build_queries, extract, site_hosts, valid_board
@@ -84,7 +86,10 @@ def new_stats(requested: int) -> dict:
             "gained_by_source": {}, "company_model_scored": 0, "company_model_explained": 0, "ai_calls": 0,
             # paid sources
             "serp_calls": 0, "serp_cached": 0, "serp_jobs": 0, "serp_listed": 0, "serp_skipped": "",
-            "tiny_searches": 0, "tiny_fetches": 0, "tiny_usd": 0.0, "tiny_skipped": ""}
+            "tiny_searches": 0, "tiny_fetches": 0, "tiny_usd": 0.0, "tiny_skipped": "",
+            # AWS web search (queries = units of the monthly allowance; result text is never kept)
+            "aws_budget": 0, "aws_queries": 0, "aws_results": 0, "aws_duplicates": 0, "aws_generic": 0, "aws_leads": 0,
+            "aws_skipped": ""}
 
 
 class SearchState:
@@ -190,6 +195,8 @@ class SearchEngine:
         self.tinyfish = TinyFishClient(settings.tinyfish_api_key, self.client, self.index, settings.tinyfish_search_usd,
                                        settings.tinyfish_fetch_usd, settings.tinyfish_daily_usd, settings.tinyfish_wallet_reserve_usd,
                                        settings.tinyfish_wallet_check_seconds, settings.tinyfish_timeout_seconds)
+        # AWS web search: the monthly allowance is a PostgreSQL row shared by every process (None without PostgreSQL).
+        self.aws = AwsWebSearch(settings, aws_web_search.quota_for(getattr(self.index, "_pool", None), settings))
         self._inflight: dict[Unit, asyncio.Task] = {}
         self._background: set[asyncio.Task] = set()
         # Workday: which facet means "United States" per employer, remembered so it is discovered only once.
@@ -252,6 +259,10 @@ class SearchEngine:
     @property
     def tiny_on(self) -> bool:
         return self.tinyfish.enabled and "tinyfish" in self.specs
+
+    @property
+    def aws_on(self) -> bool:
+        return self.aws.enabled and "aws_web_search" in self.specs
 
     def _spawn(self, unit: Unit, origin: str = "seed") -> asyncio.Task:
         task = self._inflight.get(unit)
@@ -536,7 +547,7 @@ class SearchEngine:
             parsed = parse_ats(lead.url)
             src = parsed[0] if parsed else ""
             board, job_id = (parsed[1], parsed[2]) if parsed else ("", "")
-            origin = {SEARX: "searxng", TINYFISH: "tinyfish", GOOGLE_JOBS: "serpapi"}.get(lead.provider, "ai")
+            origin = {SEARX: "searxng", TINYFISH: "tinyfish", GOOGLE_JOBS: "serpapi", AWS: "aws_web_search"}.get(lead.provider, "ai")
             if origin != "ai" and parsed and not (board and valid_board(src, board)):
                 stats["rejected_unverified"] += 1          # an address from a search engine is used only when well formed
                 continue
@@ -938,6 +949,92 @@ class SearchEngine:
         stats["serp_listed"] += len(listed)
         return list(leads.values()), listed
 
+    async def _aws_prepare(self, state: SearchState, req: SearchRequest, titles: list[str], locations: list[str]) -> None:
+        """The query plan of AWS web search for one candidate search and its paced budget (units of the month)."""
+        stats, s = state.stats, self.settings
+        titles = list(dict.fromkeys(t for t in titles if t))[:8]
+        locs = list(dict.fromkeys(["remote" if req.work_mode == "Remote" else "", *locations]))
+        locs = [l for l in locs if l][:16] or ["United States"]
+        pairs = []                                       # diagonal order: early calls cover different titles and places
+        for d in range(len(titles) + len(locs) - 1):
+            for i, title in enumerate(titles):
+                if 0 <= d - i < len(locs):
+                    pairs.append((title, locs[d - i]))
+        state.aws_pairs, state.aws_index = pairs, 0
+        state.aws_mode = {"Remote": "remote", "Hybrid": "hybrid", "On-site": "onsite"}.get(req.work_mode, "")
+        try:
+            remaining = await self.aws.quota.remaining(interactive=False)
+        except Exception as exc:                        # the counter is unreadable: AWS is not used (never uncounted)
+            stats["aws_skipped"] = f"the monthly usage counter could not be read ({type(exc).__name__})"
+            state.warn(f"AWS web search was skipped: {stats['aws_skipped']}.")
+            return
+        stats["aws_budget"] = aws_web_search.paced_calls(state.plan.aws_calls, remaining, s.aws_web_search_expected_searches_per_day)
+        if stats["aws_budget"] <= 0 and state.plan.aws_calls > 0:
+            stats["aws_skipped"] = (f"this month's AWS web search allowance for searches is used up ({s.aws_web_search_monthly_limit} "
+                                    f"per month, {s.aws_web_search_monthly_reserve} kept for the web search endpoint)")
+            state.warn(f"AWS web search was skipped: {stats['aws_skipped']}.")
+
+    async def _aws_round(self, state: SearchState, calls: int) -> list[Candidate]:
+        """Up to `calls` AWS web search queries. Only result addresses are used, exactly like SearXNG results: a posting
+        or board on an ATS this app reads becomes a lead that the lead check verifies against the employer's live
+        feed; an employer page from the unfiltered query may become a page lead (the page itself decides). Titles,
+        text and ranking of the results are dropped here. Never raises."""
+        stats, s = state.stats, self.settings
+        if calls <= 0 or not self.aws_on or stats["aws_skipped"]:
+            return []
+        hosts = site_hosts(s.searxng_sites)
+        rotation: list = [*aws_web_search.host_groups(hosts), None]       # None: any site except job boards / aggregators
+        exclude = [h for h in aggregator_hosts(s.aggregator_hosts)]
+        ctx = await self._hit_context(state)
+        seen: set = state.__dict__.setdefault("aws_seen", set())          # in memory, this search only
+        out: dict[str, Candidate] = {}
+        made = 0
+        while made < calls and state.aws_pairs and stats["aws_queries"] < stats["aws_budget"]:
+            title, location = state.aws_pairs.pop(0)
+            group = rotation[state.aws_index % len(rotation)]
+            state.aws_index += 1
+            made += 1
+            try:
+                answer = await self.aws.search(aws_web_search.query_text(title, location, state.aws_mode),
+                                               include=group, exclude=None if group else exclude)
+            except AwsWebSearchError as err:
+                stats["aws_queries"] += getattr(err, "queries", 0)
+                if err.kind == "budget":
+                    stats["aws_skipped"] = "this month's AWS web search allowance is used up"
+                elif err.kind in ("access_denied", "not_found", "credentials", "disabled", "validation", "counter"):
+                    stats["aws_skipped"] = err.message
+                else:
+                    state.aws_failures = getattr(state, "aws_failures", 0) + 1
+                    if state.aws_failures >= 3:
+                        stats["aws_skipped"] = f"it did not answer ({err.message})"
+                if stats["aws_skipped"]:
+                    state.warn(f"AWS web search was skipped: {stats['aws_skipped']}.")
+                    break
+                continue
+            state.aws_failures = 0
+            stats["aws_queries"] += answer.queries
+            stats["aws_results"] += len(answer.results)
+            urls: list[str] = []
+            for result in answer.results:
+                if result.url in seen:
+                    stats["aws_duplicates"] += 1
+                    continue
+                seen.add(result.url)
+                if extract(result.url, hosts) is not None:
+                    urls.append(result.url)
+                elif group is None and employer_posting_address(result.url, aggregator_hosts(s.aggregator_hosts)):
+                    pages = state.__dict__.setdefault("searx_pages", set())
+                    if len(pages) < s.searxng_page_leads_per_search:
+                        pages.add(result.url)
+                        out.setdefault(result.url, Candidate(url=result.url, provider=AWS, cited=True))
+                else:
+                    stats["aws_generic"] += 1                 # a search, category or aggregator page: never a vacancy
+            self._hits_to_leads(state, urls, hosts, AWS, ctx, out)
+            del answer                                        # nothing of the response outlives this loop
+            state.emit(state.stage or "search", "Asking AWS web search for employer job postings")
+        stats["aws_leads"] += len(out)
+        return list(out.values())
+
     def _more_discovery(self, state: SearchState, ai, use_web: bool, next_round: int, queries_left: int) -> bool:
         plan = state.plan
         ai_more = use_web and hasattr(ai, "discover_round") and any(
@@ -947,7 +1044,9 @@ class SearchEngine:
         stats = state.stats
         tiny_more = self.tiny_on and not stats["tiny_skipped"] and stats["tiny_searches"] < plan.tiny_searches and getattr(state, "tiny_left", 0) > 0
         serp_more = self.serp_on and not stats["serp_skipped"] and stats["serp_calls"] < plan.serp_calls and getattr(state, "serp_left", 0) > 0
-        return bool(ai_more or searx_more or tiny_more or serp_more)
+        aws_more = (self.aws_on and not stats["aws_skipped"] and stats["aws_queries"] < stats["aws_budget"]
+                    and bool(getattr(state, "aws_pairs", None)))
+        return bool(ai_more or searx_more or tiny_more or serp_more or aws_more)
 
     # ------------------------------------------------------------ pipeline
     async def _pipeline(self, state, req, resume_text, ai, target, base_profile, related0,
@@ -1000,6 +1099,14 @@ class SearchEngine:
         places = [f"{p}, United States" for p in req.locations[:6]] or ["United States"]
         serp_pairs = [(t, p) for p in places for t in [*req.titles, *variants]] if self.serp_on else []
         state.tiny_left, state.serp_left = len(tiny_queries), len(serp_pairs)
+        # AWS web search runs from round 1 (fast, own monthly allowance): title variants x US locations, paced.
+        aws_task = None
+        if self.aws_on:
+            await self._aws_prepare(state, req, [*req.titles, *variants], locations)
+            first = plan.per_round(stats["aws_budget"], 1)
+            if first:
+                aws_task = asyncio.create_task(self._aws_round(state, first))
+                state.side_tasks.append(aws_task)
 
         # 2. Sources: wait for the refresh (bounded), then screen the index.
         state.emit("search", "Searching USA job openings")
@@ -1032,6 +1139,8 @@ class SearchEngine:
             except asyncio.TimeoutError:
                 state.warn("AI web search hit its time limit; results use the sources already read.")
         searx_leads: list[Candidate] = (await searx_task) if searx_task else []
+        if aws_task:
+            searx_leads = [*searx_leads, *(await aws_task)]
         expected: dict[str, set[str]] = {}
         lead_jobs: list[Job] = []
         seen_leads: set[str] = set()
@@ -1129,12 +1238,13 @@ class SearchEngine:
 
             tiny_n = plan.per_round(plan.tiny_searches, round_no - 1)       # paid sources start in round 2
             serp_n = plan.per_round(plan.serp_calls, round_no - 1)
-            ai_leads, searx_leads, tiny_leads, (serp_leads, listed_new) = await asyncio.gather(
+            aws_n = plan.per_round(stats["aws_budget"], round_no) if self.aws_on else 0
+            ai_leads, searx_leads, tiny_leads, (serp_leads, listed_new), aws_leads = await asyncio.gather(
                 more_ai(), self._searx_round(state, queries[:used]), self._tiny_round(state, tiny_queries[:tiny_n]),
-                self._serp_round(state, serp_pairs[: max(1, serp_n)], serp_n))
+                self._serp_round(state, serp_pairs[: max(1, serp_n)], serp_n), self._aws_round(state, aws_n))
             queries, tiny_queries, serp_pairs = queries[used:], tiny_queries[tiny_n:], serp_pairs[max(1, serp_n):]
             state.tiny_left, state.serp_left = len(tiny_queries), len(serp_pairs)
-            searx_leads = [*searx_leads, *tiny_leads, *serp_leads]
+            searx_leads = [*searx_leads, *tiny_leads, *serp_leads, *aws_leads]
             state.emit("verify", f"Round {round_no}: verifying application links")
 
         state.emit("verify", f"Search stopped after {round_no} round(s): {stats['stop_reason']}")

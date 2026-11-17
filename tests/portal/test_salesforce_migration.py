@@ -57,7 +57,7 @@ async def run_scenario() -> None:
 
     # ---- upgrade: every existing candidate is a manual one, every existing resume an upload
     alembic("upgrade", NEW)
-    assert NEW in alembic("current") and "(head)" in alembic("current")
+    assert NEW in alembic("current")                     # later revisions (b5e8d2c47a19, AWS usage counter) follow it
     conn = await asyncpg.connect(PLAIN)
     assert CANDIDATE_COLUMNS <= await columns(conn, "candidates") and RESUME_COLUMNS <= await columns(conn, "resumes")
     after = await conn.fetchrow("SELECT * FROM candidates WHERE id = $1", one)

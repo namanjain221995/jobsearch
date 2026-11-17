@@ -46,6 +46,7 @@ class Plan:
     serp_calls: int = 0         # SerpApi result pages (also limited by the month's allowance)
     tiny_searches: int = 0      # TinySearch queries (also limited by the daily spending ceiling and the wallet)
     tiny_fetches: int = 0
+    aws_calls: int = 0          # AWS web search queries (also paced by the month's remaining allowance)
 
     def per_round(self, total: int, round_no: int) -> int:
         """How much of a search-wide budget round `round_no` (1-based) may use."""
@@ -89,6 +90,8 @@ def plan_for(settings: Settings, target: int, deep: bool = True) -> Plan:
         serp_calls=max(0, s.serpapi_max_calls_per_search) if s.serpapi_api_key else 0,
         tiny_searches=max(0, s.tinyfish_search_queries_per_search) if s.tinyfish_api_key else 0,
         tiny_fetches=max(0, s.tinyfish_fetches_per_search) if s.tinyfish_api_key else 0,
+        aws_calls=_scaled(s.aws_web_search_max_calls_per_search, s.aws_web_search_max_calls_per_search_max, target, on)
+        if s.aws_web_search_enabled else 0,
     )
 
 

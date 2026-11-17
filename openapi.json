@@ -750,6 +750,69 @@
     "title": "AuditOut",
     "type": "object"
    },
+   "AwsWebSearchStatus": {
+    "properties": {
+     "counter_available": {
+      "default": false,
+      "title": "Counter Available",
+      "type": "boolean"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "limit": {
+      "default": 0,
+      "title": "Limit",
+      "type": "integer"
+     },
+     "month": {
+      "default": "",
+      "title": "Month",
+      "type": "string"
+     },
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
+     "region": {
+      "title": "Region",
+      "type": "string"
+     },
+     "remaining": {
+      "default": 0,
+      "title": "Remaining",
+      "type": "integer"
+     },
+     "remaining_for_searches": {
+      "default": 0,
+      "title": "Remaining For Searches",
+      "type": "integer"
+     },
+     "reserve": {
+      "default": 0,
+      "title": "Reserve",
+      "type": "integer"
+     },
+     "used": {
+      "default": 0,
+      "title": "Used",
+      "type": "integer"
+     },
+     "web_search_id": {
+      "title": "Web Search Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "enabled",
+     "region",
+     "web_search_id"
+    ],
+    "title": "AwsWebSearchStatus",
+    "type": "object"
+   },
    "Body_import_csv_api_jobs_import_csv_post": {
     "properties": {
      "file": {
@@ -1777,6 +1840,16 @@
       "additionalProperties": true,
       "title": "Ai Providers",
       "type": "object"
+     },
+     "aws_web_search": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AwsWebSearchStatus"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "email": {
       "additionalProperties": true,
@@ -6756,6 +6829,263 @@
     ],
     "title": "ValidationError",
     "type": "object"
+   },
+   "WebSearchJobOut": {
+    "properties": {
+     "apply_url": {
+      "default": "",
+      "title": "Apply Url",
+      "type": "string"
+     },
+     "company": {
+      "title": "Company",
+      "type": "string"
+     },
+     "discovered_via": {
+      "const": "aws_web_search",
+      "default": "aws_web_search",
+      "title": "Discovered Via",
+      "type": "string"
+     },
+     "employer_url": {
+      "title": "Employer Url",
+      "type": "string"
+     },
+     "location": {
+      "title": "Location",
+      "type": "string"
+     },
+     "matching_skills": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Matching Skills",
+      "type": "array"
+     },
+     "missing_skills": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing Skills",
+      "type": "array"
+     },
+     "posted_at": {
+      "default": "",
+      "title": "Posted At",
+      "type": "string"
+     },
+     "reason": {
+      "default": "",
+      "title": "Reason",
+      "type": "string"
+     },
+     "score": {
+      "title": "Score",
+      "type": "integer"
+     },
+     "score_source": {
+      "title": "Score Source",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "verification": {
+      "title": "Verification",
+      "type": "string"
+     },
+     "verified_at": {
+      "default": "",
+      "title": "Verified At",
+      "type": "string"
+     },
+     "work_mode": {
+      "title": "Work Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "company",
+     "location",
+     "work_mode",
+     "employer_url",
+     "source",
+     "verification",
+     "score",
+     "score_source"
+    ],
+    "title": "WebSearchJobOut",
+    "type": "object"
+   },
+   "WebSearchJobsIn": {
+    "description": "POST /api/web-search/jobs. Runs AWS web search queries, verifies every hit against the employer's live feed\nand returns only verified jobs. Nothing of the AWS results is stored.",
+    "properties": {
+     "candidate_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Candidate Id"
+     },
+     "keywords": {
+      "maxLength": 150,
+      "minLength": 2,
+      "title": "Keywords",
+      "type": "string"
+     },
+     "limit": {
+      "default": 20,
+      "maximum": 50.0,
+      "minimum": 1.0,
+      "title": "Limit",
+      "type": "integer"
+     },
+     "locations": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Locations",
+      "type": "array"
+     },
+     "work_mode": {
+      "default": "any",
+      "enum": [
+       "remote",
+       "hybrid",
+       "onsite",
+       "any"
+      ],
+      "title": "Work Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "keywords"
+    ],
+    "title": "WebSearchJobsIn",
+    "type": "object"
+   },
+   "WebSearchJobsOut": {
+    "properties": {
+     "candidate_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Candidate Id"
+     },
+     "jobs": {
+      "items": {
+       "$ref": "#/components/schemas/WebSearchJobOut"
+      },
+      "title": "Jobs",
+      "type": "array"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/WebSearchStats"
+     },
+     "warnings": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+     }
+    },
+    "required": [
+     "jobs",
+     "stats"
+    ],
+    "title": "WebSearchJobsOut",
+    "type": "object"
+   },
+   "WebSearchStats": {
+    "properties": {
+     "dropped_filtered": {
+      "title": "Dropped Filtered",
+      "type": "integer"
+     },
+     "dropped_generic": {
+      "title": "Dropped Generic",
+      "type": "integer"
+     },
+     "dropped_not_relevant": {
+      "title": "Dropped Not Relevant",
+      "type": "integer"
+     },
+     "dropped_unverifiable": {
+      "title": "Dropped Unverifiable",
+      "type": "integer"
+     },
+     "duplicates": {
+      "title": "Duplicates",
+      "type": "integer"
+     },
+     "monthly_limit": {
+      "title": "Monthly Limit",
+      "type": "integer"
+     },
+     "monthly_remaining": {
+      "title": "Monthly Remaining",
+      "type": "integer"
+     },
+     "monthly_used": {
+      "title": "Monthly Used",
+      "type": "integer"
+     },
+     "queries_used": {
+      "title": "Queries Used",
+      "type": "integer"
+     },
+     "results_seen": {
+      "title": "Results Seen",
+      "type": "integer"
+     },
+     "returned": {
+      "title": "Returned",
+      "type": "integer"
+     },
+     "verified": {
+      "title": "Verified",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "queries_used",
+     "results_seen",
+     "duplicates",
+     "dropped_generic",
+     "dropped_unverifiable",
+     "dropped_not_relevant",
+     "dropped_filtered",
+     "verified",
+     "returned",
+     "monthly_used",
+     "monthly_limit",
+     "monthly_remaining"
+    ],
+    "title": "WebSearchStats",
+    "type": "object"
    }
   }
  },
@@ -11497,6 +11827,47 @@
     "summary": "Create Reset Link",
     "tags": [
      "users"
+    ]
+   }
+  },
+  "/api/web-search/jobs": {
+   "post": {
+    "operationId": "web_search_jobs_api_web_search_jobs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WebSearchJobsIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WebSearchJobsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Web Search Jobs",
+    "tags": [
+     "web-search"
     ]
    }
   }

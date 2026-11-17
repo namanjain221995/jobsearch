@@ -62,7 +62,8 @@ def explanation_of(job: EngineJob) -> dict:
 DISCOVERY_KEYS = ("title_variants", "searx_queries", "searx_cached", "searx_results", "searx_failed", "new_boards",
                   "new_board_postings", "gained_by_source", "ai_leads", "ai_ranked", "company_model_scored",
                   "company_model_explained", "ai_calls", "rounds", "stop_reason", "serp_calls", "serp_cached", "serp_jobs",
-                  "serp_listed", "serp_skipped", "tiny_searches", "tiny_fetches", "tiny_usd", "tiny_skipped")
+                  "serp_listed", "serp_skipped", "tiny_searches", "tiny_fetches", "tiny_usd", "tiny_skipped",
+                  "aws_budget", "aws_queries", "aws_results", "aws_duplicates", "aws_generic", "aws_leads", "aws_skipped")
 
 
 def discovery_of(state: SearchState) -> dict:

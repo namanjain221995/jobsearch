@@ -85,6 +85,9 @@ SPECS["tinyfish"] = Spec("tinyfish", "Web search (TinyFish)", "discovery", _no_f
                          note="Paid second search engine for employer job boards, used after the free sources; daily spending ceiling")
 SPECS["serpapi"] = Spec("serpapi", "Google Jobs (SerpApi)", "discovery", _no_fetch, needs=lambda s: bool(s.serpapi_api_key),
                         note="Paid job-listing API with a monthly allowance, used after the free sources; job-board pages are never fetched")
+SPECS["aws_web_search"] = Spec("aws_web_search", "Web search (AWS)", "discovery", _no_fetch, needs=lambda s: bool(s.aws_web_search_enabled),
+                               note="AWS Bedrock AgentCore Web Search: finds employer postings on the ATS hosts above, verified against the "
+                                    "employer's live feed; monthly allowance; result text is never stored")
 BOARD_LEAD_SOURCES = ("greenhouse", "lever", "ashby")      # AI leads on these are checked against the employer's full board
 
 

@@ -170,6 +170,27 @@ class Settings(BaseSettings):
     tinyfish_wallet_check_seconds: float = 300.0
     tinyfish_timeout_seconds: float = 30.0
 
+    # AWS Bedrock AgentCore Web Search (boto3, instance-profile credentials). Off until the operator switches it on.
+    # A discovery source in every search (round 1 and later rounds while the target is not met) and the managers'
+    # POST /api/web-search/jobs. Result text is never stored (see providers/aws_web_search.py and the README).
+    aws_web_search_enabled: bool = False
+    aws_web_search_region: str = "us-east-1"
+    aws_web_search_id: str = "web-search.v1"
+    aws_web_search_monthly_limit: int = 4000         # queries per calendar month (UTC), counted in PostgreSQL before each call
+    aws_web_search_monthly_reserve: int = 300        # kept for the interactive endpoint: background searches stop at limit - reserve
+    aws_web_search_max_calls_per_search: int = 4     # per candidate search for a request of 50 or fewer (paced down when the month runs low)
+    aws_web_search_max_calls_per_search_max: int = 10  # hard ceiling for large requests
+    aws_web_search_expected_searches_per_day: int = 45   # pacing assumption: candidate searches per working day (15 runs x up to 3)
+    aws_web_search_max_results: int = 25             # results per call (the API allows 1-25)
+    aws_web_search_published_days: int = 60          # publishedAfter filter: pages published in the last N days (0 = no filter)
+    aws_web_search_connect_timeout_seconds: float = 5.0
+    aws_web_search_read_timeout_seconds: float = 20.0
+    aws_web_search_max_attempts: int = 3             # attempts per query on throttling / 5xx / timeout (each attempt counts)
+    aws_web_search_user_per_minute: int = 3          # endpoint requests per user and minute
+    aws_web_search_user_per_day: int = 40            # endpoint requests per user and UTC day
+    aws_web_search_endpoint_max_calls: int = 6       # queries one endpoint request may use
+    aws_web_search_endpoint_timeout_seconds: float = 75.0
+
     # AI web search scales with the requested number. The base values above (OPENAI_SEARCH_CALLS, CLAUDE_SEARCH_CALLS,
     # AI_WEB_SEARCHES_PER_CALL, MAX_AI_CALLS_PER_SEARCH, MAX_AI_RANKED_JOBS) apply to a request of 50 or fewer;
     # these are the hard ceilings for large requests.

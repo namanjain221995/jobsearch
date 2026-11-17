@@ -23,7 +23,9 @@ from .cache import AnalyticsCache
 from .db import make_engine, make_sessionmaker
 from .limits import RequestGuardMiddleware
 from .queue import SearchQueue
-from .routers import admin, assignments, auth, candidates, invitations, jobs, salesforce, searches, teams, users
+from ..providers import aws_web_search
+from ..providers.aws_web_search import AwsWebSearch
+from .routers import admin, assignments, auth, candidates, invitations, jobs, salesforce, searches, teams, users, web_search
 from .security import RateLimiter
 from .services.emailer import Emailer
 from .services.salesforce import SalesforceClient
@@ -76,6 +78,8 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
             await app.state.queue.connect()
         app.state.http = httpx.AsyncClient(follow_redirects=False, limits=httpx.Limits(max_connections=20))
         app.state.verifier = PageVerifier(app.state.http, browser=None)      # used for URL import / re-verification
+        # AWS web search for the managers' endpoint; its monthly counter is the same PostgreSQL row the workers use.
+        app.state.aws_search = AwsWebSearch(settings, aws_web_search.quota_for(app.state.db_engine, settings))
         background: set[asyncio.Task] = set()
 
         async def quietly(work) -> None:
@@ -156,7 +160,7 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
-    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin):
+    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin, web_search):
         app.include_router(module.router)
     return app
 

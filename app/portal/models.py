@@ -471,3 +471,14 @@ class LegacyRecord(Base):
     data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = created()
     __table_args__ = (UniqueConstraint("kind", "legacy_id", name="uq_legacy_records_kind_id"),)
+
+
+class AwsWebSearchUsage(Base):
+    """AWS web search queries reserved per calendar month (UTC). Only a number: no query, no result
+    (providers/aws_web_search.py, PgQuota)."""
+    __tablename__ = "aws_web_search_usage"
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    used: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (CheckConstraint("used >= 0", name="ck_aws_web_search_usage_used"),
+                      CheckConstraint("month ~ '^[0-9]{4}-[0-9]{2}$'", name="ck_aws_web_search_usage_month"))
