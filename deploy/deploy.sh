@@ -63,6 +63,9 @@ fi
 mv docker-compose.yml.new docker-compose.yml
 set_tag "$tag"
 docker compose up -d --remove-orphans
+# Compose does not recreate a container when only an inline config changed; SearXNG keeps no state, so restart it
+# with the settings of this release every time.
+docker compose up -d --no-deps --force-recreate searxng > /dev/null 2>&1 || true
 
 if healthy; then
   echo "deploy: $tag is healthy"
