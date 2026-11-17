@@ -3,7 +3,11 @@
     python tests/e2e/ui_checks.py --base http://127.0.0.1:3011 --w 1280 --h 900
     python tests/e2e/ui_checks.py --base http://127.0.0.1:3011 --w 390 --h 844
 
-The run changes data (it invites people, assigns jobs, marks applications), so start from freshly seeded demo data.
+The run changes data (it invites people, adds candidates, assigns jobs, marks applications), so start from freshly
+seeded demo data.
+
+Members are recruiters with an account; candidates are the people who need a job (records, never accounts). Jobs
+belong to candidates, and the member responsible for a candidate works on them.
 
 Every step is a named check. Console errors/warnings, page errors and failed API
 requests are collected for the whole run; a step that provokes a failure on purpose
@@ -17,6 +21,7 @@ import tempfile
 import time
 import traceback
 from contextlib import contextmanager
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright, expect
 
@@ -33,7 +38,7 @@ WORK_DIR = tempfile.mkdtemp(prefix="jobfinder-ui-")      # files the run uploads
 PASSWORD = "Demo-Password-42!"
 STAMP = str(int(time.time()))[-7:]
 MOBILE = A.w < 768
-SHARED = {}           # what one step leaves for the next (the member invited during the run)
+SHARED = {}           # what one step leaves for the next (the member invited and the candidate added during the run)
 results = []          # (ok, name, detail)
 problems = []         # unexpected console / network problems
 expected = []         # substrings that are allowed right now
@@ -149,6 +154,66 @@ def toast(page, text, timeout=15000):
     page.locator("[data-sonner-toast]").filter(has_text=text).first.wait_for(timeout=timeout)
 
 
+def send(page, method, path, body=None):
+    """A state-changing request as the signed-in person, with the CSRF header the app itself sends. Returns the status."""
+    return page.evaluate(
+        """async ([method, path, body]) => {
+            const csrf = decodeURIComponent((document.cookie.split('; ').find((c) => c.startsWith('jf_csrf=')) || '').slice(8));
+            const r = await fetch(path, { method, credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: body === null ? undefined : JSON.stringify(body) });
+            return r.status;
+        }""", [method, path, body])
+
+
+def candidate_named(page, name):
+    """The candidate record as the signed-in person receives it (None when it is not theirs to see)."""
+    data = api(page, f"/api/candidates?q={name.replace(' ', '%20')}&page_size=50")
+    return next((c for c in data.get("items", []) if c["name"] == name), None)
+
+
+def openable_job(browser, candidate_name):
+    """An open job of that candidate whose stored posting address is a public one.
+    "Open Job" refuses anything else (409), and some synthetic postings live on a host that does not exist.
+    A member is never shown an address, so an Admin's view of the jobs is asked."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    login(page, "admin@example.com")
+    record = candidate_named(page, candidate_name)
+    found = None
+    for item in api(page, f"/api/assignments?candidate_id={record['id']}&applied=false&page_size=200")["items"]:
+        if item["status"] not in ("ASSIGNED", "VIEWED"):
+            continue
+        job = api(page, f"/api/jobs/{item['job']['id']}")
+        if urlparse(job.get("apply_url") or job.get("canonical_url") or "").hostname == "job-boards.greenhouse.io":
+            found = item
+            break
+    ctx.close()
+    assert found, f"no open job with a public posting address for {candidate_name}"
+    return found
+
+
+def open_job_card(page, job):
+    """Find a job in a member's card list by its company and open it by its title."""
+    page.get_by_role("searchbox", name="Search jobs").fill(job["company"])
+    card = page.locator('[data-slot="job-card"]').filter(visible=True).filter(has=page.get_by_role("link", name=job["title"], exact=True)).first
+    card.wait_for(timeout=15000)
+    card.get_by_role("link", name=job["title"], exact=True).click()
+
+
+def pick_option(page, scope, combobox, option):
+    scope.get_by_role("combobox", name=combobox).click()
+    page.get_by_role("option", name=option, exact=True).click()
+
+
+def bell_text(page, pattern, timeout=15000):
+    """Open the notification list and wait for a notification matching the pattern. Returns its locator."""
+    bell = page.get_by_role("button", name=re.compile("Notifications"))
+    bell.click()
+    item = page.get_by_text(pattern).first
+    item.wait_for(timeout=timeout)
+    return item
+
+
 # --------------------------------------------------------------------------------------------- steps
 def step_auth(browser):
     print("== auth and role redirects")
@@ -208,8 +273,28 @@ def step_member(browser):
     check("member dashboard shows the six KPI cards", page.locator('[data-slot="kpi"]').filter(visible=True).count() == 6)
     labels = [page.locator('[data-slot="kpi"]').filter(visible=True).nth(i).get_attribute("data-label") for i in range(6)]
     check("KPI labels are the six asked for", labels == ["Total Assigned", "Not Applied", "Applied", "Interviews", "Offers", "Rejected/Closed"], str(labels))
-    for title in ("Pipeline", "Applications over time", "Status distribution", "Weekly activity", "Pending vs applied"):
+    for title in ("Pipeline", "By candidate", "Applications over time", "Status distribution", "Weekly activity", "Pending vs applied"):
         check(f"dashboard panel present: {title}", page.get_by_role("heading", name=title, exact=True).is_visible())
+    check("the dashboard says whose jobs these are (the member's candidates)", page.get_by_text("Where the jobs of your candidates stand").is_visible())
+
+    # per-candidate table: one row per candidate of the member, adding up to the totals above
+    me = api(page, "/api/auth/me")
+    board = api(page, f"/api/users/{me['id']}/dashboard")
+    rows = {r["candidate"]["name"]: r["stats"] for r in board["candidates"]}
+    check("the API's dashboard lists the member's candidates", sorted(rows) == ["Elena Petrova", "Jordan Rivera"], str(sorted(rows)))
+    check("the candidates' figures add up to the member's totals",
+          all(sum(r[k] for r in rows.values()) == board["stats"][k] for k in ("assigned", "not_applied", "applied", "interviews", "offers")), str(board["stats"]))
+    row = page.locator("tr, li").filter(has=page.get_by_role("link", name="Jordan Rivera")).filter(visible=True).last
+    shown = row.inner_text()
+    cells = row.locator("dd").all_inner_texts()[:5] if MOBILE else row.locator("td").all_inner_texts()[1:6]
+    figures = [int(c.replace(",", "")) for c in cells]
+    want = [rows["Jordan Rivera"][k] for k in ("assigned", "not_applied", "applied", "interviews", "offers")]
+    check("the per-candidate table shows the API's figures for a candidate", figures == want, f"shown {figures}, API {want}")
+    check("each candidate in the table links to the candidate's page",
+          page.get_by_role("link", name="Jordan Rivera").filter(visible=True).first.get_attribute("href") == f"/member/candidates/{next(r['candidate']['id'] for r in board['candidates'] if r['candidate']['name'] == 'Jordan Rivera')}")
+    check("a row without a resume would say so; these have one", "No resume uploaded" not in shown)
+    check("the member's own table has no 'Responsible member' column", page.get_by_role("columnheader", name="Responsible member").count() == 0
+          and "Responsible:" not in shown)
     check("charts are drawn (Recharts SVG present)", page.locator("svg.recharts-surface").filter(visible=True).count() >= 2)
     no_overflow(page, "member dashboard")
     shot(page, "member_dashboard")
@@ -230,14 +315,39 @@ def step_member(browser):
     check("job list has search, status filter and sort", page.get_by_role("searchbox", name="Search jobs").is_visible()
           and page.get_by_role("combobox", name="Status").is_visible() and page.get_by_role("combobox", name="Sort").is_visible())
     check("job list is paged", page.get_by_role("navigation", name="Pages of jobs").is_visible())
+    check("the page is called All Jobs", page.get_by_role("heading", level=1, name="All Jobs").is_visible())
+    check("every card names the candidate the job is for", all("For" in c.inner_text() and ("Jordan Rivera" in c.inner_text() or "Elena Petrova" in c.inner_text()) for c in cards.all()))
 
-    title = cards.first.get_by_role("link").inner_text().strip()
-    cards.first.get_by_role("link").click()
+    # candidate filter: the member's candidates, sent to the API as candidate_id
+    page.get_by_role("combobox", name="Candidate").click()
+    offered = [o.inner_text().strip() for o in page.get_by_role("option").all()]
+    check("the candidate filter offers exactly the member's candidates", offered == ["All candidates", "Elena Petrova", "Jordan Rivera"], str(offered))
+    jordan_id = next(r["candidate"]["id"] for r in board["candidates"] if r["candidate"]["name"] == "Jordan Rivera")
+    with page.expect_response(lambda r: "/api/assignments?" in r.url and f"candidate_id={jordan_id}" in r.url) as info:
+        page.get_by_role("option", name="Jordan Rivera", exact=True).click()
+    check("choosing a candidate sends candidate_id to the API", info.value.ok and f"candidate={jordan_id}" in page.url, page.url[-80:])
+    cards.first.wait_for(timeout=15000)
+    check("the filtered list holds that candidate's jobs only", cards.count() > 0 and all("Jordan Rivera" in c.inner_text() for c in cards.all()), f"{cards.count()} cards")
+    page.get_by_role("combobox", name="Candidate").click()
+    with page.expect_response(lambda r: "/api/assignments?" in r.url and "candidate_id=" in r.url):
+        page.get_by_role("option", name="Elena Petrova", exact=True).click()
+    page.get_by_text("No jobs match these filters").wait_for(timeout=15000)
+    check("a candidate without jobs gives the 'no jobs match' state, with a way to clear", page.get_by_role("button", name="Clear filters").last.is_visible())
+    page.get_by_role("button", name="Clear filters").last.click()
+    cards.first.wait_for(timeout=15000)
+    page.goto(BASE + "/member/jobs?applied=false")
+    cards.first.wait_for(timeout=15000)
+
+    job = openable_job(browser, "Jordan Rivera")
+    title = job["job"]["title"]
+    open_job_card(page, job["job"])
     page.wait_for_url(re.compile(r"/member/jobs/[0-9a-f-]{36}$"), timeout=15000)
     assignment_id = page.url.rsplit("/", 1)[1]
     page.get_by_role("heading", level=1, name=title).wait_for(timeout=15000)
     page.wait_for_load_state("networkidle")
-    check("job detail page opens", True, title)
+    check("job detail page opens", assignment_id == job["id"], title)
+    check("the job page says which candidate the job is for, linked to the candidate",
+          page.get_by_role("link", name="Jordan Rivera").filter(visible=True).first.get_attribute("href") == f"/member/candidates/{jordan_id}")
     html = page.content()
     check("no posting URL is rendered for the member", "greenhouse.io" not in html and "careers.example" not in html and "lever.co" not in html)
     check("no copy-link control for the member", page.get_by_role("button", name=re.compile("copy", re.I)).count() == 0)
@@ -305,21 +415,32 @@ def step_member(browser):
     check("Applied KPI went up by one", applied_after == applied_before + 1, f"{applied_before} -> {applied_after}")
     check("Not Applied KPI went down by one", not_applied_after == not_applied_before - 1, f"{not_applied_before} -> {not_applied_after}")
 
-    for path, heading in (("/member/applications", "Applications"), ("/member/activity", "Activity"), ("/member/profile", "Profile")):
+    for path, heading in (("/member/applications", "Applications"), ("/member/activity", "Activity"), ("/member/candidates", "My Candidates"), ("/member/settings", "Settings")):
         page.goto(BASE + path)
         page.wait_for_load_state("networkidle")
         check(f"{path} loads", page.get_by_role("heading", level=1, name=heading).is_visible())
         no_overflow(page, path)
+    # a member has no profile or resume of their own: the old address leads to the account settings, where nothing is uploaded
+    page.goto(BASE + "/member/profile")
+    page.wait_for_load_state("networkidle")
+    check("/member/profile only leads to /member/settings", page.url.endswith("/member/settings"), page.url)
+    check("the member's settings hold no resume upload and no job-search profile",
+          page.locator('input[type="file"]').count() == 0 and page.get_by_role("button", name="Save Profile").count() == 0
+          and page.get_by_text("Desired job titles").count() == 0)
     page.goto(BASE + "/member/applications")
     try:
         page.get_by_role("link", name=title).first.wait_for(timeout=15000)
         check("applications list includes the job just applied to", True)
     except Exception:
         check("applications list includes the job just applied to", False, title)
+    check("the applications list names the candidate of each application", page.get_by_role("link", name="Jordan Rivera").filter(visible=True).count() >= 1)
 
     # navigation drawer on small screens / sidebar on wide ones
     open_nav(page)
-    nav_link(page, "My Jobs").click()
+    for label in ("My Candidates", "All Jobs", "Applications", "Activity", "Settings"):
+        check(f"member navigation has: {label}", nav_link(page, label).count() == 1)
+    check("member navigation has no 'My Jobs' and no 'Profile' any more", nav_link(page, "My Jobs").count() == 0 and nav_link(page, "Profile").count() == 0)
+    nav_link(page, "All Jobs").click()
     page.wait_for_url(re.compile(r"/member/jobs$"), timeout=15000)
     check("navigation works from the " + ("drawer" if MOBILE else "sidebar"), True)
 
@@ -328,6 +449,728 @@ def step_member(browser):
     page.goto(BASE + "/member/dashboard")
     check("after sign-out the dashboard needs a sign-in again", "/login?next=%2Fmember%2Fdashboard" in page.url, page.url)
     ctx.close()
+
+
+NO_AI_TEXT = "No outside AI service is configured on this server. The resume text and the uploaded file stay on this server."
+MANAGER_CONTROLS = re.compile(r"^(Edit Details|Manage Candidate|Move to Another Member|Assign to a Member|Save Profile|Save Details|Delete|Deactivate|Reactivate|"
+                              r"Find Jobs for .*|Add Candidate|Upload Resume.*|Replace Resume.*)$")
+
+
+def download_headers(page, candidate_id):
+    """GET the resume file with the page's own session; returns (status, headers, text)."""
+    response = page.request.get(BASE + f"/api/candidates/{candidate_id}/resume/download")
+    return response.status, response.headers, response.text() if response.status == 200 else ""
+
+
+def step_my_candidates(browser):
+    print("== member: My Candidates cards and sorts, the candidate page (read-only), resume download")
+    actx = browser.new_context()
+    apage = actx.new_page()
+    login(apage, "admin@example.com")
+    samuel = candidate_named(apage, "Samuel Okafor")
+    actx.close()
+
+    ctx = new_context(browser)
+    page = ctx.new_page()
+    login(page, "maya@example.com", expect_home="/member/dashboard")
+    mine = {c["name"]: c for c in api(page, "/api/candidates?page_size=50")["items"]}
+    check("the API gives the member exactly the candidates assigned to them", sorted(mine) == ["Elena Petrova", "Jordan Rivera"], str(sorted(mine)))
+    jordan, elena = mine["Jordan Rivera"], mine["Elena Petrova"]
+
+    open_nav(page)
+    nav_link(page, "My Candidates").click()
+    page.wait_for_url(re.compile(r"/member/candidates$"), timeout=15000)
+    cards = page.locator('[data-slot="candidate-card"]').filter(visible=True)
+    cards.first.wait_for(timeout=15000)
+    names = lambda: [c.get_by_role("heading").inner_text().strip() for c in cards.all()]
+    check("My Candidates shows one card per candidate", names() == ["Jordan Rivera", "Elena Petrova"], str(names()))
+    check("the default order is newest job first (a candidate without jobs comes last)", page.get_by_role("combobox", name="Sort").inner_text().strip() == "Newest job first")
+    card = cards.filter(has_text="Jordan Rivera").first
+    text = card.inner_text()
+    check("a card shows how to reach the candidate", "jordan.candidate@example.com" in text and jordan["phone"] in text
+          and card.get_by_role("link", name=re.compile("jordan.candidate@example.com")).get_attribute("href") == "mailto:jordan.candidate@example.com"
+          and card.get_by_role("link", name=re.compile(re.escape(jordan["phone"]))).get_attribute("href").startswith("tel:+1555"))
+    check("a card shows what the candidate is looking for", all(t in text for t in ("Machine Learning Engineer, AI Engineer", "3 years", "Green Card / US Permanent Resident", "NY, WA")), text.replace("\n", " | ")[:200])
+    figures = [int(v.replace(",", "")) for v in card.locator("dl").last.locator("dd").all_inner_texts()]
+    want = [jordan["stats"][k] for k in ("assigned", "not_applied", "applied", "interviews", "offers")]
+    check("a card shows the candidate's figures as the API states them", figures == want, f"shown {figures}, API {want}")
+    check("a card says whether the resume is in and when the newest job came", card.locator('[data-slot="tag"]').filter(has_text="Resume").is_visible() and "Newest job assigned" in text)
+    other = cards.filter(has_text="Elena Petrova").first.inner_text()
+    check("a candidate without an e-mail address and without jobs is shown as such", "@" not in other and elena["phone"] in other and "No jobs assigned yet" in other)
+    check("the whole card opens the candidate", card.get_by_role("link", name="Jordan Rivera").get_attribute("href") == f"/member/candidates/{jordan['id']}")
+    check("the count below the cards is right", page.get_by_text("2 candidates", exact=True).is_visible())
+    no_overflow(page, "my candidates")
+    shot(page, "my_candidates")
+
+    # sorts are done by the API
+    with page.expect_response(lambda r: "/api/candidates?" in r.url and "sort=name" in r.url) as info:
+        pick_option(page, page, "Sort", "Name, A to Z")
+    expect(cards.first.get_by_role("heading")).to_have_text("Elena Petrova", timeout=10000)
+    check("sorting by name asks the API (sort=name) and reorders the cards", info.value.ok and names() == ["Elena Petrova", "Jordan Rivera"] and "sort=name" in page.url, str(names()))
+    with page.expect_response(lambda r: "/api/candidates?" in r.url and "sort=not_applied" in r.url) as info:
+        pick_option(page, page, "Sort", "Most not applied first")
+    expect(cards.first.get_by_role("heading")).to_have_text("Jordan Rivera", timeout=10000)
+    check("sorting by 'most not applied' asks the API (sort=not_applied)", info.value.ok and names() == ["Jordan Rivera", "Elena Petrova"], str(names()))
+    with page.expect_response(lambda r: "/api/candidates?" in r.url and "q=elena" in r.url):
+        page.get_by_role("searchbox", name="Search candidates").fill("elena")
+    expect(cards).to_have_count(1, timeout=10000)
+    check("the search narrows the cards", names() == ["Elena Petrova"])
+    page.get_by_role("searchbox", name="Search candidates").fill("nobody-like-this")
+    page.get_by_text("No candidate matches this search").wait_for(timeout=15000)
+    check("a search without a match says so and offers to clear it", page.get_by_role("button", name="Clear search").last.is_visible())
+    page.get_by_role("button", name="Clear search").last.click()
+    expect(cards).to_have_count(2, timeout=10000)
+
+    # the candidate's page
+    cards.filter(has_text="Jordan Rivera").first.get_by_role("link", name="Jordan Rivera").click()
+    page.wait_for_url(re.compile(rf"/member/candidates/{jordan['id']}"), timeout=15000)
+    page.get_by_role("heading", level=1, name="Jordan Rivera").wait_for(timeout=15000)
+    page.wait_for_load_state("networkidle")
+    tabs = [t.inner_text().strip() for t in page.get_by_role("tab").all()]
+    check("the candidate page has the tabs Jobs, Details, Profile, Resume, Activity", tabs == ["Jobs", "Details", "Profile", "Resume", "Activity"], str(tabs))
+    check("the candidate page shows the six figures of this candidate", page.locator('[data-slot="kpi"]').filter(visible=True).count() == 6
+          and kpi(page, "Total Assigned") == jordan["stats"]["assigned"] and kpi(page, "Applied") == jordan["stats"]["applied"])
+    jobs = page.locator('[data-slot="job-card"]').filter(visible=True)
+    jobs.first.wait_for(timeout=15000)
+    check("Jobs tab: the candidate's jobs as cards, without a candidate filter", jobs.count() > 0 and page.get_by_role("combobox", name="Candidate").count() == 0
+          and page.get_by_role("searchbox", name="Search jobs").is_visible())
+    check("Jobs tab: a job opened from here knows the way back to the candidate",
+          re.search(rf"^/member/jobs/[0-9a-f-]{{36}}\?candidate={jordan['id']}$", jobs.first.get_by_role("link").first.get_attribute("href")) is not None)
+    check("the member job view of a candidate carries the watermark", page.locator('[data-slot="watermark"]').filter(visible=True).count() == 1)
+    no_overflow(page, "member candidate page, jobs")
+    shot(page, "member_candidate_jobs")
+
+    def read_only(tab):
+        panel = page.get_by_role("tabpanel").filter(visible=True)
+        controls = page.get_by_role("button", name=MANAGER_CONTROLS).filter(visible=True).count()
+        inputs = sum(panel.get_by_role(role).count() for role in ("textbox", "combobox", "checkbox", "switch", "radio", "spinbutton"))
+        inputs -= panel.get_by_role("navigation").get_by_role("combobox", name="Per page").count()      # paging a list changes nothing
+        check(f"{tab} tab is read-only for the member (no edit controls, no fields, no upload)",
+              controls == 0 and inputs == 0 and page.locator('input[type="file"]').count() == 0, f"{controls} manager buttons, {inputs} fields")
+
+    page.get_by_role("tab", name="Details").click()
+    panel = page.get_by_role("tabpanel").filter(visible=True)
+    panel.get_by_text("Kept up to date by your Team Lead.").wait_for(timeout=15000)
+    details = panel.inner_text()
+    check("Details tab: name, contact, team, responsible member and the Team Lead's notes",
+          all(t in details for t in ("Jordan Rivera", "jordan.candidate@example.com", jordan["phone"], "Team Alpha", "Maya Chen", "Prefers employers with a clear remote policy.")),
+          details.replace("\n", " | ")[:260])
+    read_only("Details")
+    no_overflow(page, "member candidate page, details")
+
+    page.get_by_role("tab", name="Profile").click()
+    panel = page.get_by_role("tabpanel").filter(visible=True)
+    panel.get_by_text("Desired job titles").wait_for(timeout=15000)
+    profile = panel.inner_text()
+    check("Profile tab: the candidate's job-search profile as facts",
+          all(t in profile for t in ("Machine Learning Engineer", "AI Engineer", "3 years", "Green Card / US Permanent Resident", "NY", "WA", "Skills (4)", "PyTorch", "Left out of searches")),
+          profile.replace("\n", " | ")[:300])
+    read_only("Profile")
+    no_overflow(page, "member candidate page, profile")
+
+    page.get_by_role("tab", name="Resume").click()
+    panel = page.get_by_role("tabpanel").filter(visible=True)
+    link = panel.get_by_role("link", name="Download File")
+    link.wait_for(timeout=15000)
+    check("Resume tab: the file, with a download link to the API", "jordan-resume.txt" in panel.inner_text()
+          and link.get_attribute("href") == f"/api/candidates/{jordan['id']}/resume/download" and link.get_attribute("download") == "jordan-resume.txt")
+    check("Resume tab: the text of the resume to copy from", "Jordan Rivera" in panel.get_by_role("region", name="Resume text").inner_text())
+    check("Resume tab: no notice about uploading, since a member uploads nothing", panel.get_by_text(re.compile("outside AI service|text from this resume")).count() == 0)
+    read_only("Resume")
+    with page.expect_download(timeout=20000) as download:
+        link.click()
+    check("Download File saves the file under its own name", download.value.suggested_filename == "jordan-resume.txt", download.value.suggested_filename)
+    with open(download.value.path(), encoding="utf-8") as handle:
+        saved = handle.read()
+    check("the downloaded file is the candidate's resume", saved.startswith("Jordan Rivera") and len(saved) > 200, f"{len(saved)} characters")
+    status, headers, body = download_headers(page, jordan["id"])
+    check("resume download: 200 for the responsible member, with the stored content", status == 200 and body == saved, f"HTTP {status}")
+    check("resume download: sent as an attachment with a quoted file name", headers.get("content-disposition", "") == 'attachment; filename="jordan-resume.txt"', headers.get("content-disposition", ""))
+    check("resume download: X-Content-Type-Options is nosniff", headers.get("x-content-type-options") == "nosniff", str(headers.get("x-content-type-options")))
+    check("resume download: never cached, and a content type fixed by the server", "no-store" in headers.get("cache-control", "") and headers.get("content-type", "").startswith("text/plain"),
+          f"{headers.get('cache-control')} / {headers.get('content-type')}")
+    no_overflow(page, "member candidate page, resume")
+    shot(page, "member_candidate_resume")
+
+    page.get_by_role("tab", name="Activity").click()
+    panel = page.get_by_role("tabpanel").filter(visible=True)
+    feed = panel.get_by_role("list", name="Activity, newest first")
+    feed.get_by_role("listitem").first.wait_for(timeout=15000)
+    said = feed.inner_text()
+    check("Activity tab: what happened to the candidate's jobs, the member's own steps as 'You ...'",
+          panel.locator('[data-slot="error-state"]').count() == 0 and feed.get_by_role("listitem").count() > 3
+          and re.search(r"You (viewed the job details|opened the job posting|changed the status)", said) is not None and "Lena Alpha assigned this job" in said,
+          said.replace("\n", " | ")[:200])
+    check("Activity tab: each entry leads to the job, with the way back to the candidate",
+          re.search(rf"^/member/jobs/[0-9a-f-]{{36}}\?candidate={jordan['id']}$", feed.get_by_role("link").first.get_attribute("href") or "") is not None)
+    read_only("Activity")
+    no_overflow(page, "member candidate page, activity")
+    check("the tab is kept in the address", page.url.endswith("?tab=activity"), page.url)
+
+    # the API, not only the screen, refuses a member any change to a candidate
+    cid = jordan["id"]
+    with expecting("403", "/api/candidates"):
+        refused = {
+            "PATCH details": send(page, "PATCH", f"/api/candidates/{cid}", {"notes": "changed by the member"}),
+            "PATCH responsible member": send(page, "PATCH", f"/api/candidates/{cid}", {"assigned_member_id": None}),
+            "PATCH profile": send(page, "PATCH", f"/api/candidates/{cid}/profile", {"seniority": "Senior"}),
+            "DELETE resume": send(page, "DELETE", f"/api/candidates/{cid}/resume"),
+            "POST candidate": send(page, "POST", "/api/candidates", {"name": "Made By A Member"}),
+        }
+        page.wait_for_timeout(300)
+    check("the API answers 403 to every change a member tries on a candidate", set(refused.values()) == {403}, str(refused))
+    check("and nothing changed", api(page, f"/api/candidates/{cid}")["notes"] == "Prefers employers with a clear remote policy." and api(page, f"/api/candidates/{cid}")["has_resume"] is True)
+
+    # a candidate of another member of the same team: answered like one that does not exist
+    with expecting("404", f"/api/candidates/{samuel['id']}"):
+        with page.expect_response(lambda r: r.url.endswith(f"/api/candidates/{samuel['id']}")) as info:
+            page.goto(BASE + f"/member/candidates/{samuel['id']}")
+        page.locator('[data-slot="error-state"]').filter(visible=True).first.wait_for(timeout=15000)
+        page.wait_for_load_state("networkidle")
+        hidden = [download_headers(page, samuel["id"])[0]] + [api(page, f"/api/candidates/{samuel['id']}/{part}").get("__status") for part in ("profile", "resume", "activity", "analytics")]
+        page.wait_for_timeout(300)
+    body = page.locator("main").inner_text()
+    check("a colleague's candidate is answered 404 everywhere (record, profile, resume, file, activity, figures)", info.value.status == 404 and set(hidden) == {404}, str(hidden))
+    check("the screen says the candidate is not assigned to the member and shows nothing of them",
+          "This candidate is not assigned to you" in body and "Samuel" not in body and page.get_by_role("link", name="Go to My Candidates").get_attribute("href") == "/member/candidates")
+    no_overflow(page, "member opening a candidate that is not theirs")
+    ctx.close()
+
+
+def names_listed(page, known, want, timeout=10000):
+    """The candidates of `known` that the list shows; waits until it is `want` (the list reloads after a filter change)."""
+    deadline = time.time() + timeout / 1000
+    while True:
+        shown = {n for n in known if page.get_by_role("link", name=n, exact=True).filter(visible=True).count() > 0}
+        if shown == set(want) or time.time() > deadline:
+            return shown
+        page.wait_for_timeout(200)
+
+
+def step_candidates(browser):
+    print("== candidates: Add Candidate with and without a resume, list filters, profile and resume, download, assign and move")
+    resume_path = f"{WORK_DIR}/resume-{STAMP}.txt"
+    with open(resume_path, "w") as handle:
+        handle.write(RESUME_TEXT)
+    bad_path = resume_path.replace(".txt", ".png")
+    with open(bad_path, "wb") as handle:
+        handle.write(b"not a resume")
+    bare, full = f"Blake Bare {STAMP}", f"Casey Complete {STAMP}"
+
+    ctx = new_context(browser)
+    page = ctx.new_page()
+    login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
+    people = {u["name"]: u for u in api(page, "/api/users?role=MEMBER&page_size=50")["items"]}
+    open_nav(page)
+    nav_link(page, "Candidates").click()
+    page.wait_for_url(re.compile(r"/tl/candidates$"), timeout=15000)
+    page.get_by_role("link", name="Jordan Rivera").filter(visible=True).first.wait_for(timeout=15000)
+    seeded = ["Jordan Rivera", "Elena Petrova", "Samuel Okafor", "Hannah Kim", "Diego Morales"]
+    foreign = ["Aisha Rahman", "Tom Becker", "Grace Liu", "Lucas Meyer", "Victor Hale"]
+    check("the Team Lead's candidate list holds the own team's candidates only", names_listed(page, seeded + foreign, seeded) == set(seeded))
+    if not MOBILE:
+        page.get_by_role("columnheader", name="Candidate").wait_for(timeout=15000)
+        heads = [h.inner_text().strip() for h in page.get_by_role("columnheader").all()]
+        check("the list has the columns Candidate, Responsible member, Resume and the job figures",
+              heads[:7] == ["Candidate", "Responsible member", "Resume", "Jobs assigned", "Applied", "Interviews", "Newest job"], str(heads))
+    row = page.locator("tr, li").filter(has=page.get_by_role("link", name="Diego Morales", exact=True)).filter(visible=True).last
+    check("a row shows the resume state and who is responsible", "No resume" in row.inner_text() and "Unassigned" in row.inner_text(), row.inner_text().replace("\n", " | ")[:160])
+    no_overflow(page, "tl candidates")
+    shot(page, "tl_candidates")
+
+    # ---- Add Candidate, without a resume: the rules of the API are checked before anything is sent
+    posts = []
+    page.on("request", lambda r: posts.append(r) if r.method == "POST" and "/api/candidates" in r.url else None)
+    page.get_by_role("button", name="Add Candidate").first.click()
+    dialog = page.get_by_role("dialog", name="Add Candidate")
+    dialog.wait_for(timeout=5000)
+    check("the dialog says a candidate has no account and receives nothing", dialog.get_by_text("A candidate has no account and receives nothing from the portal.").is_visible())
+    dialog.get_by_role("button", name="Add Candidate").click()
+    check("a candidate without a name is refused in the form", dialog.get_by_role("alert").filter(visible=True).count() == 1)
+    dialog.get_by_label("Full name").fill("Blake <b>http://x.example</b>")
+    dialog.get_by_label(re.compile("^E-mail")).fill("not-an-address")
+    dialog.get_by_label(re.compile("^Phone")).fill("call me maybe!")
+    dialog.get_by_role("button", name="Add Candidate").click()
+    check("a name that could carry a link, a wrong e-mail address and a wrong phone number are each refused on their field",
+          dialog.get_by_role("alert").filter(has_text=re.compile("letters, digits, spaces")).first.is_visible()
+          and dialog.get_by_role("alert").filter(has_text="Enter a valid e-mail address, or leave it empty.").is_visible()
+          and dialog.get_by_role("alert").filter(has_text="Use at most 40 characters: digits, spaces and + ( ) - . / # x only.").is_visible())
+    check("nothing was sent while the form had problems", len(posts) == 0, f"{len(posts)} requests")
+    dialog.get_by_label("Full name").fill(bare)
+    dialog.get_by_label(re.compile("^E-mail")).fill("")
+    dialog.get_by_label(re.compile("^Phone")).fill("")
+    dialog.get_by_role("combobox", name=re.compile("Responsible member")).click()
+    offered = [o.inner_text().strip() for o in page.get_by_role("option").all()]
+    check("the responsible member is chosen among the active members of the own team, or nobody",
+          offered[0] == "Nobody yet (unassigned)" and {"Maya Chen", "Noah Patel", "Omar Haddad"} <= set(offered) and not {"Priya Nair", "Quinn Lopez", "Lena Alpha"} & set(offered), str(offered))
+    page.keyboard.press("Escape")
+    check("the resume is optional, and no notice about it is shown before a file is chosen",
+          dialog.get_by_role("button", name="Choose a File").is_visible() and dialog.get_by_text(re.compile("outside AI service")).count() == 0)
+    if MOBILE:
+        box = dialog.bounding_box()
+        check("390 px: the Add Candidate dialog fits the screen", box["x"] >= 0 and box["x"] + box["width"] <= A.w + 0.5 and box["y"] + box["height"] <= A.h + 0.5, str(box))
+    shot(page, "add_candidate")
+    with page.expect_response(lambda r: r.url.endswith("/api/candidates") and r.request.method == "POST") as info:
+        dialog.get_by_role("button", name="Add Candidate").click()
+    sent = info.value.request.post_data_json
+    check("the candidate is created with what was entered (no team from the browser for a Team Lead, nobody responsible)",
+          info.value.status == 201 and sent == {"name": bare, "email": None, "phone": "", "notes": "", "team_id": None, "assigned_member_id": None}, str(sent))
+    toast(page, f"{bare} added")
+    page.wait_for_url(re.compile(r"/tl/candidates/[0-9a-f-]{36}\?tab=profile$"), timeout=15000)
+    bare_id = page.url.rsplit("/", 1)[1].split("?")[0]
+    page.get_by_role("heading", level=1, name=bare).wait_for(timeout=15000)
+    page.wait_for_load_state("networkidle")
+    record = api(page, f"/api/candidates/{bare_id}")
+    check("without a resume: the new candidate opens on the profile, marked 'No resume', in the Team Lead's team, unassigned",
+          page.locator('[data-slot="tag"]').filter(has_text="No resume").first.is_visible() and page.get_by_text("nobody yet: choose a responsible member").is_visible()
+          and record["team"]["name"] == "Team Alpha" and record["assigned_member"] is None and record["has_resume"] is False and record["created_by"]["name"] == "Lena Alpha")
+    check("without a resume: no upload was attempted", not any("/resume" in r.url for r in posts), str([r.url[-40:] for r in posts]))
+
+    # ---- Add Candidate, with a resume and a responsible member
+    page.goto(BASE + "/tl/candidates")
+    page.get_by_role("button", name="Add Candidate").first.click()
+    dialog = page.get_by_role("dialog", name="Add Candidate")
+    dialog.get_by_label("Full name").fill(full)
+    dialog.get_by_label(re.compile("^E-mail")).fill(f"casey.{STAMP}@example.com")
+    dialog.get_by_label(re.compile("^Phone")).fill("+1 (555) 010-7788 x12")
+    dialog.get_by_label(re.compile("^Notes")).fill("Available from next month.\nPrefers mornings.")
+    pick_option(page, dialog, re.compile("Responsible member"), "Omar Haddad")
+    dialog.locator('input[type="file"]').set_input_files(bad_path)
+    check("a file that is not PDF, DOCX or TXT is refused in the dialog", dialog.get_by_role("alert").filter(has_text="Choose a PDF, DOCX or TXT file.").is_visible()
+          and dialog.get_by_role("button", name="Choose a File").is_visible())
+    dialog.locator('input[type="file"]').set_input_files(resume_path)
+    dialog.get_by_text(f"resume-{STAMP}.txt").wait_for(timeout=5000)
+    check("the chosen file is named with its size and can be taken out again", dialog.get_by_role("button", name=f"Remove resume-{STAMP}.txt").is_visible()
+          and dialog.get_by_role("alert").count() == 0)
+    notice = dialog.get_by_role("status").filter(has_text="outside AI service")
+    check("once a file is chosen the dialog says where the resume goes (no AI service on the demo stack)", notice.count() == 1 and notice.inner_text().strip() == NO_AI_TEXT)
+    with page.expect_response(lambda r: r.url.endswith("/resume") and r.request.method == "POST") as info:
+        dialog.get_by_role("button", name="Add Candidate").click()
+    full_id = info.value.url.split("/api/candidates/")[1].split("/")[0]
+    check("with a resume: the file is uploaded to the new candidate right after it is created", info.value.status == 201 and info.value.json()["has_file"] is True, f"HTTP {info.value.status}")
+    toast(page, f"resume-{STAMP}.txt uploaded.")
+    page.wait_for_url(re.compile(rf"/tl/candidates/{full_id}\?tab=profile$"), timeout=15000)
+    page.get_by_role("heading", level=1, name=full).wait_for(timeout=15000)
+    page.wait_for_load_state("networkidle")
+    record = api(page, f"/api/candidates/{full_id}")
+    check("with a resume: the candidate has resume, file, contact details, notes and the responsible member",
+          record["has_resume"] is True and record["resume_has_file"] is True and record["assigned_member"]["name"] == "Omar Haddad"
+          and record["email"] == f"casey.{STAMP}@example.com" and record["phone"] == "+1 (555) 010-7788 x12" and record["notes"] == "Available from next month.\nPrefers mornings.")
+    check("the candidate's page says who handles the jobs", page.locator('[data-slot="tag"]').filter(has_text="Resume uploaded").first.is_visible()
+          and page.get_by_role("link", name="Omar Haddad").filter(visible=True).first.get_attribute("href") == f"/tl/members/{people['Omar Haddad']['id']}")
+    check("a candidate is not an account: no user with that name or address exists", api(page, f"/api/users?q=casey.{STAMP}&page_size=5")["total"] == 0
+          and api(page, f"/api/users?q=Casey%20Complete&page_size=5")["total"] == 0)
+    SHARED.update(candidate=full, candidate_id=full_id)
+
+    # ---- list filters, each done by the API
+    page.goto(BASE + "/tl/candidates")
+    page.get_by_role("link", name="Jordan Rivera").filter(visible=True).first.wait_for(timeout=15000)
+    known = seeded + [bare, full]
+    everyone = api(page, "/api/candidates?page_size=200")["items"]
+
+    def filtered(combobox, option, param, want):
+        with page.expect_response(lambda r: "/api/candidates?" in r.url and param in r.url) as info:
+            pick_option(page, page, combobox, option)
+        return info.value.ok, names_listed(page, known, want)
+
+    want = {c["name"] for c in everyone if c["assigned_member"] is None}
+    ok, shown = filtered("Responsible member", "Unassigned", "unassigned=true", want)
+    check("filter 'Unassigned': sent as unassigned=true, lists the candidates nobody is responsible for",
+          ok and shown == want == {"Hannah Kim", "Diego Morales", bare} and "member=unassigned" in page.url, str(sorted(shown)))
+    want = {c["name"] for c in everyone if c["assigned_member"] is None and not c["has_resume"]}
+    ok, shown = filtered("Resume", "No resume", "has_resume=false", want)
+    check("filter 'No resume' on top of it: sent as has_resume=false", ok and shown == want == {"Diego Morales", bare}, str(sorted(shown)))
+    page.get_by_role("button", name="Clear filters").click()
+    names_listed(page, known, known)
+    want = {c["name"] for c in everyone if c["has_resume"]}
+    ok, shown = filtered("Resume", "Resume uploaded", "has_resume=true", want)
+    check("filter 'Resume uploaded': sent as has_resume=true", ok and shown == want and len(want) == 5, str(sorted(shown)))
+    page.get_by_role("button", name="Clear filters").click()
+    names_listed(page, known, known)
+    page.get_by_role("combobox", name="Responsible member").click()
+    offered = [o.inner_text().strip() for o in page.get_by_role("option").all()]
+    check("the member filter offers 'Unassigned' and the members of the own team", offered[:2] == ["Any responsible member", "Unassigned"]
+          and {"Maya Chen", "Noah Patel", "Omar Haddad"} <= set(offered) and "Priya Nair" not in offered, str(offered))
+    with page.expect_response(lambda r: "/api/candidates?" in r.url and f"assigned_member_id={people['Maya Chen']['id']}" in r.url) as info:
+        page.get_by_role("option", name="Maya Chen", exact=True).click()
+    shown = names_listed(page, known, {"Jordan Rivera", "Elena Petrova"})
+    check("filter by member: sent as assigned_member_id, lists that member's candidates", info.value.ok and shown == {"Jordan Rivera", "Elena Petrova"}, str(sorted(shown)))
+    page.get_by_role("button", name="Clear filters").click()
+    names_listed(page, known, known)
+    with page.expect_response(lambda r: "/api/candidates?" in r.url and "q=%2B1+%28555%29+010" in r.url.replace("%20", "+")):
+        page.get_by_role("searchbox", name="Search candidates").fill("+1 (555) 010")
+    shown = names_listed(page, known, {full})
+    check("the search finds a candidate by phone number", shown == {full}, str(sorted(shown)))
+    page.get_by_role("searchbox", name="Search candidates").fill("")
+    names_listed(page, known, known)
+    with page.expect_response(lambda r: "/api/candidates?" in r.url and "sort=not_applied" in r.url) as info:
+        pick_option(page, page, "Sort", "Most not applied first")
+    first = api(page, "/api/candidates?sort=not_applied&active=true&page_size=1")["items"][0]["name"]
+    expect(page.locator("tbody tr, ul > li").filter(has=page.get_by_role("link", name=re.compile(r"^(%s)$" % "|".join(map(re.escape, known))))).filter(visible=True).first
+           .get_by_role("link").first).to_have_text(first, timeout=10000)
+    check("sorting is done by the API (sort=not_applied)", info.value.ok, first)
+    no_overflow(page, "tl candidates, filtered and sorted")
+
+    # ---- the candidate's page: resume and profile (the candidate added without a resume)
+    page.goto(BASE + f"/tl/candidates/{bare_id}?tab=profile")
+    page.get_by_text(f"Drop {bare}'s resume here, or choose a file").wait_for(timeout=15000)
+    check("the Team Lead uploads the candidate's resume on the candidate's page", True)
+    notice = page.get_by_role("status").filter(has_text="outside AI service").filter(visible=True)
+    check("the notice about outside AI services is shown on the candidate's resume panel (none configured on the demo stack)",
+          notice.count() == 1 and notice.first.inner_text().strip() == NO_AI_TEXT)
+    page.get_by_role("progressbar", name="Profile completion").wait_for(timeout=15000)
+    before = int(page.get_by_role("progressbar", name="Profile completion").get_attribute("aria-valuenow"))
+    check("the profile shows what is still missing", page.get_by_text("Add at least one desired job title").first.is_visible(), f"{before}% complete")
+    page.locator('input[type="file"]').first.set_input_files(resume_path)
+    toast(page, "uploaded (version 1)")
+    check("resume upload (multipart, through the /api proxy) succeeds", True)
+    page.get_by_text("Skills found in the resume").wait_for(timeout=15000)
+    check("extracted skills are shown for review", page.locator('[data-slot="tag"]').filter(has_text="Python").first.is_visible())
+    check("the page now says 'Resume uploaded' and offers the file", page.locator('[data-slot="tag"]').filter(has_text="Resume uploaded").first.is_visible()
+          and page.get_by_role("link", name="Download File").get_attribute("href") == f"/api/candidates/{bare_id}/resume/download")
+    try:
+        page.get_by_role("button", name="Remove Python").first.wait_for(timeout=10000)
+        check("skills the API took from the resume appear in the open profile form", True)
+    except Exception:
+        check("skills the API took from the resume appear in the open profile form", False)
+    no_overflow(page, "candidate detail, profile tab")
+    shot(page, "candidate_detail_profile")
+    page.locator('input[type="file"]').first.set_input_files(bad_path)
+    check("a file that is not PDF, DOCX or TXT is refused with a clear message", page.get_by_role("alert").filter(has_text="Choose a PDF, DOCX or TXT file.").first.is_visible())
+
+    titles = page.get_by_label(re.compile("^Desired job titles"))
+    titles.fill("QA Engineer, Test Engineer")
+    titles.press("Enter")
+    page.get_by_label("Years of experience").fill("5")
+    states = page.get_by_label(re.compile("^Preferred states"))
+    states.fill("new york")
+    states.press("Enter")
+    with page.expect_response(lambda r: r.url.endswith(f"/api/candidates/{bare_id}/profile") and r.request.method == "PATCH") as info:
+        page.get_by_role("button", name="Save Profile").click()
+    toast(page, "Profile saved")
+    expect(page.get_by_role("progressbar", name="Profile completion")).to_have_attribute("aria-valuenow", "100", timeout=15000)
+    check("saving the candidate's profile raises the completion meter", info.value.status == 200, f"{before}% -> 100%")
+    check("a state name is stored as its code", page.get_by_role("button", name="Remove NY").is_visible())
+    check("the candidate record carries the completion and the summary used on the member's card",
+          api(page, f"/api/candidates/{bare_id}")["profile_completion"] == 100 and api(page, f"/api/candidates/{bare_id}")["profile_summary"]["desired_titles"] == ["QA Engineer", "Test Engineer"])
+
+    # drag and drop a new resume
+    page.evaluate(
+        """([text]) => {
+            const zone = document.querySelector('label:has(input[type=file])');
+            const data = new DataTransfer();
+            data.items.add(new File([text], 'dropped-resume.txt', { type: 'text/plain' }));
+            zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }));
+            zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+        }""",
+        [RESUME_TEXT + "\nGo, Rust\n"],
+    )
+    toast(page, "dropped-resume.txt uploaded (version 2)")
+    check("a resume can be dropped onto the upload area (replaces the previous one)", True)
+    page.get_by_text("dropped-resume.txt").first.wait_for(timeout=15000)
+
+    # the file: a download, never something the browser renders
+    link = page.get_by_role("link", name="Download File")
+    with page.expect_download(timeout=20000) as download:
+        link.click()
+    with open(download.value.path(), encoding="utf-8") as handle:
+        saved = handle.read()
+    check("Download File gives back the file that was uploaded last", download.value.suggested_filename == "dropped-resume.txt" and saved == RESUME_TEXT + "\nGo, Rust\n",
+          download.value.suggested_filename)
+    status, headers, body = download_headers(page, bare_id)
+    check("resume download (Team Lead): attachment with the file name, nosniff, no-store",
+          status == 200 and headers.get("content-disposition") == 'attachment; filename="dropped-resume.txt"' and headers.get("x-content-type-options") == "nosniff"
+          and "no-store" in headers.get("cache-control", ""), str({k: headers.get(k) for k in ("content-disposition", "x-content-type-options", "cache-control", "content-type")}))
+    anonymous = browser.new_context()
+    refused = anonymous.request.get(BASE + f"/api/candidates/{bare_id}/resume/download", max_redirects=0)
+    check("resume download without a session is refused", refused.status == 401 and "Erin Example" not in refused.text(), f"HTTP {refused.status}")
+    anonymous.close()
+
+    for tab in ("Overview", "Jobs", "Activity", "Searches"):
+        page.get_by_role("tab", name=tab, exact=True).click()
+        page.wait_for_load_state("networkidle")
+        check(f"candidate detail tab renders: {tab}", page.locator('[data-slot="error-state"]').filter(visible=True).count() == 0)
+    page.get_by_role("tab", name="Activity", exact=True).click()
+    try:
+        page.get_by_role("tabpanel").filter(visible=True).get_by_text(re.compile("No .*(activity|happened)|Nothing", re.I)).first.wait_for(timeout=10000)
+        check("a candidate without jobs has an empty activity, said in words", True)
+    except Exception:
+        check("a candidate without jobs has an empty activity, said in words", False, page.get_by_role("tabpanel").filter(visible=True).inner_text()[:120])
+    no_overflow(page, "candidate detail, activity tab")
+
+    # delete the resume again
+    page.get_by_role("tab", name="Profile and Resume").click()
+    page.get_by_role("button", name="Delete", exact=True).click()
+    confirm = page.get_by_role("alertdialog", name="Delete this resume?")
+    check("deleting a resume asks first and says the file goes too", confirm.get_by_text(re.compile("The stored text and the uploaded file are removed")).is_visible())
+    confirm.get_by_role("button", name="Delete resume").click()
+    page.get_by_text(f"Drop {bare}'s resume here, or choose a file").wait_for(timeout=15000)
+    with expecting("404", f"/api/candidates/{bare_id}/resume/download"):
+        gone = download_headers(page, bare_id)[0]
+    check("after deleting, the candidate has no resume and the file is gone (404)",
+          api(page, f"/api/candidates/{bare_id}")["has_resume"] is False and gone == 404 and page.get_by_role("link", name="Download File").count() == 0, f"HTTP {gone}")
+
+    # ---- assign, move, unassign: the member's access follows at once
+    octx, mctx = new_context(browser), new_context(browser)
+    opage, mpage = octx.new_page(), mctx.new_page()
+    login(opage, "omar@example.com")
+    login(mpage, "maya@example.com")
+    bell = opage.get_by_role("button", name=re.compile("Notifications"))
+    check("the member who received a candidate has an unread notification", "unread" in (bell.get_attribute("aria-label") or ""))
+    told = bell_text(opage, f"Lena Alpha made you responsible for the candidate {full}.")
+    check("notification 'candidate assigned': who made the member responsible, and for whom", True)
+    told.click()
+    opage.wait_for_url(re.compile(rf"/member/candidates/{full_id}$"), timeout=15000)
+    opage.get_by_role("heading", level=1, name=full).wait_for(timeout=15000)
+    check("the notification opens the candidate's page", True)
+    with expecting("404", f"/api/candidates/{full_id}"):
+        maya_sees = api(mpage, f"/api/candidates/{full_id}").get("__status")
+        mpage.wait_for_timeout(300)
+    check("the responsible member can open the candidate; a colleague cannot (404)", api(opage, f"/api/candidates/{full_id}")["name"] == full and maya_sees == 404, f"colleague: {maya_sees}")
+
+    page.goto(BASE + f"/tl/candidates/{full_id}")
+    page.get_by_role("heading", level=1, name=full).wait_for(timeout=15000)
+    page.get_by_role("button", name="Move to Another Member").click()
+    dialog = page.get_by_role("dialog", name="Move to Another Member")
+    check("the move dialog says who is responsible now and that jobs and history stay with the candidate",
+          dialog.get_by_text(re.compile(rf"Omar Haddad is responsible for {re.escape(full)} now\.")).is_visible()
+          and dialog.get_by_text(re.compile("jobs, notes and history stay with the candidate, and the new member is notified")).is_visible()
+          and dialog.get_by_text("Active members of Team Alpha.").is_visible())
+    check("nothing to save until another member is chosen", dialog.get_by_role("button", name="Move Candidate").is_disabled())
+    dialog.get_by_role("combobox", name=re.compile("Responsible member")).click()
+    offered = [o.inner_text().strip() for o in page.get_by_role("option").all()]
+    check("only members of the candidate's own team are offered", {"Maya Chen", "Noah Patel", "Omar Haddad"} <= set(offered) and not {"Priya Nair", "Quinn Lopez"} & set(offered), str(offered))
+    page.get_by_role("option", name="Maya Chen", exact=True).click()
+    with page.expect_response(lambda r: r.url.endswith(f"/api/candidates/{full_id}") and r.request.method == "PATCH") as info:
+        dialog.get_by_role("button", name="Move Candidate").click()
+    check("moving sends the new responsible member and nothing else", info.value.status == 200 and info.value.request.post_data_json == {"assigned_member_id": people["Maya Chen"]["id"]},
+          str(info.value.request.post_data_json))
+    toast(page, f"Maya Chen is now responsible for {full}")
+    with expecting("404", f"/api/candidates/{full_id}"):
+        omar_sees = api(opage, f"/api/candidates/{full_id}").get("__status")
+        omar_file = download_headers(opage, full_id)[0]
+        opage.reload()
+        opage.locator('[data-slot="error-state"]').filter(visible=True).first.wait_for(timeout=15000)
+        opage.wait_for_load_state("networkidle")
+        opage.wait_for_timeout(300)
+    check("after the move the previous member has lost the candidate at once (record and resume file 404)", omar_sees == 404 and omar_file == 404, f"{omar_sees}, {omar_file}")
+    check("the previous member's open page turns into 'not assigned to you' and shows nothing of the candidate",
+          opage.get_by_text("This candidate is not assigned to you").is_visible() and "Casey" not in opage.locator("main").inner_text())
+    check("the new member has gained the candidate without signing in again", api(mpage, f"/api/candidates/{full_id}")["assigned_member"]["name"] == "Maya Chen"
+          and download_headers(mpage, full_id)[0] == 200)
+    mpage.goto(BASE + "/member/candidates")
+    mpage.locator('[data-slot="candidate-card"]').filter(has_text=full).wait_for(timeout=15000)
+    check("the candidate is on the new member's My Candidates", mpage.locator('[data-slot="candidate-card"]').filter(visible=True).count() == 3)
+    opage.goto(BASE + "/member/candidates")
+    opage.get_by_text("Your Team Lead has not assigned a candidate to you yet").first.wait_for(timeout=15000)
+    check("and gone from the previous member's, which is empty again", opage.locator('[data-slot="candidate-card"]').count() == 0)
+    told = bell_text(mpage, f"Lena Alpha made you responsible for the candidate {full}.")
+    check("the new member is notified about the candidate", True)
+    mpage.keyboard.press("Escape")
+
+    # unassign from the candidate's page
+    page.get_by_role("button", name="Move to Another Member").click()
+    dialog = page.get_by_role("dialog", name="Move to Another Member")
+    pick_option(page, dialog, re.compile("Responsible member"), "Nobody yet (unassigned)")
+    dialog.get_by_role("button", name="Unassign Candidate").click()
+    toast(page, f"{full} is unassigned")
+    with expecting("404", f"/api/candidates/{full_id}"):
+        maya_sees = api(mpage, f"/api/candidates/{full_id}").get("__status")
+        mpage.wait_for_timeout(300)
+    check("an unassigned candidate is nobody's: the last member loses it too", maya_sees == 404 and api(page, f"/api/candidates/{full_id}")["assigned_member"] is None, str(maya_sees))
+    page.get_by_text("nobody yet: choose a responsible member").wait_for(timeout=15000)
+    check("the candidate's page says nobody is responsible and offers 'Assign to a Member'", page.get_by_role("button", name="Assign to a Member").is_visible())
+    mctx.close()
+    octx.close()
+
+    # from the list, under the 'Unassigned' filter: the row menu, Edit Details, Assign to a Member
+    page.goto(BASE + "/tl/candidates?member=unassigned")
+    page.get_by_role("button", name=f"Actions for {full}").filter(visible=True).first.click()
+    items = [i.inner_text().strip() for i in page.get_by_role("menuitem").all()]
+    check("the row menu of a candidate: Find Jobs, Edit Details, Assign to a Member, Deactivate", items == ["Find Jobs", "Edit Details", "Assign to a Member", "Deactivate"], str(items))
+    page.get_by_role("menuitem", name="Edit Details").click()
+    dialog = page.get_by_role("dialog", name="Edit Details")
+    check("Edit Details has nothing to save until something changes", dialog.get_by_role("button", name="Save Details").is_disabled())
+    dialog.get_by_label(re.compile("^E-mail")).fill("")
+    dialog.get_by_label(re.compile("^Notes")).fill("Available now.")
+    with page.expect_response(lambda r: r.url.endswith(f"/api/candidates/{full_id}") and r.request.method == "PATCH") as info:
+        dialog.get_by_role("button", name="Save Details").click()
+    check("Edit Details sends only what changed; an emptied e-mail field removes the address", info.value.status == 200
+          and info.value.request.post_data_json == {"email": None, "notes": "Available now."}, str(info.value.request.post_data_json))
+    toast(page, "Details saved")
+    receiver = SHARED.get("name", "Omar Haddad")       # the member invited earlier in the run, when there is one
+    page.get_by_role("button", name=f"Actions for {full}").filter(visible=True).first.click()
+    page.get_by_role("menuitem", name="Assign to a Member").click()
+    dialog = page.get_by_role("dialog", name="Assign to a Member")
+    check("the assign dialog says nobody is responsible yet", dialog.get_by_text(re.compile(rf"Nobody is responsible for {re.escape(full)} yet\.")).is_visible())
+    pick_option(page, dialog, re.compile("Responsible member"), receiver)
+    dialog.get_by_role("button", name="Assign Candidate").click()
+    # The candidate leaves the 'Unassigned' list with this change; the confirmation must appear all the same.
+    try:
+        toast(page, f"{receiver} is now responsible for {full}")
+        check("assigning from the 'Unassigned' list is confirmed although the row leaves the list", True)
+    except Exception:
+        check("assigning from the 'Unassigned' list is confirmed although the row leaves the list", False, "no toast")
+    shown = names_listed(page, known, {"Hannah Kim", "Diego Morales", bare})
+    check("the candidate is no longer listed as unassigned", shown == {"Hannah Kim", "Diego Morales", bare} and page.get_by_role("dialog").count() == 0, str(sorted(shown)))
+    page.get_by_role("button", name="Clear filters").click()
+    page.get_by_role("searchbox", name="Search candidates").fill(full)
+    row = page.locator("tr, li").filter(has=page.get_by_role("link", name=full, exact=True)).filter(visible=True).last
+    expect(row).to_contain_text(receiver, timeout=10000)
+    check("the list shows the new responsible member in the candidate's row", True)
+
+    # ---- deactivate and reactivate a candidate
+    page.get_by_role("searchbox", name="Search candidates").fill(bare)
+    page.get_by_role("button", name=f"Actions for {bare}").filter(visible=True).first.click()
+    page.get_by_role("menuitem", name="Deactivate").click()
+    confirm = page.get_by_role("alertdialog", name=f"Deactivate {bare}?")
+    check("deactivating a candidate asks first and says what stays", confirm.get_by_text(re.compile("No new search can be run and no new job can be assigned")).is_visible())
+    confirm.get_by_role("button", name="Deactivate candidate").click()
+    # The row leaves the list of active candidates with this change; the confirmation must appear all the same.
+    try:
+        toast(page, f"{bare} was deactivated")
+        check("deactivating a candidate is confirmed although the row leaves the list", True)
+    except Exception:
+        check("deactivating a candidate is confirmed although the row leaves the list", False, "no toast")
+    page.get_by_text("No candidates match these filters").wait_for(timeout=15000)
+    check("a deactivated candidate leaves the list of active candidates", api(page, f"/api/candidates/{bare_id}")["is_active"] is False)
+    pick_option(page, page, "Active or deactivated", "Deactivated candidates")
+    page.get_by_role("link", name=bare, exact=True).filter(visible=True).first.wait_for(timeout=15000)
+    row = page.locator("tr, li").filter(has=page.get_by_role("link", name=bare, exact=True)).filter(visible=True).last
+    check("it is listed under 'Deactivated candidates', marked as deactivated", row.locator('[data-slot="tag"]').filter(has_text="Deactivated").is_visible())
+    spage = ctx.new_page()
+    spage.goto(BASE + "/tl/search")
+    spage.get_by_role("group", name="Candidates").get_by_role("checkbox").first.wait_for(timeout=15000)
+    spage.get_by_role("searchbox", name="Search candidates").fill(bare)
+    spage.get_by_text("No candidates match this search").wait_for(timeout=15000)
+    check("a deactivated candidate is not offered in the search form", True)
+    spage.goto(BASE + f"/tl/candidates/{bare_id}")
+    spage.get_by_role("heading", level=1, name=bare).wait_for(timeout=15000)
+    check("the page of a deactivated candidate says so and cannot start a search",
+          spage.locator('[data-slot="tag"]').filter(has_text="Deactivated").first.is_visible() and spage.get_by_role("button", name="Find Jobs for Blake").is_disabled()
+          and spage.get_by_role("link", name="Find Jobs for Blake").count() == 0)
+    spage.close()
+    page.get_by_role("button", name=f"Actions for {bare}").filter(visible=True).first.click()
+    check("the row menu of a deactivated candidate offers Reactivate and no search", [i.inner_text().strip() for i in page.get_by_role("menuitem").all()] == ["Edit Details", "Assign to a Member", "Reactivate"])
+    page.get_by_role("menuitem", name="Reactivate").click()
+    page.get_by_role("alertdialog", name=f"Reactivate {bare}?").get_by_role("button", name="Reactivate candidate").click()
+    try:
+        toast(page, f"{bare} is active again")
+        check("reactivating a candidate is confirmed although the row leaves the list of deactivated candidates", True)
+    except Exception:
+        check("reactivating a candidate is confirmed although the row leaves the list of deactivated candidates", False, "no toast")
+    check("a candidate can be reactivated", api(page, f"/api/candidates/{bare_id}")["is_active"] is True)
+    ctx.close()
+
+
+def step_search_form(browser):
+    print("== search form: candidate picker, Add Candidate inside it, inline resume upload and replace, responsible-member select")
+    resume_path = f"{WORK_DIR}/search-resume-{STAMP}.txt"
+    with open(resume_path, "w") as handle:
+        handle.write(RESUME_TEXT)
+    name = f"Sasha Search {STAMP}"
+    ctx = new_context(browser)
+    page = ctx.new_page()
+    login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
+    limit = api(page, "/api/searches/options")["limits"]["max_members_per_search"]
+    omar = next(u for u in api(page, "/api/users?role=MEMBER&page_size=50")["items"] if u["email"] == "omar@example.com")
+    page.goto(BASE + "/tl/search")
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
+    page.wait_for_load_state("networkidle")
+    check("the picker says how many candidates may be chosen (the API's limit)", page.get_by_text(f"0 selected of {limit} allowed").is_visible(), str(limit))
+    check("nothing is selected yet, so there is no 'Selected candidates' section", page.get_by_role("region", name="Selected candidates").count() == 0)
+    page.get_by_role("button", name="Start Search").click()
+    check("a search without a candidate is refused in the form", page.get_by_role("alert").filter(has_text="Choose at least one candidate.").first.is_visible())
+
+    # Add Candidate from inside the form
+    searches = []
+    page.on("request", lambda r: searches.append(r) if r.method == "POST" and r.url.endswith("/api/searches") else None)
+    page.get_by_role("button", name="Add Candidate").filter(visible=True).first.click()
+    dialog = page.get_by_role("dialog", name="Add Candidate")
+    dialog.get_by_label("Full name").fill(name)
+    dialog.get_by_role("button", name="Add Candidate").click()
+    toast(page, f"{name} added")
+    dialog.wait_for(state="hidden", timeout=10000)
+    chosen = page.get_by_role("region", name="Selected candidates")
+    chosen.get_by_text(name).first.wait_for(timeout=10000)
+    check("a candidate added from the search form is chosen for the search at once, and the form stays where it was",
+          page.url.endswith("/tl/search") and page.get_by_text(f"1 selected of {limit} allowed").is_visible() and len(searches) == 0
+          and page.get_by_role("dialog", name="AI Job Search Started").count() == 0)
+    record = candidate_named(page, name)
+    entry = chosen.get_by_role("listitem").filter(has_text=name)
+    member_box = entry.get_by_role("combobox", name="Responsible member, who handles the jobs found")
+    check("each chosen candidate has its resume and its responsible member right there",
+          entry.locator('[data-slot="tag"]').filter(has_text="No resume").is_visible() and entry.get_by_role("button", name=f"Upload Resume for {name}").is_visible()
+          and member_box.inner_text().strip() == "Nobody yet (unassigned)")
+    check("the section says both are saved to the candidate right away", chosen.get_by_text(re.compile("saved to the candidate right away")).is_visible())
+    check("the form warns that the candidate has no resume and no responsible member",
+          page.get_by_text(re.compile(re.escape(name) + r" has no\s+resume")).is_visible() and page.get_by_text(re.compile(re.escape(name) + r" has no\s+responsible member")).is_visible())
+    no_overflow(page, "search form with a chosen candidate")
+    shot(page, "search_form_selected")
+
+    # resume: upload, wrong file, replace
+    file_input = entry.get_by_label(f"Resume file for {name}")
+    with page.expect_response(lambda r: r.url.endswith(f"/api/candidates/{record['id']}/resume") and r.request.method == "POST") as info:
+        file_input.set_input_files(resume_path)
+    toast(page, f"search-resume-{STAMP}.txt uploaded for {name} (version 1)")
+    expect(entry.locator('[data-slot="tag"]').filter(has_text="Resume uploaded")).to_be_visible(timeout=10000)
+    check("a resume uploaded in the search form is stored for the candidate (version 1)", info.value.status == 201 and api(page, f"/api/candidates/{record['id']}")["has_resume"] is True)
+    check("the button turns into 'Replace Resume' and the warning about the resume goes away",
+          entry.get_by_role("button", name=f"Replace Resume for {name}").is_visible() and page.get_by_text(re.compile(re.escape(name) + r" has no\s+resume")).count() == 0)
+    bad = resume_path.replace(".txt", ".exe")
+    with open(bad, "wb") as handle:
+        handle.write(b"MZ")
+    file_input.set_input_files(bad)
+    check("a wrong file type is refused beside the candidate, and nothing is sent", entry.get_by_role("alert").filter(has_text="Choose a PDF, DOCX or TXT file.").is_visible())
+    file_input.set_input_files(resume_path)
+    toast(page, f"uploaded for {name} (version 2)")
+    check("replacing the resume in the search form makes version 2", api(page, f"/api/candidates/{record['id']}/resume")["version"] == 2
+          and entry.get_by_role("alert").count() == 0)
+
+    # responsible member
+    member_box.click()
+    offered = [o.inner_text().strip() for o in page.get_by_role("option").all()]
+    check("the responsible-member select offers the active members of the candidate's team",
+          offered[0] == "Nobody yet (unassigned)" and {"Maya Chen", "Noah Patel", "Omar Haddad"} <= set(offered) and not {"Priya Nair", "Quinn Lopez"} & set(offered), str(offered))
+    with page.expect_response(lambda r: r.url.endswith(f"/api/candidates/{record['id']}") and r.request.method == "PATCH") as info:
+        page.get_by_role("option", name="Omar Haddad", exact=True).click()
+    toast(page, f"Omar Haddad is now responsible for {name}")
+    check("choosing a member saves it to the candidate at once", info.value.status == 200 and info.value.request.post_data_json == {"assigned_member_id": omar["id"]}
+          and api(page, f"/api/candidates/{record['id']}")["assigned_member"]["name"] == "Omar Haddad")
+    expect(member_box).to_have_text("Omar Haddad", timeout=10000)
+    check("the select shows the member, and the warning about the missing member goes away",
+          page.get_by_text(re.compile(re.escape(name) + r" has no\s+responsible member")).count() == 0)
+    check("none of this started a search", len(searches) == 0 and page.get_by_role("dialog", name="AI Job Search Started").count() == 0)
+
+    # selection handling
+    group.get_by_role("checkbox", name=re.compile("Hannah Kim")).check()
+    hannah = chosen.get_by_role("listitem").filter(has_text="Hannah Kim")
+    check("a candidate who has a resume is offered 'Replace Resume'", hannah.get_by_role("button", name="Replace Resume for Hannah Kim").is_visible()
+          and page.get_by_text(f"2 selected of {limit} allowed").is_visible())
+    hannah.get_by_role("button", name="Remove Hannah Kim from this search").click()
+    expect(chosen.get_by_role("listitem")).to_have_count(1, timeout=5000)
+    check("Remove takes a candidate out of the search and unticks the row", group.get_by_role("checkbox", name=re.compile("Hannah Kim")).is_checked() is False)
+    page.get_by_role("button", name="Clear all").click()
+    expect(page.get_by_role("region", name="Selected candidates")).to_have_count(0, timeout=5000)
+    check("Clear all empties the selection", page.get_by_text(f"0 selected of {limit} allowed").is_visible())
+    page.get_by_role("searchbox", name="Search candidates").fill("sasha")
+    expect(group.get_by_role("checkbox")).to_have_count(1, timeout=10000)
+    check("the picker row now says who handles the candidate and that the resume is in",
+          "Handled by Omar Haddad" in group.inner_text() and "No resume" not in group.inner_text(), group.inner_text().replace("\n", " | "))
+    ctx.close()
+
+    octx = new_context(browser)
+    opage = octx.new_page()
+    login(opage, "omar@example.com")
+    bell_text(opage, f"Lena Alpha made you responsible for the candidate {name}.")
+    check("the member chosen in the search form is notified about the candidate", True)
+    opage.keyboard.press("Escape")
+    opage.goto(BASE + "/member/candidates")
+    opage.locator('[data-slot="candidate-card"]').filter(has_text=name).wait_for(timeout=15000)
+    check("and finds the candidate under My Candidates", True)
+    octx.close()
+
 
 
 def step_invite(browser):
@@ -466,20 +1309,20 @@ def step_invite(browser):
     ctx.close()
 
 
-def run_search(page, area, members, titles, per_member, review, expect_skipped=None):
+def run_search(page, area, candidates, titles, per_candidate, review, expect_skipped=None):
     """Fill the search form and start it. Returns the progress window locator."""
     page.goto(BASE + f"{area}/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Members")
-    group.wait_for(timeout=15000)
-    for member in members:
-        group.get_by_role("checkbox", name=re.compile(member)).check()
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
+    for name in candidates:
+        group.get_by_role("checkbox", name=re.compile(name)).check()
     field = page.get_by_label(re.compile("^Job titles"))
     for t in titles:
         field.fill(t)
         field.press("Enter")
-    count = page.get_by_label("Results per member")
-    count.fill(str(per_member))
+    count = page.get_by_label("Results per candidate")
+    count.fill(str(per_candidate))
     if review:
         page.get_by_role("radio", name=re.compile("Search first, review, then assign")).check()
     page.get_by_role("button", name="Start Search").click()
@@ -489,30 +1332,40 @@ def run_search(page, area, members, titles, per_member, review, expect_skipped=N
 
 
 def step_search(browser):
-    print("== team lead: auto-assign search, progress window, member sees new jobs")
+    print("== team lead: auto-assign search for a candidate, progress window, the responsible member sees the new jobs")
     ctx = new_context(browser)
     page = ctx.new_page()
     login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
-    noah = next(u for u in api(page, "/api/users?role=MEMBER&page_size=50")["items"] if u["email"] == "noah@example.com")
-    before = api(page, f"/api/assignments?member_id={noah['id']}&page_size=1")["total"]
+    samuel = candidate_named(page, "Samuel Okafor")                   # Noah Patel's candidate
+    before = api(page, f"/api/assignments?candidate_id={samuel['id']}&page_size=1")["total"]
 
     page.goto(BASE + "/tl/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Members")
-    group.wait_for(timeout=15000)
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
     names = group.inner_text()
-    check("team lead sees only their own team in the member list", "Noah Patel" in names and "Maya Chen" in names and "Priya Nair" not in names and "Quinn Lopez" not in names)
-    check("the form says the count is per member", page.get_by_text(re.compile("The count is per member")).is_visible())
-    check("the form says a blank override uses each member's saved value", page.get_by_text(re.compile("Leave a field empty to use each member's own")).is_visible())
+    check("team lead sees only their own team's candidates in the list",
+          all(n in names for n in ("Jordan Rivera", "Elena Petrova", "Samuel Okafor", "Hannah Kim", "Diego Morales"))
+          and not any(n in names for n in ("Aisha Rahman", "Tom Becker", "Grace Liu", "Lucas Meyer", "Victor Hale")))
+    check("the list holds candidates, not members", group.get_by_role("checkbox").count() == 5 and group.get_by_role("checkbox", name=re.compile("^(Maya Chen|Noah Patel|Omar Haddad)")).count() == 0)
+    check("each candidate row says who handles the candidate, or that nobody does",
+          "Handled by Noah Patel" in group.get_by_role("listitem").filter(has_text="Samuel Okafor").inner_text()
+          and "No responsible member" in group.get_by_role("listitem").filter(has_text="Hannah Kim").inner_text())
+    check("each candidate row shows whether the resume is in", "No resume" in group.get_by_role("listitem").filter(has_text="Diego Morales").inner_text()
+          and "No resume" not in group.get_by_role("listitem").filter(has_text="Samuel Okafor").inner_text())
+    check("the old member wording is gone from the form", page.get_by_role("group", name="Members").count() == 0 and page.get_by_label("Results per member").count() == 0)
+    check("the form says the count is per candidate", page.get_by_text(re.compile("The count is per candidate")).is_visible())
+    check("the form says a blank override uses what is saved in each candidate's profile",
+          page.get_by_text(re.compile("Leave a field empty to use what is saved in each candidate's profile")).is_visible())
     check("both modes are offered", page.get_by_role("radio", name=re.compile("Find & Assign Matching Jobs")).is_visible()
           and page.get_by_role("radio", name=re.compile("Search first, review, then assign")).is_visible())
     no_overflow(page, "search form")
     shot(page, "search_form")
 
-    titles = ["Data Scientist"] if not MOBILE else ["Backend Engineer"]
-    window = run_search(page, "/tl", ["Noah Patel"], titles, 6, review=False)
+    titles = ["AI Engineer"] if not MOBILE else ["Backend Engineer"]
+    window = run_search(page, "/tl", ["Samuel Okafor"], titles, 6, review=False)
     check("progress window 'AI Job Search Started' opens at once", window.is_visible())
-    check("progress window lists the selected member", window.get_by_text("Noah Patel").first.is_visible())
+    check("progress window lists the selected candidate", window.get_by_text("Samuel Okafor").first.is_visible())
     for label in ("Requested", "Discovered", "Verified", "Duplicates removed", "Matched", "Assigned"):
         check(f"progress window shows: {label}", window.locator(f'[data-slot="run-counter"][data-label="{label}"]').is_visible())
     check("progress window has Minimize, View Search and Cancel Search",
@@ -555,11 +1408,12 @@ def step_search(browser):
     page.wait_for_url(re.compile(r"/tl/searches/[0-9a-f-]{36}$"), timeout=15000)
     page.wait_for_load_state("networkidle")
     page.get_by_role("heading", name="Results", exact=True).wait_for(timeout=20000)
-    rows = page.get_by_role("checkbox", name=re.compile("^Select .* for Noah Patel"))
+    rows = page.get_by_role("checkbox", name=re.compile("^Select .* for Samuel Okafor"))
     rows.first.wait_for(timeout=15000)
-    check("the results page lists the jobs found", rows.count() > 0, f"{rows.count()} result rows")
-    after = api(page, f"/api/assignments?member_id={noah['id']}&page_size=1")["total"]
-    check("the member has new assignments", after == before + assigned, f"{before} -> {after}")
+    check("the results page lists the jobs found, each for the candidate", rows.count() > 0, f"{rows.count()} result rows")
+    check("the run's settings say 'Results per candidate'", page.get_by_text("Results per candidate").first.is_visible() and page.get_by_text("Results per member").count() == 0)
+    after = api(page, f"/api/assignments?candidate_id={samuel['id']}&page_size=1")["total"]
+    check("the candidate has new assignments", after == before + assigned, f"{before} -> {after}")
     no_overflow(page, "search detail")
     shot(page, "search_detail")
 
@@ -574,15 +1428,18 @@ def step_search(browser):
     page.wait_for_load_state("networkidle")
     cards = page.locator('[data-slot="job-card"]').filter(visible=True)
     cards.first.wait_for(timeout=15000)
-    check("the member sees the newly assigned jobs", cards.count() >= 1 and titles[0].split()[0] in cards.first.inner_text(), f"{cards.count()} cards for '{titles[0]}'")
+    check("the responsible member sees the candidate's newly assigned jobs", cards.count() >= 1 and titles[0].split()[0] in cards.first.inner_text()
+          and "Samuel Okafor" in cards.first.inner_text(), f"{cards.count()} cards for '{titles[0]}'")
     bell = page.get_by_role("button", name=re.compile("Notifications"))
     check("the member has a notification about it", "unread" in (bell.get_attribute("aria-label") or ""))
     bell.click()
     try:
-        page.get_by_text(re.compile("Lena Alpha assigned you")).first.wait_for(timeout=10000)
-        check("the notification names who assigned the jobs", True)
+        found = page.get_by_text(re.compile(rf"^A search found {assigned} new jobs? for Samuel Okafor\.$")).first
+        found.wait_for(timeout=10000)
+        check("the notification says how many new jobs a search found, and for which candidate", True)
     except Exception:
-        check("the notification names who assigned the jobs", False)
+        check("the notification says how many new jobs a search found, and for which candidate", False)
+    check("the old 'assigned you' wording is gone", page.get_by_text(re.compile("assigned you")).count() == 0)
     page.get_by_role("button", name="Mark all as read").click()
     try:
         expect(bell).to_have_attribute("aria-label", "Notifications", timeout=10000)
@@ -593,7 +1450,7 @@ def step_search(browser):
 
 
 def step_tracking(browser):
-    print("== tracking: later stages, notes, a manager recording for a member, private notes, withdrawing")
+    print("== tracking: later stages, notes, a manager recording in place of the member, private notes, withdrawing")
     ctx = new_context(browser)
     page = ctx.new_page()
     login(page, "noah@example.com", expect_home="/member/dashboard")
@@ -602,8 +1459,8 @@ def step_tracking(browser):
     page.goto(BASE + "/member/jobs?applied=false")
     cards = page.locator('[data-slot="job-card"]').filter(visible=True)
     cards.first.wait_for(timeout=15000)
-    title = cards.first.get_by_role("link").inner_text().strip()
-    cards.first.get_by_role("link").click()
+    title = cards.first.get_by_role("link").first.inner_text().strip()      # the card's first link is the job, the second the candidate
+    cards.first.get_by_role("link").first.click()
     page.wait_for_url(re.compile(r"/member/jobs/[0-9a-f-]{36}$"), timeout=15000)
     assignment_id = page.url.rsplit("/", 1)[1]
     page.get_by_role("heading", level=1, name=title).wait_for(timeout=15000)
@@ -638,8 +1495,16 @@ def step_tracking(browser):
     page = ctx.new_page()
     login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
     page.goto(BASE + "/tl/assignments")
-    page.get_by_role("combobox", name="Member").click()
-    page.get_by_role("option", name="Noah Patel").click()
+    page.get_by_role("combobox", name="Responsible member").wait_for(timeout=15000)
+    check("the assignments list filters by candidate and by responsible member (no 'Member' filter)",
+          page.get_by_role("combobox", name="Candidate").is_visible() and page.get_by_role("combobox", name="Member", exact=True).count() == 0)
+    if not MOBILE:
+        page.get_by_role("columnheader", name="Job").wait_for(timeout=15000)
+        heads = [h.inner_text().strip() for h in page.get_by_role("columnheader").all()]
+        check("the assignments table has the columns Candidate and Responsible member", "Candidate" in heads and "Responsible member" in heads and "Member" not in heads, str(heads))
+    with page.expect_response(lambda r: "/api/assignments?" in r.url and "member_id=" in r.url) as info:
+        pick_option(page, page, "Responsible member", "Noah Patel")
+    check("the responsible-member filter is sent to the API as member_id", info.value.ok)
     page.get_by_role("combobox", name="Status").click()
     page.get_by_role("option", name="Interviewing").click()
     row = page.locator("table button, li button").filter(has_text=title).filter(visible=True).first
@@ -651,12 +1516,13 @@ def step_tracking(browser):
     drawer.get_by_role("button", name="Change Status").click()
     page.get_by_role("menuitem", name=re.compile("^Offer")).click()
     dialog = page.get_by_role("dialog", name="Change status to Offer")
-    check("a manager changing a member's status is told the history will show it", dialog.get_by_text(re.compile("You are recording this for Noah Patel")).is_visible())
+    check("a manager changing a status is told the history will show it was done in place of the responsible member",
+          dialog.get_by_text(re.compile("You are recording this for Samuel Okafor, in place of the responsible member")).is_visible())
     dialog.get_by_role("button", name="Change to Offer").click()
     toast(page, "Status changed to Offer")
     drawer.locator('[data-slot="status-badge"][data-status="OFFER"]').filter(visible=True).first.wait_for(timeout=10000)
-    check("the manager can record an offer for the member", True)
-    check("the history shows who recorded it", drawer.get_by_text("Recorded by Lena Alpha on the member's behalf.").first.is_visible())
+    check("the manager can record an offer for the candidate", True)
+    check("the history shows who recorded it", drawer.get_by_text("Recorded by Lena Alpha in place of the responsible member.").first.is_visible())
 
     private_note = f"Salary band checked {STAMP}"
     drawer.get_by_label("Add a note").fill(private_note)
@@ -684,8 +1550,9 @@ def step_tracking(browser):
     page = ctx.new_page()
     login(page, "lead.alpha@example.com")
     page.goto(BASE + "/tl/assignments?status=OFFER")
-    page.get_by_role("combobox", name="Member").click()
-    page.get_by_role("option", name="Noah Patel").click()
+    with page.expect_response(lambda r: "/api/assignments?" in r.url and "candidate_id=" in r.url) as info:
+        pick_option(page, page, "Candidate", "Samuel Okafor")
+    check("the candidate filter is sent to the API as candidate_id", info.value.ok)
     row = page.locator("table button, li button").filter(has_text=title).filter(visible=True).first
     row.wait_for(timeout=15000)
     row.click()
@@ -696,8 +1563,8 @@ def step_tracking(browser):
     confirm.get_by_role("button", name="Withdraw assignment").click()
     confirm.wait_for(state="hidden", timeout=10000)
     try:
-        drawer.get_by_text(re.compile("This assignment was withdrawn from the member")).first.wait_for(timeout=10000)
-        check("the drawer shows the assignment as withdrawn, with its history", drawer.get_by_text(re.compile("^Removed from the member's list by Lena Alpha")).first.is_visible())
+        drawer.get_by_text(re.compile("This assignment was withdrawn from the candidate")).first.wait_for(timeout=10000)
+        check("the drawer shows the assignment as withdrawn, with its history", drawer.get_by_text(re.compile("^Removed from the candidate's list by Lena Alpha")).first.is_visible())
     except Exception:
         check("the drawer shows the assignment as withdrawn, with its history", False)
     page.keyboard.press("Escape")
@@ -725,34 +1592,37 @@ def step_tracking(browser):
         page.locator('[data-slot="error-state"]').filter(visible=True).first.wait_for(timeout=15000)
         page.wait_for_load_state("networkidle")
     check("the page of a withdrawn job shows the API's 410 sentence and where to go instead",
-          page.get_by_text("This job is no longer assigned to you.").is_visible() and page.get_by_role("link", name="Go to My Jobs").is_visible())
+          page.get_by_text("This job is no longer assigned to your candidate.").is_visible()
+          and page.get_by_role("link", name="Go to My Candidates").get_attribute("href") == "/member/candidates")
     no_overflow(page, "member job that was withdrawn")
     ctx.close()
 
 
 def step_review(browser):
-    print("== review-mode results, skipped members, bulk assign")
+    print("== review-mode results, skipped candidates, bulk assign")
     ctx = new_context(browser)
     page = ctx.new_page()
     login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
     titles = ["Account Executive"] if not MOBILE else ["Backend Engineer"]
     page.goto(BASE + "/tl/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Members")
-    group.wait_for(timeout=15000)
-    group.get_by_role("checkbox", name=re.compile("Maya Chen")).check()
-    group.get_by_role("checkbox", name=re.compile("Omar Haddad")).check()
-    check("a member without a resume is flagged before starting", page.get_by_text(re.compile("Omar Haddad has no resume")).is_visible())
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
+    group.get_by_role("checkbox", name=re.compile("Jordan Rivera")).check()
+    group.get_by_role("checkbox", name=re.compile("Diego Morales")).check()
+    check("a candidate without a resume is flagged before starting", page.get_by_text(re.compile("Diego Morales has no\\s+resume")).is_visible())
+    check("a candidate without a responsible member is flagged too, and the search is still allowed",
+          page.get_by_text(re.compile("Diego Morales has no\\s+responsible member")).is_visible() and page.get_by_role("button", name="Start Search").is_enabled())
     field = page.get_by_label(re.compile("^Job titles"))
     field.fill(titles[0])
     field.press("Enter")
-    page.get_by_label("Results per member").fill("5")
+    page.get_by_label("Results per candidate").fill("5")
     page.get_by_role("radio", name=re.compile("Search first, review, then assign")).check()
     page.get_by_role("button", name="Start Search").click()
     window = page.get_by_role("dialog", name="AI Job Search Started")
     window.wait_for(timeout=15000)
-    check("skipped members are shown with the API's reason", window.get_by_text(re.compile("was left out of this search")).is_visible()
-          and window.get_by_text(re.compile("Omar Haddad:")).is_visible())
+    check("skipped candidates are shown with the API's reason", window.get_by_text(re.compile("1 selected candidate was left out of this search")).is_visible()
+          and window.get_by_text(re.compile("Diego Morales:")).is_visible())
     window.locator('[data-slot="tag"][data-status="completed"]').first.wait_for(timeout=90000)
     check("review-mode search completes", True)
     check("review mode assigns nothing by itself", counter(window, "Assigned") == 0)
@@ -761,7 +1631,7 @@ def step_review(browser):
     page.wait_for_load_state("networkidle")
     page.get_by_role("heading", name="Results", exact=True).wait_for(timeout=20000)
     check("review mode opens on the results not assigned yet", page.get_by_role("radiogroup", name="Show").get_by_role("radio", name="Not assigned yet").get_attribute("aria-checked") == "true")
-    boxes = page.get_by_role("checkbox", name=re.compile("^Select .* for Maya Chen"))
+    boxes = page.get_by_role("checkbox", name=re.compile("^Select .* for Jordan Rivera"))
     boxes.first.wait_for(timeout=15000)
     enabled = [boxes.nth(i) for i in range(boxes.count()) if boxes.nth(i).is_enabled()]
     check("review results list jobs to choose from", len(enabled) > 0, f"{len(enabled)} selectable of {boxes.count()} shown")
@@ -771,7 +1641,8 @@ def step_review(browser):
     page.get_by_role("button", name=re.compile(r"Assign Selected \(%d\)" % pick)).click()
     confirm = page.get_by_role("alertdialog")
     confirm.wait_for(timeout=5000)
-    check("bulk assign asks for confirmation with a per-member summary", confirm.get_by_text("Maya Chen").is_visible() and confirm.get_by_text(re.compile(rf"{pick} jobs?")).first.is_visible())
+    check("bulk assign asks for confirmation with a per-candidate summary", confirm.get_by_text("Jordan Rivera").is_visible() and confirm.get_by_text(re.compile(rf"{pick} jobs?")).first.is_visible())
+    check("the confirmation says the responsible member is notified", confirm.get_by_text(re.compile("responsible member\\s+is notified")).is_visible())
     shot(page, "bulk_assign_confirm")
     confirm.get_by_role("button", name=re.compile("^Assign")).click()
     toast(page, "Jobs assigned")
@@ -782,7 +1653,7 @@ def step_review(browser):
     no_overflow(page, "review results")
 
     # other team lead pages
-    for path, heading in (("/tl/assignments", "Assigned Jobs"), ("/tl/assignments?applied=true", "Applications"), ("/tl/jobs", "Pending Jobs"),
+    for path, heading in (("/tl/candidates", "Candidates"), ("/tl/members", "Team Members"), ("/tl/assignments", "Assigned Jobs"), ("/tl/assignments?applied=true", "Applications"), ("/tl/jobs", "Pending Jobs"),
                           ("/tl/searches", "Search History"), ("/tl/analytics", "Analytics"), ("/tl/invitations", "Invitations"), ("/tl/settings", "Settings")):
         page.goto(BASE + path)
         page.wait_for_load_state("networkidle")
@@ -814,7 +1685,7 @@ def step_review(browser):
     first.click()
     drawer = page.get_by_role("dialog")
     drawer.get_by_role("tab", name="Tracking").wait_for(timeout=15000)
-    check("managers see posting links and other assignees", drawer.get_by_text("Posting links").is_visible() and drawer.get_by_text("Also assigned to").is_visible())
+    check("managers see posting links and the other candidates with the job", drawer.get_by_text("Posting links").is_visible() and drawer.get_by_text("Other candidates with this job").is_visible())
     if MOBILE:
         box = drawer.bounding_box()
         check("job details are full screen on a small screen", box["width"] >= A.w - 1 and box["height"] >= A.h - 1, str(box))
@@ -826,12 +1697,25 @@ def step_review(browser):
     bpage = ctx_beta.new_page()
     login(bpage, "lead.beta@example.com")
     priya = next(u for u in api(bpage, "/api/users?role=MEMBER&page_size=50")["items"] if u["email"] == "priya@example.com")
+    aisha = candidate_named(bpage, "Aisha Rahman")
     ctx_beta.close()
     with expecting("403", f"/api/users/{priya['id']}"):
         page.goto(BASE + f"/tl/members/{priya['id']}")
         page.locator('[data-slot="error-state"][data-denied]').filter(visible=True).first.wait_for(timeout=15000)
         page.wait_for_load_state("networkidle")
     check("a 403 from the API is shown as 'Access denied'", page.get_by_text("Access denied").first.is_visible())
+    # another team's candidate: answered like one that does not exist (404), and the screen says it is not available
+    with expecting("404", f"/api/candidates/{aisha['id']}", "/api/candidates/00000000-0000-4000-8000-000000000000"):
+        with page.expect_response(lambda r: r.url.endswith(f"/api/candidates/{aisha['id']}")) as info:
+            page.goto(BASE + f"/tl/candidates/{aisha['id']}")
+        page.locator('[data-slot="error-state"]').filter(visible=True).first.wait_for(timeout=15000)
+        page.wait_for_load_state("networkidle")
+        check("another team's candidate is answered 404 for a Team Lead, like one that does not exist", info.value.status == 404
+              and api(page, "/api/candidates/00000000-0000-4000-8000-000000000000").get("__status") == 404)
+        page.wait_for_timeout(300)
+    body = page.locator("main").inner_text()
+    check("the screen says the candidate is not available and shows nothing of them",
+          "This candidate is not available to you" in body and "Aisha" not in body and page.get_by_role("link", name="Go to Candidates").is_visible())
     ctx.close()
 
 
@@ -905,7 +1789,7 @@ def step_admin(browser):
     shot(page, "admin_job_detail")
 
     # every other admin page renders
-    for path, heading in (("/admin/analytics", "Analytics"), ("/admin/teams", "Teams"), ("/admin/team-leads", "Team Leads"), ("/admin/members", "Members"),
+    for path, heading in (("/admin/analytics", "Analytics"), ("/admin/teams", "Teams"), ("/admin/team-leads", "Team Leads"), ("/admin/members", "Members"), ("/admin/candidates", "Candidates"),
                           ("/admin/search", "Find Jobs"), ("/admin/searches", "Search History"), ("/admin/assignments", "Assignments"),
                           ("/admin/invitations", "Invitations"), ("/admin/activity", "Activity Log"), ("/admin/settings", "Settings")):
         page.goto(BASE + path)
@@ -916,7 +1800,7 @@ def step_admin(browser):
     check("admin signed out", page.url.endswith("/login"))
     ctx.close()
 
-    # the Team Lead of that team finds the job in the queue and hands it to a member
+    # the Team Lead of that team finds the job in the queue and hands it to a candidate
     ctx = new_context(browser)
     page = ctx.new_page()
     login(page, "lead.beta@example.com", expect_home="/tl/dashboard")
@@ -929,17 +1813,20 @@ def step_admin(browser):
     check("the delegated job is in the Team Lead's queue", True)
     check("the Admin's note travels with it", page.get_by_text("From the E2E run").first.is_visible())
     box.check()
-    page.get_by_role("button", name=re.compile(r"Distribute to Members \(1\)")).click()
-    dialog = page.get_by_role("dialog", name="Assign to Members")
-    members = dialog.get_by_role("group", name="Members")
-    members.wait_for(timeout=15000)
-    members.get_by_role("checkbox", name=re.compile("Priya Nair")).wait_for(timeout=15000)
-    check("distribution offers only this team's members", "Priya Nair" in members.inner_text() and "Maya Chen" not in members.inner_text())
-    members.get_by_role("checkbox", name=re.compile("Priya Nair")).check()
+    check("the queue button is 'Distribute to Candidates'", page.get_by_role("button", name=re.compile("Distribute to Members")).count() == 0)
+    page.get_by_role("button", name=re.compile(r"Distribute to Candidates \(1\)")).click()
+    dialog = page.get_by_role("dialog", name="Assign to Candidates")
+    people = dialog.get_by_role("group", name="Candidates")
+    people.get_by_role("checkbox", name=re.compile("Aisha Rahman")).wait_for(timeout=15000)
+    offered = people.inner_text()
+    check("distribution offers only this team's active candidates",
+          all(n in offered for n in ("Aisha Rahman", "Tom Becker", "Grace Liu", "Lucas Meyer")) and "Jordan Rivera" not in offered and "Victor Hale" not in offered)
+    people.get_by_role("checkbox", name=re.compile("Aisha Rahman")).check()
     dialog.get_by_role("button", name=re.compile("Review 1 Assignment")).click()
+    check("the confirmation names the candidate and the responsible member", page.get_by_role("dialog").get_by_text("Aisha Rahman (Priya Nair)").is_visible())
     page.get_by_role("button", name=re.compile("^Assign 1 Job")).click()
     toast(page, "Jobs assigned")
-    check("the Team Lead distributes the queued job to a member", True)
+    check("the Team Lead distributes the queued job to a candidate", True)
     page.get_by_text("No jobs are waiting").or_(page.get_by_role("checkbox", name=re.compile("^Select "))).first.wait_for(timeout=15000)
     check("the job leaves the waiting queue", page.get_by_role("checkbox", name=f"Select {job_title} at E2E Corp").count() == 0)
     no_overflow(page, "tl queue")
@@ -950,7 +1837,8 @@ def step_admin(browser):
     login(page, "priya@example.com", expect_home="/member/dashboard")
     page.goto(BASE + "/member/jobs")
     page.get_by_role("link", name=job_title).first.wait_for(timeout=15000)
-    check("the member received the job that started with the Admin", True)
+    check("the responsible member received the job that started with the Admin", True)
+    check("the job card says it is for the candidate", "Aisha Rahman" in page.locator('[data-slot="job-card"]').filter(has_text=job_title).first.inner_text())
     page.get_by_role("link", name=job_title).first.click()
     page.wait_for_url(re.compile(r"/member/jobs/[0-9a-f-]{36}$"), timeout=15000)
     desc = page.locator('[data-slot="job-description"]')
@@ -963,7 +1851,7 @@ def step_admin(browser):
 
 
 def step_misc(browser):
-    print("== the rest: forgot password, direct assignment by an Admin, notification link, CSV export, source switch, search prefilled for a member")
+    print("== the rest: forgot password, direct assignment by an Admin, notification link, CSV export, source switch, search prefilled for a candidate")
     # forgot password: the API's own sentence, the same whether or not the address has an account
     ctx = new_context(browser)
     page = ctx.new_page()
@@ -984,7 +1872,7 @@ def step_misc(browser):
     page.wait_for_url(re.compile(r"/login$"), timeout=15000)
     ctx.close()
 
-    # an Admin adds a job and assigns it straight to a member of any team
+    # an Admin adds a job and assigns it straight to a candidate of any team
     ctx = new_context(browser)
     page = ctx.new_page()
     login(page, "admin@example.com", expect_home="/admin/dashboard")
@@ -998,21 +1886,59 @@ def step_misc(browser):
     dialog.get_by_role("button", name="Save Job").click()
     toast(page, "Job added")
     page.get_by_role("link", name=job_title).first.wait_for(timeout=15000)
-    if MOBILE:      # the cards on a small screen have no row menu: choose the job, then use the bar that appears
-        page.get_by_role("checkbox", name=f"Select {job_title} at Direct Corp").check()
-        page.get_by_role("region", name="Selected jobs").get_by_role("button", name="Assign to Members").click()
+    if MOBILE:      # the cards on a small screen have no row menu: choose the job by its checkbox, then use the bar that appears
+        card = page.locator("li").filter(has=page.get_by_role("link", name=job_title)).filter(visible=True).last
+        check("390 px: a job card carries its own checkbox", card.get_by_role("checkbox", name=f"Select {job_title} at Direct Corp").is_visible()
+              and page.get_by_role("button", name=f"Actions for {job_title} at Direct Corp").filter(visible=True).count() == 0)
+        check("390 px: nothing is selected yet, so there is no selection bar", page.get_by_role("region", name="Selected jobs").count() == 0)
+        card.get_by_role("checkbox", name=f"Select {job_title} at Direct Corp").check()
+        bar = page.get_by_role("region", name="Selected jobs")
+        bar.wait_for(timeout=5000)
+        check("390 px: the selection bar counts the job and offers both ways of assigning",
+              "1 job selected" in bar.inner_text() and bar.get_by_role("button", name="Assign to Team Lead").is_visible() and bar.get_by_role("button", name="Assign to Candidates").is_visible())
+        bar.get_by_role("button", name="Assign to Candidates").click()
     else:
         page.get_by_role("button", name=f"Actions for {job_title} at Direct Corp").click()
-        page.get_by_role("menuitem", name="Assign to Members").click()
-    dialog = page.get_by_role("dialog", name="Assign to Members")
-    members = dialog.get_by_role("group", name="Members")
-    members.get_by_role("checkbox", name=re.compile("Quinn Lopez")).wait_for(timeout=15000)
-    check("an Admin can assign to members of every team", "Quinn Lopez" in members.inner_text() and "Maya Chen" in members.inner_text())
-    members.get_by_role("checkbox", name=re.compile("Quinn Lopez")).check()
+        check("the row menu offers 'Assign to Candidates' (and no 'Assign to Members')", page.get_by_role("menuitem", name="Assign to Members").count() == 0)
+        page.get_by_role("menuitem", name="Assign to Candidates").click()
+    dialog = page.get_by_role("dialog", name="Assign to Candidates")
+    people = dialog.get_by_role("group", name="Candidates")
+    people.get_by_role("checkbox").first.wait_for(timeout=15000)
+    check("the assignment dialog names the job", dialog.get_by_text(f"{job_title} at Direct Corp").first.is_visible())
+    dialog.get_by_role("searchbox", name="Search candidates").fill("Grace")
+    people.get_by_role("checkbox", name=re.compile("Grace Liu")).wait_for(timeout=15000)
+    expect(people.get_by_role("checkbox")).to_have_count(1, timeout=10000)
+    check("the picker is searched by the API and shows team and responsible member for an Admin",
+          "Handled by Quinn Lopez, Team Beta" in people.inner_text(), people.inner_text().replace("\n", " | "))
+    people.get_by_role("checkbox", name=re.compile("Grace Liu")).check()
+    dialog.get_by_role("searchbox", name="Search candidates").fill("Jordan")
+    people.get_by_role("checkbox", name=re.compile("Jordan Rivera")).wait_for(timeout=15000)
+    check("an Admin can assign to candidates of every team", "Team Alpha" in people.inner_text())
+    check("a chosen candidate stays chosen when the search text changes", dialog.get_by_text("1 selected of 50 allowed").is_visible())
+    dialog.get_by_role("searchbox", name="Search candidates").fill("Victor")
+    dialog.get_by_text("No candidates match this search").wait_for(timeout=15000)
+    check("a deactivated candidate is not offered", people.get_by_role("checkbox").count() == 0)
+    if MOBILE:
+        box = dialog.bounding_box()
+        check("390 px: the assignment dialog fits the screen", box["x"] >= 0 and box["x"] + box["width"] <= A.w + 0.5 and box["y"] >= 0 and box["y"] + box["height"] <= A.h + 0.5, str(box))
+        inner = dialog.evaluate("e => e.scrollWidth - e.clientWidth")
+        check("390 px: nothing in the assignment dialog is cut off sideways", inner <= 0, f"{inner}px")
+        no_overflow(page, "admin jobs with the assignment dialog open")
+        shot(page, "assign_dialog_mobile")
     dialog.get_by_role("button", name=re.compile("Review 1 Assignment")).click()
+    review = page.get_by_role("dialog", name="Assign 1 job to 1 candidate?")
+    review.wait_for(timeout=5000)
+    check("the confirmation says to whom, with the responsible member", review.get_by_text("Grace Liu (Quinn Lopez)").is_visible()
+          and review.get_by_text(re.compile("responsible member is notified")).is_visible())
+    if MOBILE:
+        box = review.bounding_box()
+        check("390 px: the confirmation step fits the screen too", box["x"] >= 0 and box["x"] + box["width"] <= A.w + 0.5 and box["y"] + box["height"] <= A.h + 0.5, str(box))
     page.get_by_role("button", name=re.compile("^Assign 1 Job")).click()
     toast(page, "Jobs assigned")
-    check("an Admin can assign a job directly to a member", True)
+    check("an Admin can assign a job directly to a candidate", True)
+    if MOBILE:
+        expect(page.get_by_role("region", name="Selected jobs")).to_have_count(0, timeout=10000)
+        check("390 px: after assigning, the selection is cleared", True)
 
     # export: the file the API makes for the current filters
     page.goto(BASE + "/admin/assignments")
@@ -1025,6 +1951,12 @@ def step_misc(browser):
         lines = handle.read().splitlines()
     check("Export CSV downloads the assignments as a file", download.value.suggested_filename == "assignments.csv" and len(lines) > 5 and "," in lines[0],
           f"{len(lines)} lines, header: {lines[0][:70]}")
+    check("the CSV starts with candidate, responsible_member, team",
+          lines[0] == "candidate,responsible_member,team,company,title,location,status,match_score,assigned_at,applied_at,link_opens,assigned_by,source", lines[0])
+    direct = [line for line in lines if job_title in line]
+    check("a row of the CSV names the candidate, the responsible member and the team", len(direct) == 1 and direct[0].startswith("Grace Liu,Quinn Lopez,Team Beta,Direct Corp,"),
+          direct[0][:90] if direct else "no row for the job just assigned")
+    check("no e-mail column is left in the export", "email" not in lines[0] and "@example.com" not in "\n".join(lines))
 
     # a job source can be switched off and on again; the API keeps the choice
     page.goto(BASE + "/admin/settings?tab=integrations")
@@ -1046,29 +1978,52 @@ def step_misc(browser):
     bell = page.get_by_role("button", name=re.compile("Notifications"))
     check("the member has an unread notification about the assignment", "unread" in (bell.get_attribute("aria-label") or ""))
     bell.click()
-    page.get_by_text(re.compile("Avery Admin assigned you")).first.click()
-    page.wait_for_url(re.compile(r"/member/jobs"), timeout=15000)
+    told = page.get_by_text("Avery Admin assigned 1 new job to Grace Liu.").first
+    told.wait_for(timeout=15000)
+    check("the notification says who assigned how many new jobs to which candidate", True)
+    told.click()
+    page.wait_for_url(re.compile(r"/member/candidates/[0-9a-f-]{36}$"), timeout=15000)
+    page.get_by_role("heading", level=1, name="Grace Liu").wait_for(timeout=15000)
     page.get_by_role("link", name=job_title).first.wait_for(timeout=15000)
-    check("selecting the notification opens the job list, where the new job is", True)
+    check("selecting the notification opens the candidate, where the new job is", True)
     ctx.close()
 
-    # "Find Jobs for <member>" starts the search form with that member chosen
+    # "Find Jobs for <candidate>" starts the search form with that candidate chosen
     ctx = new_context(browser)
     page = ctx.new_page()
     login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
-    page.goto(BASE + "/tl/members")
-    page.get_by_role("searchbox", name="Search members").fill("Noah")
-    page.get_by_role("link", name="Noah Patel").first.click()
-    page.wait_for_url(re.compile(r"/tl/members/[0-9a-f-]{36}"), timeout=15000)
-    page.get_by_role("link", name="Find Jobs for Noah").click()
-    page.wait_for_url(re.compile(r"/tl/search\?member="), timeout=15000)
-    group = page.get_by_role("group", name="Members")
-    group.wait_for(timeout=15000)
+    page.goto(BASE + "/tl/candidates")
+    page.get_by_role("searchbox", name="Search candidates").fill("Samuel")
+    page.get_by_role("link", name="Samuel Okafor").first.click()
+    page.wait_for_url(re.compile(r"/tl/candidates/[0-9a-f-]{36}"), timeout=15000)
+    page.get_by_role("link", name="Find Jobs for Samuel").click()
+    page.wait_for_url(re.compile(r"/tl/search\?candidate=[0-9a-f-]{36}$"), timeout=15000)
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
     try:
-        expect(group.get_by_role("checkbox", name=re.compile("Noah Patel"))).to_be_checked(timeout=10000)
-        check("the search form opens with that member chosen", group.get_by_role("checkbox", name=re.compile("Maya Chen")).is_checked() is False)
+        expect(group.get_by_role("checkbox", name=re.compile("Samuel Okafor"))).to_be_checked(timeout=10000)
+        check("the search form opens with that candidate chosen", group.get_by_role("checkbox", name=re.compile("Jordan Rivera")).is_checked() is False
+              and page.get_by_role("region", name="Selected candidates").get_by_text("Samuel Okafor").first.is_visible())
     except Exception:
-        check("the search form opens with that member chosen", False)
+        check("the search form opens with that candidate chosen", False)
+    # the old address with ?member= selects nobody: members are not searched for
+    noah = next(u for u in api(page, "/api/users?role=MEMBER&page_size=50")["items"] if u["email"] == "noah@example.com")
+    page.goto(BASE + f"/tl/search?member={noah['id']}")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
+    page.wait_for_load_state("networkidle")
+    check("the old ?member= address selects nobody", group.get_by_role("checkbox", checked=True).count() == 0
+          and page.get_by_role("region", name="Selected candidates").count() == 0)
+    # a member's page offers the member's candidates, not a search for the member
+    page.goto(BASE + f"/tl/members/{noah['id']}")
+    page.get_by_role("heading", level=1, name="Noah Patel").wait_for(timeout=15000)
+    check("a member's page has no 'Find Jobs for <member>' and no profile tab",
+          page.get_by_role("link", name=re.compile("^Find Jobs for")).count() == 0 and page.get_by_role("tab", name=re.compile("Profile")).count() == 0)
+    tabs = [t.inner_text().split("\n")[0].strip() for t in page.get_by_role("tab").all()]
+    check("a member's page has the tabs Overview, Candidates, Jobs, Activity", [re.sub(r"\s*\d+$", "", t) for t in tabs] == ["Overview", "Candidates", "Jobs", "Activity"], str(tabs))
+    page.get_by_role("link", name="Candidates of Noah").click()
+    page.wait_for_url(re.compile(rf"/tl/candidates\?member={noah['id']}$"), timeout=15000)
+    page.get_by_role("link", name="Samuel Okafor").first.wait_for(timeout=15000)
+    check("'Candidates of <member>' opens the candidate list filtered by that member", page.get_by_role("link", name="Jordan Rivera").count() == 0)
     ctx.close()
 
 
@@ -1129,9 +2084,9 @@ def step_stubbed(browser):
     page.route(re.compile(r"/api/searches$"), lambda route: route.fulfill(status=429, json={"error": refusal, "detail": ""})
                if route.request.method == "POST" else route.continue_())
     page.goto(BASE + "/tl/search")
-    group = page.get_by_role("group", name="Members")
-    group.wait_for(timeout=15000)
-    group.get_by_role("checkbox", name=re.compile("Noah Patel")).check()
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox", name=re.compile("Samuel Okafor")).wait_for(timeout=15000)
+    group.get_by_role("checkbox", name=re.compile("Samuel Okafor")).check()
     with expecting("429", "/api/searches"):
         page.get_by_role("button", name="Start Search").click()
         page.get_by_role("alert").filter(has_text=refusal).first.wait_for(timeout=10000)
@@ -1153,7 +2108,7 @@ def step_running(browser):
     running = {**real, "status": "running", "stage": "Verifying application links", "completed_at": None, "matched_count": 0, "assigned_count": 0,
                "attempts": 1, "warnings": [],
                "targets": [{**t, "status": "running", "stage": "Verifying application links", "message": "", "matched": 0, "assigned": 0} for t in real["targets"]]}
-    resumed_note = "The background worker restarted during this search. It resumed automatically; members already finished were kept."
+    resumed_note = "The background worker restarted during this search. It resumed automatically; candidates already finished were kept."
     state = {"detail_calls": [], "active_calls": 0, "cancel": None, "finish": False, "phase": "running"}
 
     def current():
@@ -1288,52 +2243,39 @@ B.S. Computer Science
 
 
 def step_people(browser):
-    print("== people: reset link, resume on a member's behalf, profile, change password, theme")
+    print("== people: a member's page, reset link, change password, theme, deactivation and what it does to the member's candidate")
     if "email" not in SHARED:
         skip("people step", "needs the member invited in the 'invite' step")
         return
     name, email = SHARED["name"], SHARED["email"]
-    resume_path = f"{WORK_DIR}/resume-{STAMP}.txt"
-    with open(resume_path, "w") as handle:
-        handle.write(RESUME_TEXT)
+    candidate, candidate_id = SHARED.get("candidate"), SHARED.get("candidate_id")      # assigned to this member in the 'candidates' step
 
-    # Team Lead: upload a resume on the member's behalf, then create a reset link
+    # Team Lead: the member's page (an employee: candidates, jobs, activity; no profile, no resume), then a reset link
     ctx = new_context(browser)
     page = ctx.new_page()
     login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
     page.goto(BASE + "/tl/members")
     page.get_by_role("searchbox", name="Search members").fill(name)
+    row = page.locator("tr, li").filter(has=page.get_by_role("link", name=name)).filter(visible=True).last
+    row.wait_for(timeout=15000)
+    check("a member's row has no resume state any more", "No resume" not in row.inner_text() and "Resume uploaded" not in row.inner_text(), row.inner_text().replace("\n", " | ")[:140])
+    if candidate:
+        check("a member's row counts the candidates assigned to the member", row.get_by_role("link", name=f"1 candidate of {name}").count() == 1 or "1 candidate" in row.inner_text(),
+              row.inner_text().replace("\n", " | ")[:140])
     page.get_by_role("link", name=name).first.click()
     page.wait_for_url(re.compile(r"/tl/members/[0-9a-f-]{36}"), timeout=15000)
-    page.get_by_role("tab", name="Profile and Resume").click()
-    page.get_by_text(f"You are uploading on behalf of {name}").wait_for(timeout=15000)
-    check("the Team Lead can upload a resume on the member's behalf", True)
-    page.locator('input[type="file"]').first.set_input_files(resume_path)
-    toast(page, "uploaded (version 1)")
-    check("resume upload (multipart, through the /api proxy) succeeds", True)
-    page.get_by_text("Skills found in the resume").wait_for(timeout=15000)
-    check("extracted skills are shown for review", page.locator('[data-slot="tag"]').filter(has_text="Python").first.is_visible())
-    check("the notice about outside AI services is shown (none configured on the demo stack)",
-          page.get_by_text("No outside AI service is configured on this server. Resume text stays on this server.").first.is_visible())
-    try:
-        page.get_by_role("button", name="Remove Python").first.wait_for(timeout=10000)
-        check("skills the API took from the resume appear in the open profile form", True)
-    except Exception:
-        check("skills the API took from the resume appear in the open profile form", False)
-    no_overflow(page, "member detail, profile tab")
-    shot(page, "member_detail_profile")
-
-    # wrong file type is refused before upload
-    bad = resume_path.replace(".txt", ".png")
-    with open(bad, "wb") as handle:
-        handle.write(b"not a resume")
-    page.locator('input[type="file"]').first.set_input_files(bad)
-    check("a file that is not PDF, DOCX or TXT is refused with a clear message", page.get_by_role("alert").filter(has_text="Choose a PDF, DOCX or TXT file.").first.is_visible())
-
-    for tab in ("Overview", "Assignments", "Activity", "Searches"):
-        page.get_by_role("tab", name=tab).click()
+    page.get_by_role("heading", level=1, name=name).wait_for(timeout=15000)
+    check("a member's page has no resume upload and no profile form",
+          page.get_by_role("tab", name=re.compile("Profile")).count() == 0 and page.locator('input[type="file"]').count() == 0 and page.get_by_role("button", name="Save Profile").count() == 0)
+    for tab in ("Overview", "Candidates", "Jobs", "Activity"):
+        page.get_by_role("tab", name=re.compile(f"^{tab}")).click()
         page.wait_for_load_state("networkidle")
         check(f"member detail tab renders: {tab}", page.locator('[data-slot="error-state"]').filter(visible=True).count() == 0)
+        if tab == "Candidates" and candidate:
+            page.get_by_role("link", name=candidate, exact=True).filter(visible=True).first.wait_for(timeout=15000)
+            check("the Candidates tab of a member lists the candidates the member is responsible for", True)
+    no_overflow(page, "member detail")
+    shot(page, "member_detail")
 
     page.get_by_role("button", name="Manage Account").click()
     page.get_by_role("menuitem", name="Create Reset Link").click()
@@ -1362,42 +2304,19 @@ def step_people(browser):
     page.get_by_role("button", name="Sign in").click()
     page.wait_for_url(re.compile(r"/member/dashboard$"), timeout=20000)
     check("sign-in works with the password set through the reset link", True)
+    if candidate:
+        page.get_by_role("link", name=candidate, exact=True).filter(visible=True).first.wait_for(timeout=15000)
+        check("the new member's dashboard lists the candidate assigned to them", page.get_by_text("Your Team Lead has not assigned a candidate to you yet").count() == 0)
 
-    # profile: completion meter, missing hints, save
-    page.goto(BASE + "/member/profile")
-    page.get_by_role("progressbar", name="Profile completion").wait_for(timeout=15000)
-    before = int(page.get_by_role("progressbar", name="Profile completion").get_attribute("aria-valuenow"))
-    check("the profile shows what is still missing", page.get_by_text("Add at least one desired job title").first.is_visible(), f"{before}% complete")
-    titles = page.get_by_label(re.compile("^Desired job titles"))
-    titles.fill("QA Engineer, Test Engineer")
-    titles.press("Enter")
-    page.get_by_label("Years of experience").fill("5")
-    states = page.get_by_label(re.compile("^Preferred states"))
-    states.fill("new york")
-    states.press("Enter")
-    page.get_by_role("button", name="Save Profile").click()
-    toast(page, "Profile saved")
-    expect(page.get_by_role("progressbar", name="Profile completion")).to_have_attribute("aria-valuenow", "100", timeout=15000)
-    check("saving the profile raises the completion meter", True, f"{before}% -> 100%")
-    check("a state name is stored as its code", page.get_by_role("button", name="Remove NY").is_visible())
-
-    # drag and drop a new resume
-    page.evaluate(
-        """([text]) => {
-            const zone = document.querySelector('label:has(input[type=file])');
-            const data = new DataTransfer();
-            data.items.add(new File([text], 'dropped-resume.txt', { type: 'text/plain' }));
-            zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }));
-            zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
-        }""",
-        [RESUME_TEXT + "\nGo, Rust\n"],
-    )
-    toast(page, "dropped-resume.txt uploaded (version 2)")
-    check("a resume can be dropped onto the upload area (replaces the previous one)", True)
-    no_overflow(page, "member profile")
-    shot(page, "member_profile")
-
-    # change password, then sign in with it
+    # the member's settings: change password, then sign in with it
+    open_nav(page)
+    nav_link(page, "Settings").click()
+    page.wait_for_url(re.compile(r"/member/settings$"), timeout=15000)
+    page.get_by_label("Current password").wait_for(timeout=15000)
+    check("the member's settings are the account only: no resume, no job-search profile", page.locator('input[type="file"]').count() == 0
+          and page.get_by_role("progressbar", name="Profile completion").count() == 0 and page.get_by_role("button", name="Save Profile").count() == 0)
+    no_overflow(page, "member settings")
+    shot(page, "member_settings")
     third = f"Third-Time-{STAMP}!"
     page.get_by_label("Current password").fill("not-the-current-one")
     page.get_by_label("New password", exact=True).fill(third)
@@ -1418,7 +2337,7 @@ def step_people(browser):
     page.reload()
     page.wait_for_load_state("networkidle")
     check("the theme choice survives a reload", page.evaluate("document.documentElement.classList.contains('dark')"))
-    shot(page, "member_profile_dark")
+    shot(page, "member_settings_dark")
     page.get_by_role("button", name="Theme").click()
     page.get_by_role("menuitem", name="Match device").click()
 
@@ -1445,6 +2364,19 @@ def step_people(browser):
     lctx = new_context(browser)
     lpage = lctx.new_page()
     login(lpage, "lead.alpha@example.com")
+    if candidate:
+        # the member's candidate stays in the team, unassigned, and the Team Lead (who did not cause it) is told
+        record = api(lpage, f"/api/candidates/{candidate_id}")
+        check("deactivating a member leaves their candidate in the team, without a responsible member",
+              record["assigned_member"] is None and record["team"]["name"] == "Team Alpha" and record["is_active"] is True and record["has_resume"] is True)
+        told = bell_text(lpage, f"1 candidate has no responsible member any more: {name} was deactivated. Choose who takes over.")
+        check("notification 'candidates unassigned': how many, whose they were, and why", True)
+        told.click()
+        lpage.wait_for_url(re.compile(r"/tl/candidates\?member=unassigned$"), timeout=15000)
+        lpage.get_by_role("link", name=candidate, exact=True).filter(visible=True).first.wait_for(timeout=15000)
+        check("the notification opens the candidates under the 'Unassigned' filter, where the candidate is",
+              lpage.get_by_role("combobox", name="Responsible member").inner_text().strip() == "Unassigned" and lpage.get_by_role("link", name="Jordan Rivera").count() == 0)
+        no_overflow(lpage, "tl candidates, unassigned")
     lpage.goto(BASE + "/tl/members")
     lpage.get_by_role("searchbox", name="Search members").fill(name)
     lpage.get_by_role("link", name=name).first.wait_for(timeout=15000)
@@ -1454,6 +2386,20 @@ def step_people(browser):
     check("a Team Lead is not offered Reactivate for an account an Admin deactivated, and is told why",
           lmenu.get_by_role("menuitem", name="Reactivate").count() == 0 and lmenu.get_by_text("Deactivated by an administrator", exact=True).is_visible())
     lpage.keyboard.press("Escape")
+    if candidate:
+        # a deactivated member cannot be made responsible: not offered, and refused by the API
+        lpage.goto(BASE + f"/tl/candidates/{candidate_id}")
+        lpage.get_by_role("button", name="Assign to a Member").click()
+        dialog = lpage.get_by_role("dialog", name="Assign to a Member")
+        dialog.get_by_role("combobox", name=re.compile("Responsible member")).click()
+        offered = [o.inner_text().strip() for o in lpage.get_by_role("option").all()]
+        lpage.keyboard.press("Escape")
+        dialog.get_by_role("button", name="Cancel").click()
+        member = next(u for u in api(lpage, f"/api/users?role=MEMBER&q={email}&page_size=5")["items"] if u["email"] == email)
+        with expecting("409", f"/api/candidates/{candidate_id}"):
+            refused = send(lpage, "PATCH", f"/api/candidates/{candidate_id}", {"assigned_member_id": member["id"]})
+            lpage.wait_for_timeout(300)
+        check("a deactivated member is not offered as responsible member, and the API refuses them (409)", name not in offered and "Maya Chen" in offered and refused == 409, f"HTTP {refused}")
     lctx.close()
 
     apage.get_by_role("button", name=f"Actions for {name}").click()
@@ -1461,6 +2407,8 @@ def step_people(browser):
     apage.get_by_role("alertdialog").get_by_role("button", name="Reactivate account").click()
     toast(apage, f"{name} can sign in again")
     check("the Admin can reactivate that account", True)
+    if candidate:
+        check("reactivating the member does not hand the candidate back by itself", api(apage, f"/api/candidates/{candidate_id}")["assigned_member"] is None)
     actx.close()
 
 
@@ -1583,7 +2531,7 @@ def step_admin_more(browser):
     page.get_by_role("button", name=f"Actions for {renamed}").click()
     page.get_by_role("menuitem", name="Deactivate Team").click()
     confirm = page.get_by_role("alertdialog")
-    check("deactivating a team asks for confirmation", confirm.get_by_text(re.compile("Members, assignments and history stay")).is_visible())
+    check("deactivating a team asks for confirmation", confirm.get_by_text(re.compile("Members, candidates, assignments and history stay")).is_visible())
     confirm.get_by_role("button", name="Deactivate team").click()
     toast(page, f"{renamed} deactivated")
     try:
@@ -1594,7 +2542,7 @@ def step_admin_more(browser):
     page.get_by_role("link", name=renamed).first.click()
     page.wait_for_url(re.compile(r"/admin/teams/[0-9a-f-]{36}"), timeout=15000)
     page.get_by_role("heading", level=1, name=renamed).wait_for(timeout=15000)
-    for tab in ("Members", "Assignments", "Queue", "Searches", "Overview"):
+    for tab in ("Candidates", "Members", "Assignments", "Queue", "Searches", "Overview"):
         page.get_by_role("tab", name=re.compile(f"^{tab}")).click()
         page.wait_for_load_state("networkidle")
         check(f"team page tab renders: {tab}", page.locator('[data-slot="error-state"]').filter(visible=True).count() == 0)
@@ -1641,6 +2589,26 @@ def step_admin_more(browser):
     # move the invited member to Team Beta, deactivate and reactivate them
     if "name" in SHARED:
         member = SHARED["name"]
+        candidate, candidate_id = SHARED.get("candidate"), SHARED.get("candidate_id")
+        if candidate:
+            # the Admin makes the member responsible for the candidate again (it became unassigned in the 'people' step)
+            page.goto(BASE + f"/admin/candidates/{candidate_id}")
+            page.get_by_role("heading", level=1, name=candidate).wait_for(timeout=15000)
+            check("an Admin sees a candidate of any team, with its team", page.get_by_text("Candidate of Team Alpha.").is_visible())
+            page.get_by_role("button", name="Assign to a Member").click()
+            dialog = page.get_by_role("dialog", name="Assign to a Member")
+            dialog.get_by_role("combobox", name=re.compile("Responsible member")).click()
+            offered = [o.inner_text().strip() for o in page.get_by_role("option").all()]
+            check("for an Admin too, only members of the candidate's own team are offered", member in offered and "Maya Chen" in offered and "Priya Nair" not in offered, str(offered))
+            page.get_by_role("option", name=member, exact=True).click()
+            dialog.get_by_role("button", name="Assign Candidate").click()
+            toast(page, f"{member} is now responsible for {candidate}")
+            priya = next(u for u in api(page, "/api/users?role=MEMBER&q=priya&page_size=5")["items"] if u["email"] == "priya@example.com")
+            with expecting("422", f"/api/candidates/{candidate_id}"):
+                refused = send(page, "PATCH", f"/api/candidates/{candidate_id}", {"assigned_member_id": priya["id"]})
+                page.wait_for_timeout(300)
+            check("the API refuses a member of another team as responsible member, even for an Admin (422)", refused == 422
+                  and api(page, f"/api/candidates/{candidate_id}")["assigned_member"]["name"] == member, f"HTTP {refused}")
         page.goto(BASE + "/admin/members")
         page.get_by_role("searchbox", name="Search members").fill(member)
         page.get_by_role("link", name=member).first.wait_for(timeout=15000)
@@ -1652,6 +2620,25 @@ def step_admin_more(browser):
         dialog.get_by_role("button", name="Move Member").click()
         toast(page, f"{member} moved to Team Beta")
         check("an Admin can move a member to another team", True)
+        if candidate:
+            record = api(page, f"/api/candidates/{candidate_id}")
+            check("the moved member's candidate stays in its team, with resume and history, and has no responsible member",
+                  record["team"]["name"] == "Team Alpha" and record["assigned_member"] is None and record["has_resume"] is True)
+            page.goto(BASE + "/admin/candidates?member=unassigned")
+            page.get_by_role("link", name=candidate, exact=True).filter(visible=True).first.wait_for(timeout=15000)
+            row = page.locator("tr, li").filter(has=page.get_by_role("link", name=candidate, exact=True)).filter(visible=True).last
+            check("the Admin's candidate list shows it under 'Unassigned', with its team", "Team Alpha" in row.inner_text() and "Unassigned" in row.inner_text(),
+                  row.inner_text().replace("\n", " | ")[:140])
+            no_overflow(page, "admin candidates, unassigned")
+            lctx = new_context(browser)
+            lpage = lctx.new_page()
+            login(lpage, "lead.alpha@example.com")
+            bell_text(lpage, f"1 candidate has no responsible member any more: {member} was moved to another team. Choose who takes over.")
+            check("the Team Lead is told that a candidate lost its member because the member was moved to another team", True)
+            lctx.close()
+            page.goto(BASE + "/admin/members")
+            page.get_by_role("searchbox", name="Search members").fill(member)
+            page.get_by_role("link", name=member).first.wait_for(timeout=15000)
         page.get_by_role("button", name=f"Actions for {member}").click()
         page.get_by_role("menuitem", name="Deactivate").click()
         page.get_by_role("alertdialog").get_by_role("button", name="Deactivate account").click()
@@ -1711,27 +2698,35 @@ def step_admin_more(browser):
 
     # search presets
     page.goto(BASE + "/admin/search")
-    page.get_by_role("group", name="Members").wait_for(timeout=15000)
-    page.get_by_label("Results per member").fill("7")
+    page.get_by_role("group", name="Candidates").wait_for(timeout=15000)
+    page.get_by_label("Results per candidate").fill("7")
     page.get_by_role("button", name=re.compile("^Presets")).click()
     preset = f"E2E preset {STAMP}"
     page.get_by_label("Save the current settings as").fill(preset)
     page.get_by_role("button", name="Save", exact=True).click()
     toast(page, f'Preset "{preset}" saved')
     page.keyboard.press("Escape")
-    page.get_by_label("Results per member").fill("3")
+    page.get_by_label("Results per candidate").fill("3")
     page.get_by_role("button", name=re.compile("^Presets")).click()
     page.get_by_role("listitem").filter(has_text=preset).get_by_role("button", name="Apply").click()
-    check("a saved preset restores the search settings", page.get_by_label("Results per member").input_value() == "7")
+    check("a saved preset restores the search settings", page.get_by_label("Results per candidate").input_value() == "7")
     page.get_by_role("button", name=re.compile("^Presets")).click()
     page.get_by_role("button", name=f"Delete preset {preset}").click()
     toast(page, "Preset deleted")
     check("a preset can be deleted", True)
     check("an Admin can pick a whole team in the search form", page.get_by_role("combobox", name="Whole team").is_visible())
+    page.get_by_role("combobox", name="Whole team").click()
+    check("a whole team is counted in active candidates", page.get_by_role("option", name=re.compile(r"^Team Beta \(4 active candidates\)$")).is_visible(),
+          " | ".join(o.inner_text().strip() for o in page.get_by_role("option").all()))
+    page.keyboard.press("Escape")
+    people = page.get_by_role("group", name="Candidates")
+    people.get_by_role("checkbox").first.wait_for(timeout=15000)
+    check("an Admin's candidate list spans the teams and names each candidate's team", "Team Alpha" in people.inner_text() and "Team Beta" in people.inner_text())
     ctx.close()
 
 
-STEPS = {"auth": step_auth, "member": step_member, "invite": step_invite, "search": step_search, "people": step_people,
+STEPS = {"auth": step_auth, "member": step_member, "my_candidates": step_my_candidates, "invite": step_invite, "search": step_search,
+         "candidates": step_candidates, "search_form": step_search_form, "people": step_people,
          "tracking": step_tracking, "review": step_review, "admin": step_admin, "admin_more": step_admin_more, "misc": step_misc, "stubbed": step_stubbed, "running": step_running}
 
 with sync_playwright() as pw:

@@ -250,21 +250,23 @@ cd frontend && API_ORIGIN=http://127.0.0.1:8011 npm run dev -- --port 3011
 ### Browser tests
 
 ```bash
-tests/e2e/run.sh                # everything, about 12 minutes; or: acceptance | crawl | checks
+tests/e2e/run.sh                # everything, about 17 minutes; or: acceptance | crawl | checks
 ```
 
 The script builds the web app against the demo API (into `frontend/.next-e2e`, beside the normal build), starts both on ports 8011 and 3011 with freshly seeded data, drives a real Chromium browser, and stops everything again. It never touches the real database or the real servers. External hosts are made unreachable for the browser, so no employer site is contacted.
 
-- `tests/e2e/test_acceptance.py`: the seven acceptance scenarios of the brief, step by step in the page (Admin creates teams and Team Leads, invitations are accepted, a Team Lead searches and jobs are assigned, a member opens a job and marks it applied and the three dashboards follow, the Admin delegates ten jobs and Team Lead Beta distributes five each, team isolation by typed address, a search that continues after its window is put away).
-- `tests/e2e/ui_checks.py`: about 330 named checks over every feature, run at 1280 px and again at 390 px; any console error, page error or failed API request fails the run.
-- `tests/e2e/ui_checks_more.py`: 125 further checks at each width for the screens that follow what the API states about itself: extra profile fields, password rules, the forgot-password answer, a job a manager took back, reactivation of an account an Admin deactivated, the deep-search default and the notice about outside AI services. Some of them alter an API answer on its way to the browser, to prove the screen shows the API's numbers and words and not constants of its own.
-- `tests/e2e/ui_crawl.py`: every page for every role at both widths: console messages, failed requests, horizontal overflow, elements sticking out of their box.
+- `tests/e2e/test_acceptance.py`: the seven acceptance scenarios of the brief, step by step in the page (Admin creates teams and Team Leads, invitations are accepted, a Team Lead adds a candidate with a resume and a responsible member and searches for the candidate, the member opens one of the candidate's jobs, marks it applied and records an interview and the three dashboards follow, the Admin delegates ten jobs and Team Lead Beta distributes five each to two candidates, isolation by typed address between teams and between members of one team including a candidate handed to another member and back, a review-mode search that continues after its window is put away and assigns only what is chosen).
+- `tests/e2e/ui_checks.py`: about 560 named checks over every feature, run at 1280 px and again at 390 px; any console error, page error or failed API request fails the run. Among them: Add Candidate with and without a resume, the candidate list filters, assigning and moving a candidate with the member's access following at once, the resume download (attachment, `nosniff`), the search form's candidate picker with resume upload and responsible member, My Candidates, the read-only candidate page of a member, the three candidate notifications and the CSV export.
+- `tests/e2e/ui_checks_more.py`: about 135 further checks at each width for the screens that follow what the API states about itself: extra candidate-profile fields (Admin defines, Team Lead and Admin answer, the responsible member reads), password rules, the forgot-password answer, a job a manager took back from a candidate, reactivation of an account an Admin deactivated, the deep-search default and the notice about outside AI services on a candidate's resume. Some of them alter an API answer on its way to the browser, to prove the screen shows the API's numbers and words and not constants of its own.
+- `tests/e2e/ui_crawl.py`: every page for every role at both widths (76 page loads at each): console messages, failed requests, horizontal overflow, elements sticking out of their box.
+
+"Open Job" in these tests uses a synthetic posting whose address is on a real public host (the API refuses to redirect to a host that does not resolve), so the machine needs working DNS; the browser itself reaches no outside host.
 
 Searches in the demo stack finish within a second, so the states "queued" and "running", polling and cancellation are checked there with stubbed API answers; the real worker's behaviour is covered by the backend tests and by the live checks described under Known limits.
 
 Demo accounts exist only in that database; they are listed at the top of `tests/e2e/server.py`.
 
-Last full run, 2026-11-17: 7 scenarios, 94 page loads and 907 checks, no failure, 12 minutes. The backend suite had 239 tests on that day.
+Last full run, 2026-11-17, after candidates were introduced: 7 scenarios, 152 page loads and 1,396 checks (561 + 134 at 1280 px, 566 + 135 at 390 px), no failure, 16.5 minutes. The backend suite had 247 tests on that day.
 
 ## Measured performance
 

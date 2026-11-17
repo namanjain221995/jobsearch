@@ -2,8 +2,8 @@
 # Browser tests against a self-contained demo stack: the demo API (synthetic data, no network, no AI cost)
 # and a production build of the web app. Nothing here touches the real database or the real servers.
 #
-#   tests/e2e/run.sh                 everything (about 12 minutes)
-#   tests/e2e/run.sh acceptance      the seven acceptance scenarios of the brief (about 2 minutes)
+#   tests/e2e/run.sh                 everything (about 17 minutes)
+#   tests/e2e/run.sh acceptance      the seven acceptance scenarios of the brief, for the candidate model (about 2 minutes)
 #   tests/e2e/run.sh crawl           every page for every role at 1280 px and 390 px
 #   tests/e2e/run.sh checks          the two check lists at 1280 px and 390 px
 #

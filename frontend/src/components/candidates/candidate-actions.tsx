@@ -33,18 +33,18 @@ export function CandidateActions({ candidate, variant = "menu" }: { candidate: C
   const [action, setAction] = useState<Action>(null);
   const close = () => setAction(null);
 
+  // The promise is used instead of the callbacks of `mutate`: in a list filtered to active (or to deactivated)
+  // candidates this row is gone once the list has reloaded, and callbacks of an unmounted row are never called,
+  // which left the change without any confirmation.
   const setActive = (active: boolean) =>
-    update.mutate(
-      { id: candidate.id, body: { is_active: active } },
-      {
-        onSuccess: (saved) => {
-          toast.success(active ? `${saved.name} is active again` : `${saved.name} was deactivated`);
-          close();
-        },
-        onError: (error) => {
-          toast.error(errorMessage(error));
-          close();
-        },
+    update.mutateAsync({ id: candidate.id, body: { is_active: active } }).then(
+      (saved) => {
+        toast.success(active ? `${saved.name} is active again` : `${saved.name} was deactivated`);
+        close();
+      },
+      (error: unknown) => {
+        toast.error(errorMessage(error));
+        close();
       },
     );
 

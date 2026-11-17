@@ -417,18 +417,18 @@ export function AssignMemberDialog({ candidate, onClose }: { candidate: Candidat
           onSubmit={(event) => {
             event.preventDefault();
             if (unchanged) return;
-            update.mutate(
-              { id: candidate.id, body: { assigned_member_id: memberId || null } },
-              {
-                onSuccess: (saved) => {
-                  toast.success(
-                    saved.assigned_member
-                      ? `${saved.assigned_member.name} is now responsible for ${saved.name}`
-                      : `${saved.name} is unassigned`,
-                  );
-                  onClose();
-                },
+            // The promise, not the callbacks of `mutate`: opened from a list filtered by responsible member, the row
+            // that holds this dialog is gone once the list has reloaded, and its callbacks would never be called.
+            update.mutateAsync({ id: candidate.id, body: { assigned_member_id: memberId || null } }).then(
+              (saved) => {
+                toast.success(
+                  saved.assigned_member
+                    ? `${saved.assigned_member.name} is now responsible for ${saved.name}`
+                    : `${saved.name} is unassigned`,
+                );
+                onClose();
               },
+              () => undefined, // the refusal is shown in the dialog (update.error)
             );
           }}
         >
