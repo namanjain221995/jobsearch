@@ -1,8 +1,15 @@
 """Outgoing e-mail. Delivery is reported truthfully: `send` returns True only when an SMTP server accepted
-the message. Without SMTP the caller shows a link for the authorized user to copy instead."""
+the message. Without SMTP the caller shows a link for the authorized user to copy instead.
+
+The messages carry one-time links and the connection carries the SMTP password, so the connection is encrypted
+(STARTTLS, or TLS from the first byte on port 465) and the server's certificate is verified, chain and host name.
+smtplib does not verify unless it is given a context. A server that does not offer STARTTLS, or whose certificate
+is not trusted, gets no message and no password: the send is reported as failed. A private certificate authority
+is trusted the usual OpenSSL way (SSL_CERT_FILE)."""
 import asyncio
 import logging
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 from ...config import Settings
@@ -26,9 +33,13 @@ class Emailer:
         message = EmailMessage()
         message["From"], message["To"], message["Subject"] = s.smtp_from, to, subject
         message.set_content(body)
-        with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=15) as smtp:
-            if s.smtp_starttls:
-                smtp.starttls()
+        context = ssl.create_default_context()
+        implicit = s.smtp_port == 465 if s.smtp_implicit_tls is None else s.smtp_implicit_tls
+        connection = (smtplib.SMTP_SSL(s.smtp_host, s.smtp_port, timeout=15, context=context) if implicit
+                      else smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=15))
+        with connection as smtp:
+            if s.smtp_starttls and not implicit:
+                smtp.starttls(context=context)
             if s.smtp_username:
                 smtp.login(s.smtp_username, s.smtp_password)
             smtp.send_message(message)

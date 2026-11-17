@@ -815,7 +815,7 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
             level = "session" if deps.authenticated in used else ("origin" if deps.same_origin in used else "public")
             protection.update({(method, route.path): level for method in route.methods})
     assert len(protection) >= 71
-    assert {key for key, level in protection.items() if level == "public"} == {("GET", "/api/health"), ("GET", "/api/invitations/validate")}
+    assert {key for key, level in protection.items() if level == "public"} == {("GET", "/api/health"), ("GET", "/api/invitations/validate"), ("GET", "/api/auth/password-policy")}
     assert {key for key, level in protection.items() if level == "origin"} == {
         ("POST", "/api/auth/login"), ("POST", "/api/auth/forgot-password"), ("POST", "/api/auth/reset-password"), ("POST", "/api/invitations/accept")}
 
@@ -882,9 +882,11 @@ async def test_sound_object_level_checks_hold_across_teams_and_members(world):
     private = await a2.post(f"/api/assignments/{of[id_a2]}/notes", json={"note": "mine", "is_private": True})
     assert private.status_code == 201 and private.json()["is_private"] is False               # only managers write private notes
     assert (await admin.delete(f"/api/assignments/{of[id_a1]}")).status_code == 200            # withdrawn by a manager
-    assert (await a1.patch(f"/api/assignments/{of[id_a1]}/status", json={"status": "APPLIED"})).status_code == 403
-    assert (await a1.post(f"/api/assignments/{of[id_a1]}/notes", json={"note": "x"})).status_code == 403
-    assert (await a1.get(f"/api/assignments/{of[id_a1]}/open-job", follow_redirects=False)).status_code == 403
+    # 410: the member is told their own job was taken back; someone else's assignment stays an anonymous 403.
+    assert (await a1.patch(f"/api/assignments/{of[id_a1]}/status", json={"status": "APPLIED"})).status_code == 410
+    assert (await a1.post(f"/api/assignments/{of[id_a1]}/notes", json={"note": "x"})).status_code == 410
+    assert (await a1.get(f"/api/assignments/{of[id_a1]}/open-job", follow_redirects=False)).status_code == 410
+    assert (await a2.get(f"/api/assignments/{of[id_a1]}")).status_code == 403
     assert (await a1.get("/api/assignments", params={"include_inactive": True})).json()["total"] == 0
     assert (await lead_a.patch(f"/api/assignments/{of[id_a1]}/status", json={"status": "APPLIED"})).status_code == 409
 

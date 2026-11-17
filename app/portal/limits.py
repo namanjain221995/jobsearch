@@ -3,7 +3,8 @@
 FastAPI reads and parses the whole body before it resolves dependencies, so without this an anonymous caller
 could stream any amount of data to an upload route (spooled to disk) or a JSON route (held in memory) and only
 then be told 401. Here:
-- a state-changing request without a session cookie is answered 401 unread (except the four public forms);
+- a state-changing request without a session cookie is answered 401 and never parsed (except the four public
+  forms); at most 1 MB of it is read, and dropped;
 - a body larger than the route allows is refused, by its declared length or as soon as it grows past the limit;
 - a NUL character in the query string is refused (PostgreSQL cannot store it; it would end as a server error)."""
 import json
@@ -16,6 +17,8 @@ from .deps import SESSION_COOKIE
 PUBLIC_FORMS = {"/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/invitations/accept"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 MULTIPART_OVERHEAD = 64 * 1024
+UNAUTHENTICATED_DRAIN = 1024 * 1024          # bytes read and dropped from a request without a session
+OVERSIZE_DRAIN = 32 * 1024 * 1024            # the same for a signed-in request whose declared size is over the limit
 
 
 class RequestGuardMiddleware:
@@ -29,6 +32,19 @@ class RequestGuardMiddleware:
         if path == "/api/jobs/import-csv":
             return self.settings.max_csv_bytes + MULTIPART_OVERHEAD
         return self.settings.max_json_body_bytes
+
+    @staticmethod
+    async def discard(receive, budget: int) -> None:
+        """Read and drop up to `budget` bytes of the body before answering. The web app's proxy is still sending
+        when the answer arrives; if the connection were closed under it, the person would see its generic 500
+        instead of this answer. Nothing is kept, and a body beyond the budget is cut off after all."""
+        while budget > 0:
+            message = await receive()
+            if message["type"] != "http.request":
+                return
+            budget -= len(message.get("body") or b"")
+            if not message.get("more_body"):
+                return
 
     @staticmethod
     async def reply(send, status: int, error: str) -> None:
@@ -48,11 +64,13 @@ class RequestGuardMiddleware:
         headers = dict(scope["headers"])
         path = scope["path"]
         if path not in PUBLIC_FORMS and f"{SESSION_COOKIE}=".encode() not in headers.get(b"cookie", b""):
+            await self.discard(receive, UNAUTHENTICATED_DRAIN)
             return await self.reply(send, 401, "Not authenticated")
         limit = self.limit_for(path)
         too_large = f"The request is too large (limit {limit // 1024} KB)."
         declared = headers.get(b"content-length", b"")
         if declared.isdigit() and int(declared) > limit:
+            await self.discard(receive, OVERSIZE_DRAIN)
             return await self.reply(send, 413, too_large)
         received = 0
 

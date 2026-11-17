@@ -1,4 +1,5 @@
 """Authentication, sessions, CSRF, throttling, password reset and the invitation flow."""
+import asyncio
 from datetime import timedelta
 
 from sqlalchemy import select, update
@@ -71,11 +72,30 @@ async def test_state_changing_requests_need_the_csrf_token_and_same_origin(world
 
 async def test_password_reset_is_single_use_expires_and_reveals_nothing(world):
     anonymous = await world.client()
+    # No mail server: the answer says so (it never claims a mail was sent), is the same for every address, and no link is made.
     known = await anonymous.post("/api/auth/forgot-password", json={"email": "member.a1@example.com"})
     unknown = await anonymous.post("/api/auth/forgot-password", json={"email": "nobody@example.com"})
     assert known.status_code == unknown.status_code == 200 and known.json() == unknown.json()
+    assert "cannot send e-mail" in known.json()["message"] and "sent to" not in known.json()["message"]
+    async with world.sessions() as db:
+        assert (await db.execute(select(PasswordReset))).scalars().all() == []
+
+    class Mailer:                                   # stands in for a configured mail server
+        backend, sent = "smtp", []
+
+        async def send(self, to, subject, body):
+            self.sent.append(to)
+            return True
+
+    real_mailer, world.app.state.emailer = world.app.state.emailer, Mailer()
+    known = await anonymous.post("/api/auth/forgot-password", json={"email": "member.a2@example.com"})
+    unknown = await anonymous.post("/api/auth/forgot-password", json={"email": "nobody.else@example.com"})
+    assert known.status_code == unknown.status_code == 200 and known.json() == unknown.json() and "is being e-mailed" in known.json()["message"]
+    await asyncio.sleep(0.05)                       # delivery happens after the answer
+    assert Mailer.sent == ["member.a2@example.com"]
     async with world.sessions() as db:
         assert len((await db.execute(select(PasswordReset))).scalars().all()) == 1      # only the real account got a token
+    world.app.state.emailer = real_mailer
 
     tl = await world.as_tl("alpha")
     link = await tl.post(f"/api/users/{world.ids['member_a1']}/reset-link")

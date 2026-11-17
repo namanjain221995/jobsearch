@@ -3,6 +3,7 @@
 The browser never talks to this server directly: the Next.js app proxies /api/* to it, so the session
 cookie is same-origin. Searches are only enqueued here; the worker process (app.portal.worker) runs them."""
 import asyncio
+import html
 import logging
 import time
 import uuid
@@ -12,7 +13,7 @@ import httpx
 import redis.asyncio as redis_asyncio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import Settings, get_settings
 from ..job_verifier import PageVerifier
@@ -28,6 +29,21 @@ from .services.emailer import Emailer
 
 log = logging.getLogger("jobfinder.api")
 access = logging.getLogger("jobfinder.request")
+
+
+def problem_page(status: int, message: str) -> str:
+    """A small page for the one route people open directly in a browser tab (Open Job). No scripts, no outside files."""
+    title = {401: "Sign in again", 403: "This job cannot be opened from here", 404: "Job not found",
+             410: "This job is no longer assigned to you"}.get(status, "This job cannot be opened")
+    hint = ('<p><a href="/login">Go to the sign-in page</a></p>' if status == 401
+            else "<p>Close this tab and go back to the portal.</p>")
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            f"<title>{html.escape(title)}</title><style>body{{font:16px/1.5 system-ui,sans-serif;margin:0;display:grid;min-height:100vh;"
+            f"place-items:center;background:#f6f7f9;color:#1c2330}}main{{max-width:28rem;padding:2rem;margin:1rem;background:#fff;"
+            f"border:1px solid #dfe3ea;border-radius:12px}}h1{{font-size:1.25rem;margin:0 0 .5rem}}p{{margin:.5rem 0;color:#465063}}"
+            f"a{{color:#1d4ed8}}@media (prefers-color-scheme:dark){{body{{background:#0f1319;color:#e7eaf0}}main{{background:#171c25;"
+            f"border-color:#2a3140}}p{{color:#aab2c0}}a{{color:#8ab4ff}}}}</style></head><body><main><h1>{html.escape(title)}</h1>"
+            f"<p>{html.escape(message)}</p>{hint}</main></body></html>")
 
 
 def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool = True) -> FastAPI:
@@ -93,7 +109,10 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
     app.add_middleware(RequestGuardMiddleware, settings=settings)       # added first: it runs inside the request log below
 
     @app.exception_handler(HTTPException)
-    async def http_error(_: Request, exc: HTTPException):
+    async def http_error(request: Request, exc: HTTPException):
+        if request.method == "GET" and request.url.path.endswith("/open-job") and "text/html" in request.headers.get("accept", ""):
+            return HTMLResponse(problem_page(exc.status_code, str(exc.detail)), status_code=exc.status_code,
+                                headers={"Cache-Control": "no-store"})          # Open Job runs in a new browser tab
         return JSONResponse({"error": str(exc.detail), "detail": ""}, status_code=exc.status_code, headers=exc.headers)
 
     @app.exception_handler(RequestValidationError)

@@ -947,6 +947,49 @@
     "title": "EventOut",
     "type": "object"
    },
+   "ExtraField": {
+    "description": "An optional profile field the Admin added. Members fill it in; it is shown with the profile.",
+    "properties": {
+     "key": {
+      "pattern": "^[a-z][a-z0-9_]{0,39}$",
+      "title": "Key",
+      "type": "string"
+     },
+     "label": {
+      "maxLength": 60,
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+     },
+     "options": {
+      "items": {
+       "maxLength": 60,
+       "minLength": 1,
+       "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Options",
+      "type": "array"
+     },
+     "type": {
+      "default": "text",
+      "enum": [
+       "text",
+       "number",
+       "yes_no",
+       "choice"
+      ],
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "key",
+     "label"
+    ],
+    "title": "ExtraField",
+    "type": "object"
+   },
    "ForgotPasswordIn": {
     "properties": {
      "email": {
@@ -3422,6 +3465,29 @@
     "title": "Page[UserOut]",
     "type": "object"
    },
+   "PasswordPolicy": {
+    "properties": {
+     "character_kinds_required": {
+      "default": 3,
+      "title": "Character Kinds Required",
+      "type": "integer"
+     },
+     "max_length": {
+      "default": 128,
+      "title": "Max Length",
+      "type": "integer"
+     },
+     "min_length": {
+      "title": "Min Length",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "min_length"
+    ],
+    "title": "PasswordPolicy",
+    "type": "object"
+   },
    "PresetIn": {
     "properties": {
      "filters": {
@@ -3966,11 +4032,6 @@
    },
    "ResumeOut": {
     "properties": {
-     "ai_processing_notice": {
-      "default": "Resume text is sent to the configured AI providers (OpenAI, Anthropic) when a job search runs for this member.",
-      "title": "Ai Processing Notice",
-      "type": "string"
-     },
      "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -4752,11 +4813,15 @@
       "title": "Max Results Per Search Run",
       "type": "integer"
      },
+     "password_min_length": {
+      "default": 10,
+      "title": "Password Min Length",
+      "type": "integer"
+     },
      "profile_extra_fields": {
       "default": [],
       "items": {
-       "additionalProperties": true,
-       "type": "object"
+       "$ref": "#/components/schemas/ExtraField"
       },
       "title": "Profile Extra Fields",
       "type": "array"
@@ -4866,8 +4931,7 @@
       "anyOf": [
        {
         "items": {
-         "additionalProperties": true,
-         "type": "object"
+         "$ref": "#/components/schemas/ExtraField"
         },
         "maxItems": 20,
         "type": "array"
@@ -5265,6 +5329,19 @@
    },
    "UiSettings": {
     "properties": {
+     "ai_providers": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Ai Providers",
+      "type": "array"
+     },
+     "deep_search_default": {
+      "default": true,
+      "title": "Deep Search Default",
+      "type": "boolean"
+     },
      "default_min_match_score": {
       "default": 50,
       "title": "Default Min Match Score",
@@ -5285,6 +5362,19 @@
       "title": "Max Results Per Search Run",
       "type": "integer"
      },
+     "password_min_length": {
+      "default": 10,
+      "title": "Password Min Length",
+      "type": "integer"
+     },
+     "profile_extra_fields": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ExtraField"
+      },
+      "title": "Profile Extra Fields",
+      "type": "array"
+     },
      "watermark_enabled": {
       "default": true,
       "title": "Watermark Enabled",
@@ -5300,6 +5390,11 @@
       "format": "date-time",
       "title": "Created At",
       "type": "string"
+     },
+     "deactivated_by_admin": {
+      "default": false,
+      "title": "Deactivated By Admin",
+      "type": "boolean"
      },
      "email": {
       "title": "Email",
@@ -6789,6 +6884,28 @@
      }
     },
     "summary": "Me",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/api/auth/password-policy": {
+   "get": {
+    "description": "The rules a new password has to meet, for the screens that ask for one before anyone is signed in.",
+    "operationId": "password_policy_api_auth_password_policy_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PasswordPolicy"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Password Policy",
     "tags": [
      "auth"
     ]

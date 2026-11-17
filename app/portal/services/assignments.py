@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,6 +137,8 @@ async def load_scoped(db: AsyncSession, principal: Principal, assignment_id: uui
     allowed = principal.is_admin or (principal.is_team_lead and principal.user.team_id and assignment.team_id == principal.user.team_id) \
         or (principal.is_member and assignment.member_id == principal.user.id and assignment.is_active)
     if not allowed:
+        if principal.is_member and assignment.member_id == principal.user.id:        # their own, taken back by a manager
+            raise HTTPException(410, "This job is no longer assigned to you.")
         raise forbid()
     return assignment
 
@@ -217,10 +219,15 @@ async def mark_viewed(db: AsyncSession, principal: Principal, assignment: JobAss
     if not principal.is_member or assignment.viewed_at is not None:
         return
     now = utcnow()
-    assignment.viewed_at = now
     old = assignment.status
-    if old == "ASSIGNED":
-        assignment.status = "VIEWED"
+    await db.flush()                                     # nothing pending on this row may be lost by the reload below
+    # Two requests can arrive together (a page and its prefetch): only the one whose UPDATE finds the row
+    # still unviewed records the event.
+    first = (await db.execute(update(A).where(A.id == assignment.id, A.viewed_at.is_(None)).values(
+        viewed_at=now, status=case((A.status == "ASSIGNED", "VIEWED"), else_=A.status)).returning(A.id))).scalar_one_or_none()
+    await db.refresh(assignment)
+    if first is None:
+        return
     db.add(ApplicationEvent(assignment_id=assignment.id, actor_id=principal.user.id, event_type="viewed", old_status=old,
                             new_status=assignment.status, meta={}))
     principal.user.last_activity_at = now

@@ -6,14 +6,14 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import false, or_, select
+from sqlalchemy import exists, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...providers import registry
 from .. import security
 from ..deps import SESSION_COOKIE, Principal, client_ip, get_db, get_settings, managers
-from ..models import SearchPreset, SearchResult, SearchRun, SearchTarget
+from ..models import JobAssignment, SearchPreset, SearchResult, SearchRun, SearchTarget
 from ..schemas import (Message, Page, PresetIn, PresetOut, SearchCreate, SearchCreated, SearchOptions, SearchResultOut, SearchRunOut)
 from ..security import utcnow
 from ..services import searches as service
@@ -44,7 +44,7 @@ async def search_options(request: Request, principal: Principal = Depends(manage
         sources=sources,
         ai_providers={"openai": {"configured": bool(settings.openai_api_key), "model": settings.openai_model},
                       "claude": {"configured": bool(settings.anthropic_api_key), "model": settings.anthropic_model}},
-        limits=settings_service.ui(portal), authorizations=list(get_args(Authorization)), work_modes=list(get_args(WorkMode)),
+        limits=settings_service.ui(portal, settings), authorizations=list(get_args(Authorization)), work_modes=list(get_args(WorkMode)),
         queue_available=await request.app.state.queue.ping())
 
 
@@ -128,10 +128,11 @@ async def search_results(search_id: uuid.UUID, principal: Principal = Depends(ma
     stmt = select(SearchResult).where(SearchResult.search_run_id == run.id, SearchResult.match_score >= min_score)
     if member_id:
         stmt = stmt.where(SearchResult.member_id == member_id)
+    if unassigned_only:                                  # no active assignment of this job to this member, in any team
+        stmt = stmt.where(~exists().where(JobAssignment.job_id == SearchResult.job_id,
+                                          JobAssignment.member_id == SearchResult.member_id, JobAssignment.is_active))
     rows, total = await paginate(db, stmt.order_by(SearchResult.member_id, SearchResult.rank), page, page_size)
     items = await service.results_out(db, principal, [r[0] for r in rows])
-    if unassigned_only:
-        items = [i for i in items if i.assignment_id is None]
     return Page[SearchResultOut](items=items, total=total, page=max(1, page), page_size=max(1, min(page_size, 200)))
 
 

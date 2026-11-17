@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...resume_parser import ResumeError, extract_text_safely, heuristic_profile
-from ..models import (Invitation, JobAssignment, MemberProfile, PasswordReset, Resume, Team, TeamJobQueue, TeamLeadAssignment, User)
+from ..models import (AuditLog, Invitation, JobAssignment, MemberProfile, PasswordReset, Resume, Team, TeamJobQueue, TeamLeadAssignment, User)
 from ..schemas import ProfileIn, ProfileOut, ResumeOut, TeamOut, UserOut
 from ..security import utcnow
 from .audit import audit
@@ -52,18 +52,94 @@ def profile_out(profile: MemberProfile, has_resume: bool) -> ProfileOut:
         extra=profile.extra or {}, completion=completion, missing=missing, updated_at=profile.updated_at)
 
 
-async def update_profile(db: AsyncSession, profile: MemberProfile, data: ProfileIn) -> None:
+EXTRA_TEXT_MAX = 500
+
+
+def _answer(field, value):
+    """One answer in its field's type; None means "no answer". Raises ValueError with what to do when it does not fit."""
+    if value is None:
+        return None
+    if field.type == "number":
+        if isinstance(value, bool):
+            raise ValueError("enter a number")
+        if isinstance(value, str) and not value.strip():
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError("enter a number") from None
+        if number != number or abs(number) > 1e12:
+            raise ValueError("enter a number")
+        return int(number) if number == int(number) else number
+    if field.type == "yes_no":
+        if value == "":
+            return None
+        if not isinstance(value, bool):
+            raise ValueError("choose yes or no")
+        return value
+    if field.type == "choice":
+        if value == "":
+            return None
+        if not isinstance(value, str) or value not in field.options:
+            raise ValueError("choose one of the listed options")
+        return value
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise ValueError("enter text")
+    text = " ".join(str(value).split())
+    if len(text) > EXTRA_TEXT_MAX:
+        raise ValueError(f"use at most {EXTRA_TEXT_MAX} characters")
+    return text or None
+
+
+def clean_extra(values: dict, definitions: list) -> dict:
+    """Values for the extra fields the Admin defined, each in its field's type. A value that does not fit is refused
+    (422 with the field's label); a key that is not a defined field is dropped; an empty answer is no answer."""
+    out = {}
+    for field in definitions:
+        if field.key not in values:
+            continue
+        try:
+            answer = _answer(field, values[field.key])
+        except ValueError as problem:
+            raise HTTPException(422, f"{field.label}: {problem}") from None
+        if answer is not None:
+            out[field.key] = answer
+    return out
+
+
+def fitting_extra(stored: dict, definitions: list) -> dict:
+    """The stored answers that still belong to a defined field and still fit it. Used when the Admin changes the fields."""
+    out = {}
+    for field in definitions:
+        try:
+            answer = _answer(field, (stored or {}).get(field.key))
+        except ValueError:
+            continue
+        if answer is not None:
+            out[field.key] = answer
+    return out
+
+
+async def drop_unfitting_extra(db: AsyncSession, definitions: list) -> int:
+    """After the Admin changed the extra fields: delete every stored answer to a field that was removed, and every
+    answer that no longer fits its field (another type, an option that is gone). Returns how many answers went.
+    Stored answers therefore always match the fields that exist; a field added again later starts empty."""
+    dropped = 0
+    profiles = (await db.execute(select(MemberProfile).where(MemberProfile.extra != {}))).scalars().all()
+    for profile in profiles:
+        kept = fitting_extra(profile.extra, definitions)
+        if kept != profile.extra:
+            dropped += len(set(profile.extra) - set(kept))
+            profile.extra = kept
+    return dropped
+
+
+async def update_profile(db: AsyncSession, profile: MemberProfile, data: ProfileIn, definitions: list | None = None) -> None:
     for field, value in data.model_dump(exclude_unset=True).items():
         if field == "extra":
             if value is not None:
-                clean = {}
-                for key, item in list(value.items())[:30]:
-                    if isinstance(item, str):
-                        item = item[:500]
-                    elif item is not None and not isinstance(item, (int, float, bool)):
-                        item = str(item)[:500]
-                    clean[str(key)[:60]] = item
-                profile.extra = clean
+                kept = {k: v for k, v in (profile.extra or {}).items() if k not in value}      # fields this request did not send
+                profile.extra = {**kept, **clean_extra(value, definitions or [])}
             continue
         if value is None and field not in ("years_experience", "salary_min"):
             continue                                   # null on a non-nullable field means "leave unchanged"
@@ -129,14 +205,29 @@ async def users_out(db: AsyncSession, users: list[User]) -> list[UserOut]:
         stats = await stats_by(db, JobAssignment.member_id, [JobAssignment.member_id.in_(member_ids)])
     from ..schemas import AssignmentStats
     out = []
+    by_admin = await deactivated_by_admin(db, [u.id for u in users if not u.is_active])
     for u in users:
         is_member = u.role == "MEMBER"
         completion = profile_completion(profiles.get(u.id), u.id in with_resume)[0] if is_member else 0
         out.append(UserOut(id=u.id, name=u.name, email=u.email, role=u.role, team=team_ref(u.team), status=u.status,
-                           is_active=u.is_active, has_resume=u.id in with_resume, profile_completion=completion,
+                           is_active=u.is_active, deactivated_by_admin=u.id in by_admin,
+                           has_resume=u.id in with_resume, profile_completion=completion,
                            last_login_at=u.last_login_at, last_activity_at=u.last_activity_at, created_at=u.created_at,
                            stats=(stats.get(u.id) or AssignmentStats()) if is_member else None))
     return out
+
+
+async def deactivated_by_admin(db: AsyncSession, user_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Of these deactivated accounts, those whose latest deactivation was made by an Admin (from the audit trail).
+    A deactivation of unknown origin counts as an Admin decision. A Team Lead cannot reactivate these."""
+    if not user_ids:
+        return set()
+    rows = (await db.execute(
+        select(AuditLog.target_id, User.role).outerjoin(User, User.id == AuditLog.actor_id)
+        .where(AuditLog.action == "user.deactivated", AuditLog.target_id.in_([str(i) for i in user_ids]))
+        .distinct(AuditLog.target_id).order_by(AuditLog.target_id, AuditLog.created_at.desc()))).all()
+    by_lead = {target for target, role in rows if role == "TEAM_LEAD"}
+    return {i for i in user_ids if str(i) not in by_lead}
 
 
 async def transfer_member(db: AsyncSession, actor: User, member: User, team: Team) -> None:

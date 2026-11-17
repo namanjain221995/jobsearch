@@ -14,6 +14,7 @@ from ..schemas import (Day, ActivityItem, InvitationCreate, InvitationCreated, M
                        UserUpdate)
 from ..security import utcnow
 from ..services import analytics, people
+from ..services import settings as settings_service
 from ..services import assignments as assignments_service
 from ..services import invitations as invitation_service
 from ..services.audit import audit
@@ -58,14 +59,6 @@ async def list_users(principal: Principal = Depends(managers), db: AsyncSession 
                          page_size=max(1, min(page_size, 200)))
 
 
-async def deactivated_by_admin(db: AsyncSession, user: User) -> bool:
-    """Whether the latest deactivation of this account was made by an Admin (read from the audit trail)."""
-    actor_id = (await db.execute(select(AuditLog.actor_id).where(
-        AuditLog.action == "user.deactivated", AuditLog.target_id == str(user.id)).order_by(AuditLog.created_at.desc()).limit(1))).scalar_one_or_none()
-    actor = await db.get(User, actor_id) if actor_id else None
-    return actor is None or actor.role == "ADMIN"        # unknown origin counts as an Admin decision
-
-
 @router.post("/users", response_model=InvitationCreated, status_code=201)
 async def create_user(data: InvitationCreate, request: Request, principal: Principal = Depends(managers),
                       db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
@@ -96,7 +89,7 @@ async def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, pr
     if data.is_active is not None and data.is_active != user.is_active:
         if is_self:
             raise HTTPException(409, "You cannot deactivate your own account")
-        if data.is_active and principal.is_team_lead and await deactivated_by_admin(db, user):
+        if data.is_active and principal.is_team_lead and await people.deactivated_by_admin(db, [user.id]):
             raise HTTPException(403, "This account was deactivated by an administrator. Only an administrator can reactivate it.")
         user.is_active = data.is_active
         if not data.is_active:
@@ -176,7 +169,8 @@ async def update_profile(user_id: uuid.UUID, data: ProfileIn, request: Request, 
                          db: AsyncSession = Depends(get_db)):
     member = await member_in_scope(db, principal, user_id)
     profile = await people.get_profile(db, member.id)
-    await people.update_profile(db, profile, data)
+    portal = await settings_service.load(db, request.app.state.settings)
+    await people.update_profile(db, profile, data, portal.profile_extra_fields)
     audit(db, principal.user, "profile.updated", "user", member.id, member.team_id,
           {"fields": sorted(data.model_dump(exclude_unset=True))}, client_ip(request))
     if principal.is_member:

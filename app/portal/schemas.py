@@ -76,12 +76,51 @@ class UserRef(Model):
     email: str = ""
 
 
+class ExtraField(Model):
+    """An optional profile field the Admin added. Members fill it in; it is shown with the profile."""
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    label: str = Field(min_length=1, max_length=60)
+    type: Literal["text", "number", "yes_no", "choice"] = "text"
+    options: list[Annotated[str, Field(min_length=1, max_length=60)]] = Field(default_factory=list, max_length=20)      # for "choice"
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def _tidy_label(cls, value):
+        return " ".join(value.split()) if isinstance(value, str) else value
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def _tidy_options(cls, value):
+        """Surrounding and repeated white space goes; an option listed twice is kept once."""
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            return value
+        return list(dict.fromkeys(" ".join(item.split()) for item in value))
+
+    @model_validator(mode="after")
+    def _choice_needs_options(self):
+        if self.type == "choice" and len(self.options) < 2:
+            raise ValueError("A choice field needs at least two options")
+        if self.type != "choice":
+            self.options = []
+        return self
+
+
+class PasswordPolicy(Model):
+    min_length: int
+    max_length: int = 128
+    character_kinds_required: int = 3              # of: lower case, upper case, digit, other
+
+
 class UiSettings(Model):
     watermark_enabled: bool = True
     default_target_count: int = 50
     max_members_per_search: int = 10
     max_results_per_search_run: int = 500
     default_min_match_score: int = 50
+    deep_search_default: bool = True
+    password_min_length: int = 10
+    profile_extra_fields: list[ExtraField] = []    # what the member profile form shows beyond the built-in fields
+    ai_providers: list[str] = []                   # outside AI services resume text is sent to when a search runs; empty = none
 
 
 class MeOut(Model):
@@ -219,6 +258,7 @@ class UserOut(Model):
     team: TeamRef | None = None
     status: Literal["invited", "active", "deactivated"]
     is_active: bool
+    deactivated_by_admin: bool = False             # a Team Lead cannot reactivate such an account
     has_resume: bool = False
     profile_completion: int = 0                    # 0..100 (members only)
     last_login_at: datetime | None = None
@@ -296,8 +336,6 @@ class ResumeOut(Model):
     uploaded_by: UserRef | None = None
     parsed_profile: dict = {}                      # skills, job_titles, education extracted from the text
     text: str | None = None                        # only on the single-resume endpoints
-    ai_processing_notice: str = ("Resume text is sent to the configured AI providers (OpenAI, Anthropic) when a job "
-                                 "search runs for this member.")
 
 
 # ---------------------------------------------------------------- jobs
@@ -792,8 +830,9 @@ class SettingsOut(Model):
     max_results_per_search_run: int = 500
     deep_search_default: bool = True
     disabled_sources: list[str] = []
-    profile_extra_fields: list[dict] = []          # optional extra profile fields defined by the Admin: {key, label, type}
+    profile_extra_fields: list[ExtraField] = []    # optional extra profile fields defined by the Admin
     invitation_hours: int = 48
+    password_min_length: int = 10                  # from the environment (PASSWORD_MIN_LENGTH); shown, not editable here
 
 
 class SettingsUpdate(Model):
@@ -804,7 +843,14 @@ class SettingsUpdate(Model):
     max_results_per_search_run: int | None = Field(default=None, ge=1, le=5000)
     deep_search_default: bool | None = None
     disabled_sources: list[str] | None = None
-    profile_extra_fields: list[dict] | None = Field(default=None, max_length=20)
+    profile_extra_fields: list[ExtraField] | None = Field(default=None, max_length=20)
+
+    @field_validator("profile_extra_fields")
+    @classmethod
+    def _unique_keys(cls, value):
+        if value is not None and len({f.key for f in value}) != len(value):
+            raise ValueError("Each extra field needs its own key")
+        return value
     invitation_hours: int | None = Field(default=None, ge=1, le=720)
 
 

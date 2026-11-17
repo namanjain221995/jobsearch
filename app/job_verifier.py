@@ -116,7 +116,11 @@ class PageVerifier:
         if host_blocked(cand.url):
             return Verdict(reason="Source does not permit automated verification")
         try:
+            await assert_public_url(cand.url)             # an address that cannot be used is reported as such, not as a robots.txt rule
             if not await self.robots.allowed(self.client, cand.url):
+                rules = self.robots.peek(cand.url)
+                if rules is not None and rules.transient:
+                    return Verdict(reason="The site's robots.txt could not be read, so the page was not opened")
                 return Verdict(reason="Disallowed by robots.txt")
             status, final_url, body = await self._fetch(cand.url)
         except UnsafeURL as exc:

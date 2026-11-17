@@ -8,7 +8,7 @@ from .. import security
 from ..deps import (CSRF_COOKIE, SESSION_COOKIE, Principal, authenticated, client_ip, get_db, get_settings, knows_client_address,
                     same_origin)
 from ..models import Notification, User
-from ..schemas import ChangePasswordIn, ForgotPasswordIn, LoginIn, MeOut, Message, ResetPasswordIn
+from ..schemas import ChangePasswordIn, ForgotPasswordIn, LoginIn, MeOut, Message, PasswordPolicy, ResetPasswordIn
 from ..security import utcnow
 from ..services import invitations as invitation_service
 from ..services import settings as settings_service
@@ -17,7 +17,12 @@ from ..services.common import team_ref
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 HOME = {"ADMIN": "/admin/dashboard", "TEAM_LEAD": "/tl/dashboard", "MEMBER": "/member/dashboard"}
-GENERIC_RESET = "If an account exists for this address, a password reset link has been sent."
+# The answer never depends on whether the address has an account, and it never claims a mail that cannot go out.
+RESET_ANSWERS = {
+    "smtp": "If an account exists for this address, a password reset link is being e-mailed to it.",
+    "console": "E-mail is in development mode: if an account exists for this address, its reset link was written to the server log.",
+    "none": "This server cannot send e-mail, so no reset link was sent. Ask your Team Lead or an administrator for a reset link.",
+}
 
 
 async def me_out(db: AsyncSession, settings: Settings, user: User) -> MeOut:
@@ -25,7 +30,7 @@ async def me_out(db: AsyncSession, settings: Settings, user: User) -> MeOut:
         Notification.user_id == user.id, Notification.read_at.is_(None)))).scalar_one()
     portal = await settings_service.load(db, settings)
     return MeOut(id=user.id, name=user.name, email=user.email, role=user.role, team=team_ref(user.team), home=HOME[user.role],
-                 unread_notifications=unread, settings=settings_service.ui(portal))
+                 unread_notifications=unread, settings=settings_service.ui(portal, settings))
 
 
 def set_cookies(response: Response, settings: Settings, token: str, csrf: str, remember: bool) -> None:
@@ -97,14 +102,24 @@ async def me(principal: Principal = Depends(authenticated), db: AsyncSession = D
     return await me_out(db, settings, principal.user)
 
 
+@router.get("/password-policy", response_model=PasswordPolicy)
+async def password_policy(settings: Settings = Depends(get_settings)):
+    """The rules a new password has to meet, for the screens that ask for one before anyone is signed in."""
+    return PasswordPolicy(min_length=settings.password_min_length)
+
+
 @router.post("/forgot-password", response_model=Message, dependencies=[Depends(same_origin)])
 async def forgot_password(data: ForgotPasswordIn, request: Request, db: AsyncSession = Depends(get_db),
                           settings: Settings = Depends(get_settings)):
     limiter = request.app.state.limiter
     email, ip = data.email.strip().lower(), client_ip(request)
+    emailer = request.app.state.emailer
+    answer = Message(message=RESET_ANSWERS[emailer.backend])
+    if emailer.backend == "none":
+        return answer                                                 # nobody could receive a link: none is created
     by_address = knows_client_address(request)
     if (by_address and await limiter.count(f"jf:forgot-ip:{ip}", 3600) >= 10) or await limiter.count(f"jf:forgot:{email}", 3600) >= 3:
-        return Message(message=GENERIC_RESET)                         # throttled silently: no signal about the account
+        return answer                                                 # throttled silently: no signal about the account
     if by_address:
         await limiter.hit(f"jf:forgot-ip:{ip}", 3600)
     await limiter.hit(f"jf:forgot:{email}", 3600)
@@ -114,8 +129,8 @@ async def forgot_password(data: ForgotPasswordIn, request: Request, db: AsyncSes
         audit(db, user, "auth.password_reset_requested", "user", user.id, user.team_id, {}, ip)
         await db.commit()
         # Delivered after the answer: waiting for the mail server here would tell an existing address from an unknown one.
-        request.app.state.spawn(request.app.state.emailer.send(user.email, subject, body))
-    return Message(message=GENERIC_RESET)
+        request.app.state.spawn(emailer.send(user.email, subject, body))
+    return answer
 
 
 @router.post("/reset-password", response_model=Message, dependencies=[Depends(same_origin)])

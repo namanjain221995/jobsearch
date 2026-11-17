@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_starttls: bool = True
+    smtp_implicit_tls: bool | None = None            # TLS from the first byte instead of STARTTLS; None = on exactly when SMTP_PORT is 465
     email_backend: str = ""                          # "" = smtp when SMTP_HOST is set, otherwise none; "console" prints mails to the server log
     bootstrap_admin_email: str = ""
     bootstrap_admin_password: str = ""
