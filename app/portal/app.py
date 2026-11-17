@@ -2,6 +2,7 @@
 
 The browser never talks to this server directly: the Next.js app proxies /api/* to it, so the session
 cookie is same-origin. Searches are only enqueued here; the worker process (app.portal.worker) runs them."""
+import asyncio
 import logging
 import time
 import uuid
@@ -19,6 +20,7 @@ from . import cache as cache_module
 from . import logs
 from .cache import AnalyticsCache
 from .db import make_engine, make_sessionmaker
+from .limits import RequestGuardMiddleware
 from .queue import SearchQueue
 from .routers import admin, assignments, auth, invitations, jobs, searches, teams, users
 from .security import RateLimiter
@@ -55,7 +57,27 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
             await app.state.queue.connect()
         app.state.http = httpx.AsyncClient(follow_redirects=False, limits=httpx.Limits(max_connections=20))
         app.state.verifier = PageVerifier(app.state.http, browser=None)      # used for URL import / re-verification
+        background: set[asyncio.Task] = set()
+
+        async def quietly(work) -> None:
+            try:
+                await work
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("background task failed: %s", type(exc).__name__)
+
+        def spawn(work) -> None:
+            """Run a coroutine after the response went out (mail delivery). Cancelled when the server stops."""
+            task = asyncio.create_task(quietly(work))
+            background.add(task)
+            task.add_done_callback(background.discard)
+
+        app.state.spawn = spawn
         yield
+        for task in list(background):
+            task.cancel()
+        await asyncio.gather(*background, return_exceptions=True)
         cache_module.install(None)
         await app.state.http.aclose()
         if queue is None:
@@ -64,8 +86,11 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
             await client.aclose()
         await app.state.db_engine.dispose()
 
-    app = FastAPI(title="AI Job Finder Portal API", version="2.0", lifespan=lifespan,
-                  docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
+    # The interactive docs load scripts from a CDN and publish the whole route map: off in production unless asked for.
+    docs = settings.api_docs if settings.api_docs is not None else not settings.is_production
+    app = FastAPI(title="AI Job Finder Portal API", version="2.0", lifespan=lifespan, redoc_url=None,
+                  docs_url="/api/docs" if docs else None, openapi_url="/api/openapi.json" if docs else None)
+    app.add_middleware(RequestGuardMiddleware, settings=settings)       # added first: it runs inside the request log below
 
     @app.exception_handler(HTTPException)
     async def http_error(_: Request, exc: HTTPException):

@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, get_settings
 from .database import Database
-from .resume_parser import ResumeError, extract_text, heuristic_profile
+from .resume_parser import ResumeError, extract_text_safely, heuristic_profile
 from .schemas import SearchRequest
 from .search_engine import STAGES, SearchEngine, SearchState
 
@@ -156,7 +156,7 @@ async def parse_resume(request: Request, file: UploadFile = File(...)):
     data = await file.read(settings.max_upload_bytes + 1)
     filename = (file.filename or "resume")[:120]
     try:
-        text, truncated = await asyncio.to_thread(extract_text, filename, data, settings.max_upload_bytes)
+        text, truncated = await extract_text_safely(filename, data, settings.max_upload_bytes)
     except ResumeError as exc:
         status = 413 if "too large" in str(exc).lower() else 400
         return error(status, str(exc))

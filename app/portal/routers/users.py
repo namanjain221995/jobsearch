@@ -9,11 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from .. import security
 from ..deps import (Principal, any_user, client_ip, forbid, get_db, get_settings, managers, member_in_scope, user_scope)
-from ..models import ApplicationEvent, JobAssignment, JobPosting, Resume, Team, User
-from ..schemas import (ActivityItem, InvitationCreate, InvitationCreated, MemberAnalytics, Message, Page, ProfileIn, ProfileOut, ResetLinkOut, ResumeOut, UserOut,
+from ..models import ApplicationEvent, AuditLog, JobAssignment, JobPosting, Resume, Team, User
+from ..schemas import (Day, ActivityItem, InvitationCreate, InvitationCreated, MemberAnalytics, Message, Page, ProfileIn, ProfileOut, ResetLinkOut, ResumeOut, UserOut,
                        UserUpdate)
 from ..security import utcnow
 from ..services import analytics, people
+from ..services import assignments as assignments_service
 from ..services import invitations as invitation_service
 from ..services.audit import audit
 from ..services.common import paginate, user_ref, users_by_id
@@ -57,6 +58,14 @@ async def list_users(principal: Principal = Depends(managers), db: AsyncSession 
                          page_size=max(1, min(page_size, 200)))
 
 
+async def deactivated_by_admin(db: AsyncSession, user: User) -> bool:
+    """Whether the latest deactivation of this account was made by an Admin (read from the audit trail)."""
+    actor_id = (await db.execute(select(AuditLog.actor_id).where(
+        AuditLog.action == "user.deactivated", AuditLog.target_id == str(user.id)).order_by(AuditLog.created_at.desc()).limit(1))).scalar_one_or_none()
+    actor = await db.get(User, actor_id) if actor_id else None
+    return actor is None or actor.role == "ADMIN"        # unknown origin counts as an Admin decision
+
+
 @router.post("/users", response_model=InvitationCreated, status_code=201)
 async def create_user(data: InvitationCreate, request: Request, principal: Principal = Depends(managers),
                       db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
@@ -87,6 +96,8 @@ async def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, pr
     if data.is_active is not None and data.is_active != user.is_active:
         if is_self:
             raise HTTPException(409, "You cannot deactivate your own account")
+        if data.is_active and principal.is_team_lead and await deactivated_by_admin(db, user):
+            raise HTTPException(403, "This account was deactivated by an administrator. Only an administrator can reactivate it.")
         user.is_active = data.is_active
         if not data.is_active:
             await security.revoke_user_sessions(db, user.id)       # a deactivated account is signed out everywhere
@@ -117,13 +128,13 @@ async def create_reset_link(user_id: uuid.UUID, request: Request, principal: Pri
     url, sent, reset = await invitation_service.issue_reset(db, settings, request.app.state.emailer, user, principal.user)
     audit(db, principal.user, "auth.reset_link_created", "user", user.id, user.team_id, {"email_sent": sent}, client_ip(request))
     await db.commit()
-    return ResetLinkOut(reset_url=url, expires_at=reset.expires_at, email_sent=sent)
+    return ResetLinkOut(reset_url="" if sent else url, expires_at=reset.expires_at, email_sent=sent)     # e-mailed: not handed over as well
 
 
 # ---------------------------------------------------------------- member dashboard / activity
 @router.get("/users/{user_id}/dashboard", response_model=MemberAnalytics)
 async def member_dashboard(user_id: uuid.UUID, principal: Principal = Depends(any_user), db: AsyncSession = Depends(get_db),
-                           date_from: date | None = None, date_to: date | None = None):
+                           date_from: Day | None = None, date_to: Day | None = None):
     member = await member_in_scope(db, principal, user_id)
     if member.role != "MEMBER":
         raise HTTPException(404, "Member not found")
@@ -138,8 +149,10 @@ async def member_activity(user_id: uuid.UUID, principal: Principal = Depends(any
             .join(JobAssignment, JobAssignment.id == ApplicationEvent.assignment_id)
             .join(JobPosting, JobPosting.id == JobAssignment.job_id)
             .where(JobAssignment.member_id == member.id).order_by(ApplicationEvent.created_at.desc()))
-    if principal.is_member:
-        stmt = stmt.where(JobAssignment.is_active, ApplicationEvent.event_type != "link_opened_by_manager")
+    if principal.is_member:                              # nothing managers keep among themselves
+        private = ApplicationEvent.meta["private"].astext
+        stmt = stmt.where(JobAssignment.is_active, ApplicationEvent.event_type.not_in(assignments_service.MANAGER_ONLY_EVENTS),
+                          or_(private.is_(None), private != "true"))
     rows, total = await paginate(db, stmt, page, page_size)
     actors = await users_by_id(db, {e.actor_id for e, _, _ in rows})
     items = [ActivityItem(id=e.id, event_type=e.event_type, old_status=e.old_status, new_status=e.new_status, created_at=e.created_at,

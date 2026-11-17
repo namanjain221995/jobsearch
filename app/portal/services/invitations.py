@@ -7,7 +7,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -21,6 +21,16 @@ from .common import team_ref, teams_by_id, user_ref, users_by_id
 from .emailer import Emailer, invitation_mail, reset_mail
 
 INVALID = "This invitation link is invalid or has expired."
+
+
+def still_covers(manager: User | None, user: User) -> bool:
+    """True while the manager who issued a one-time link may still act for this user. A link issued by a Team Lead
+    dies when that lead is deactivated, stops leading the team, or the member moves to another team."""
+    if manager is None or not manager.is_active:
+        return False
+    if manager.role == "ADMIN":
+        return True
+    return manager.role == "TEAM_LEAD" and user.role == "MEMBER" and manager.team_id is not None and manager.team_id == user.team_id
 
 
 def invitation_status(inv: Invitation) -> str:
@@ -121,9 +131,13 @@ async def resend(db: AsyncSession, settings: Settings, emailer: Emailer, princip
     user = await db.get(User, invitation.user_id)
     if user is None or user.password_hash or not user.is_active:
         raise HTTPException(409, "This invitation was already accepted or the account is deactivated")
-    team = await db.get(Team, invitation.team_id) if invitation.team_id else None
+    if not still_covers(principal.user, user):               # the person was moved to another team meanwhile
+        raise HTTPException(403, "You do not have access to this resource")
+    team = await db.get(Team, user.team_id) if user.team_id else None
+    if team is not None and not team.is_active:
+        raise HTTPException(409, "This team is deactivated")
     fresh, url, sent = await _issue(db, settings, emailer, principal.user, user, team, hours)
-    audit(db, principal.user, "invitation.resent", "user", user.id, invitation.team_id, {"delivery": fresh.delivery}, ip)
+    audit(db, principal.user, "invitation.resent", "user", user.id, user.team_id, {"delivery": fresh.delivery}, ip)
     return fresh, url, sent
 
 
@@ -137,6 +151,10 @@ async def find_valid(db: AsyncSession, token: str) -> tuple[Invitation, User] | 
     invitation, user = row
     if invitation_status(invitation) != "pending" or user.password_hash or not user.is_active:
         return None
+    if invitation.team_id != user.team_id:                   # moved to another team after the link was made
+        return None
+    if invitation.invited_by is not None and not still_covers(await db.get(User, invitation.invited_by), user):
+        return None
     return invitation, user
 
 
@@ -149,7 +167,7 @@ async def accept(db: AsyncSession, settings: Settings, token: str, password: str
     if problem:
         raise HTTPException(422, problem)
     # Role and team come from the stored invitation, never from the request.
-    user.password_hash = security.hash_password(password)
+    user.password_hash = await security.hash_password_async(password)
     invitation.accepted_at = utcnow()
     audit(db, user, "invitation.accepted", "user", user.id, user.team_id, {"role": user.role}, ip)
     if invitation.invited_by:
@@ -158,13 +176,25 @@ async def accept(db: AsyncSession, settings: Settings, token: str, password: str
 
 
 # ---------------------------------------------------------------- password reset
-async def issue_reset(db: AsyncSession, settings: Settings, emailer: Emailer, user: User, created_by: User | None) -> tuple[str, bool, PasswordReset]:
+async def retire_reset_links(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Every reset link of this user that was not used yet stops working."""
+    await db.execute(update(PasswordReset).where(PasswordReset.user_id == user_id, PasswordReset.used_at.is_(None))
+                     .values(used_at=utcnow()))
+
+
+async def prepare_reset(db: AsyncSession, settings: Settings, user: User, created_by: User | None) -> tuple[str, PasswordReset, tuple[str, str]]:
+    """Create the only valid reset link of this user. Returns (url, row, (mail subject, mail body)); nothing is sent."""
+    await retire_reset_links(db, user.id)
     token, token_hash = security.new_token()
     reset = PasswordReset(user_id=user.id, token_hash=token_hash, created_by=created_by.id if created_by else None,
                           expires_at=utcnow() + timedelta(minutes=settings.reset_minutes))
     db.add(reset)
     url = f"{settings.public_base_url.rstrip('/')}/reset-password?token={token}"
-    subject, body = reset_mail(user.name, url, settings.reset_minutes)
+    return url, reset, reset_mail(user.name, url, settings.reset_minutes)
+
+
+async def issue_reset(db: AsyncSession, settings: Settings, emailer: Emailer, user: User, created_by: User | None) -> tuple[str, bool, PasswordReset]:
+    url, reset, (subject, body) = await prepare_reset(db, settings, user, created_by)
     sent = await emailer.send(user.email, subject, body)
     return url, sent, reset
 
@@ -180,10 +210,12 @@ async def reset_password(db: AsyncSession, settings: Settings, token: str, passw
     reset, user = row
     if reset.used_at or reset.expires_at <= utcnow() or not user.is_active:
         raise invalid
+    if reset.created_by is not None and not still_covers(await db.get(User, reset.created_by), user):
+        raise invalid                                         # made by a manager who no longer manages this person
     problem = security.password_problem(password, settings, user.email, user.name)
     if problem:
         raise HTTPException(422, problem)
-    user.password_hash = security.hash_password(password)
-    reset.used_at = utcnow()
+    user.password_hash = await security.hash_password_async(password)
+    await retire_reset_links(db, user.id)                     # this link and every other outstanding one
     await security.revoke_user_sessions(db, user.id)        # every existing login ends
     audit(db, user, "auth.password_reset", "user", user.id, user.team_id, {}, ip)

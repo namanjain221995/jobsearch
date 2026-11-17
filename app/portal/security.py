@@ -1,4 +1,6 @@
 """Passwords (Argon2id), opaque tokens, server-side sessions, CSRF tokens and login throttling."""
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import hmac
 import secrets
@@ -37,6 +39,19 @@ def verify_password(password_hash: str | None, password: str) -> bool:
 
 def needs_rehash(password_hash: str) -> bool:
     return _hasher.check_needs_rehash(password_hash)
+
+
+# Argon2id takes tens of milliseconds and 64 MiB per call. Inside an async handler it would stop every other
+# request of the process for that long, so handlers use these: a few worker threads, which also bounds memory.
+_hash_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="argon2")
+
+
+async def hash_password_async(password: str) -> str:
+    return await asyncio.get_running_loop().run_in_executor(_hash_pool, hash_password, password)
+
+
+async def verify_password_async(password_hash: str | None, password: str) -> bool:
+    return await asyncio.get_running_loop().run_in_executor(_hash_pool, verify_password, password_hash, password)
 
 
 def password_problem(password: str, settings: Settings, email: str = "", name: str = "") -> str | None:

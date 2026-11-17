@@ -6,6 +6,7 @@ import io
 import re
 import uuid
 from datetime import date, datetime, timezone
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 from sqlalchemy import and_, exists, func, or_, select
@@ -90,9 +91,23 @@ def _parse_date(value: str) -> date | None:
 
 
 def clean_text(value: str) -> str:
-    """Stored descriptions are plain text. Anything that looks like markup is converted, never kept as HTML."""
+    """Stored descriptions are plain text. Anything that looks like markup is converted, never kept as HTML:
+    not a tag written with entities ("&lt;img ...&gt;" would otherwise come out as a real tag after decoding),
+    and not a tag that never closes."""
     value = (value or "").replace("\x00", "")
-    return html_to_structured_text(value) if _TAG.search(value) else value.strip()
+    if _TAG.search(value) or "&" in value or "<" in value:
+        value = html_to_structured_text(value)
+    return value.strip()
+
+
+def web_link(value: str) -> str:
+    """The value when it is an http(s) URL with a host, else ''."""
+    value = (value or "").strip()
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return ""
+    return value if parts.scheme in ("http", "https") and parts.hostname and len(value) <= 2000 else ""
 
 
 def safe_url(value: str) -> str:
@@ -119,7 +134,11 @@ async def upsert_engine_job(db: AsyncSession, job: EngineJob, created_by: uuid.U
         if twin is not None and not (twin.external_source == job.ats and twin.external_job_id and job.ats_id
                                      and twin.external_job_id != job.ats_id):
             posting = twin
-    description = (job.description_rich or job.description or "").strip()
+    # Postings come from employers' boards and web pages: only http(s) links are ever stored.
+    link, apply_link = web_link(job.url), web_link(job.apply_url)
+    if not link:
+        raise ValueError("Posting without a valid http(s) link")
+    description = clean_text(job.description_rich or job.description or "")
     state, city = parse_location(job.location)
     salary_text = "" if job.salary == "Not listed" else job.salary
     smin, smax, currency = parse_salary(salary_text)
@@ -135,7 +154,7 @@ async def upsert_engine_job(db: AsyncSession, job: EngineJob, created_by: uuid.U
         verification_note=job.verification[:300], source_label=job.source[:80])
     if posting is None:
         posting = JobPosting(identity_key=identity, ctl_key=ctl, external_source=job.ats[:40], external_job_id=job.ats_id[:160],
-                             origin="search", description=description, canonical_url=job.url, apply_url=job.apply_url,
+                             origin="search", description=description, canonical_url=link, apply_url=apply_link,
                              sources=list(job.sources or [job.source]), created_by=created_by, **fields)
         db.add(posting)
         await db.flush()
@@ -145,10 +164,10 @@ async def upsert_engine_job(db: AsyncSession, job: EngineJob, created_by: uuid.U
             setattr(posting, name, value)
     if len(description) > len(posting.description or ""):
         posting.description = description
-    if job.apply_url and not posting.apply_url:
-        posting.apply_url = job.apply_url
+    if apply_link and not posting.apply_url:
+        posting.apply_url = apply_link
     if not posting.canonical_url:
-        posting.canonical_url = job.url
+        posting.canonical_url = link
     posting.sources = list(dict.fromkeys([*(posting.sources or []), *(job.sources or [job.source])]))
     return posting
 
@@ -278,12 +297,12 @@ async def import_csv(db: AsyncSession, actor: User, raw: bytes) -> CsvImportResu
 
 # ---------------------------------------------------------------- visibility + serialization
 def tl_job_filter(team_id: uuid.UUID, user_id: uuid.UUID):
-    """Jobs a Team Lead may see: assigned inside the team, delegated to the team, or found by the team's searches."""
+    """Jobs a Team Lead may see: assigned inside the team, delegated to the team, or found by the team's searches.
+    Who started a search does not matter: a lead who moved to another team leaves the old team's results behind."""
     return or_(
         exists().where(JobAssignment.job_id == JobPosting.id, JobAssignment.team_id == team_id),
         exists().where(TeamJobQueue.job_id == JobPosting.id, TeamJobQueue.team_id == team_id),
-        exists().where(SearchResult.job_id == JobPosting.id, SearchResult.search_run_id == SearchRun.id,
-                       or_(SearchRun.team_id == team_id, SearchRun.initiated_by == user_id)),
+        exists().where(SearchResult.job_id == JobPosting.id, SearchResult.search_run_id == SearchRun.id, SearchRun.team_id == team_id),
     )
 
 
@@ -315,8 +334,20 @@ def summary_out(p: JobPosting) -> JobSummary:
     return JobSummary(**job_summary(p))
 
 
-def detail_out(p: JobPosting) -> JobDetail:
-    return JobDetail(**job_summary(p), description=p.description or "", verification_note=p.verification_note,
+_LINK = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"')\]]+")
+
+
+def without_links(text: str) -> str:
+    """The member's copy of a posting's text: web addresses written in it are taken out, so the only way to the
+    posting is Open Job, which records that the link was opened."""
+    return _LINK.sub("[link removed: use Open Job]", text or "")
+
+
+def detail_out(p: JobPosting, hide_links: bool = False) -> JobDetail:
+    description, note = p.description or "", p.verification_note
+    if hide_links:
+        description, note = without_links(description), without_links(note)
+    return JobDetail(**job_summary(p), description=description, verification_note=note,
                      sources=[str(s) for s in (p.sources or [])])
 
 

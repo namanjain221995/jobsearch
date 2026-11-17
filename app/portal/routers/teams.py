@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import Principal, admin_only, client_ip, ensure_team, forbid, get_db, managers
+from ..deps import Principal, admin_only, assignment_scope, client_ip, ensure_team, forbid, get_db, managers
 from ..models import JobPosting, Team, TeamJobQueue, User
-from ..schemas import (Page, QueueDelegate, QueueItemOut, QueueUpdate, TeamAnalytics, TeamCreate, TeamOut, TeamUpdate, UserOut)
+from ..schemas import (Day, Page, QueueDelegate, QueueItemOut, QueueUpdate, TeamAnalytics, TeamCreate, TeamOut, TeamUpdate, UserOut)
 from ..services import analytics, people
 from ..services import jobs as jobs_service
 from ..services.audit import audit, notify
@@ -95,7 +95,7 @@ async def team_members(team_id: uuid.UUID, principal: Principal = Depends(manage
 @router.get("/analytics/team/{team_id}", response_model=TeamAnalytics, operation_id="team_analytics_by_analytics_path")     # same answer, second address
 @router.get("/teams/{team_id}/analytics", response_model=TeamAnalytics)
 async def team_analytics(team_id: uuid.UUID, request: Request, principal: Principal = Depends(managers),
-                         db: AsyncSession = Depends(get_db), date_from: date | None = None, date_to: date | None = None):
+                         db: AsyncSession = Depends(get_db), date_from: Day | None = None, date_to: Day | None = None):
     team = await load_team(db, principal, team_id)       # authorization first: a stored answer is never a way around it
     return await request.app.state.cache.cached(
         "team", {"team": team.id, "from": date_from, "to": date_to}, TeamAnalytics,
@@ -103,11 +103,12 @@ async def team_analytics(team_id: uuid.UUID, request: Request, principal: Princi
 
 
 # ---------------------------------------------------------------- delegated job queue
-async def queue_out(db: AsyncSession, rows: list[TeamJobQueue]) -> list[QueueItemOut]:
+async def queue_out(db: AsyncSession, principal: Principal, rows: list[TeamJobQueue]) -> list[QueueItemOut]:
     if not rows:
         return []
     postings = {p.id: p for p in (await db.execute(select(JobPosting).where(JobPosting.id.in_({r.job_id for r in rows})))).scalars()}
-    items = {i.id: i for i in await jobs_service.list_items(db, list(postings.values()), [])}
+    # "Assigned" and "applied" counts cover what the caller may see: a Team Lead's own team, not the organization.
+    items = {i.id: i for i in await jobs_service.list_items(db, list(postings.values()), [assignment_scope(principal)])}
     teams = await teams_by_id(db, {r.team_id for r in rows})
     users = await users_by_id(db, {r.delegated_by for r in rows})
     return [QueueItemOut(id=r.id, team=team_ref(teams[r.team_id]), job=items[r.job_id], status=r.status, note=r.note,
@@ -123,9 +124,9 @@ async def team_queue(team_id: uuid.UUID, principal: Principal = Depends(managers
     if status != "all":
         stmt = stmt.where(TeamJobQueue.status == status)
     total = (await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
-    page, page_size = max(1, page), max(1, min(page_size, 200))
+    page, page_size = max(1, min(page, 1_000_000)), max(1, min(page_size, 200))
     rows = list((await db.execute(stmt.limit(page_size).offset((page - 1) * page_size))).scalars())
-    return Page[QueueItemOut](items=await queue_out(db, rows), total=total, page=page, page_size=page_size)
+    return Page[QueueItemOut](items=await queue_out(db, principal, rows), total=total, page=page, page_size=page_size)
 
 
 @router.post("/teams/{team_id}/queue", response_model=list[QueueItemOut], status_code=201)
@@ -155,7 +156,7 @@ async def delegate_jobs(team_id: uuid.UUID, data: QueueDelegate, request: Reques
     if lead:
         notify(db, lead.id, "jobs_delegated", {"count": len(job_ids), "team_id": str(team_id), "delegated_by": principal.user.name})
     audit(db, principal.user, "jobs.delegated", "team", team_id, team_id, {"jobs": len(job_ids)}, client_ip(request))
-    out = await queue_out(db, rows)
+    out = await queue_out(db, principal, rows)
     await db.commit()
     return out
 
@@ -168,6 +169,6 @@ async def update_queue_item(item_id: uuid.UUID, data: QueueUpdate, principal: Pr
         raise HTTPException(404, "Queue item not found") if principal.is_admin else forbid()
     ensure_team(principal, row.team_id)
     row.status = data.status
-    out = (await queue_out(db, [row]))[0]
+    out = (await queue_out(db, principal, [row]))[0]
     await db.commit()
     return out

@@ -1079,8 +1079,6 @@
       "type": "string"
      },
      "name": {
-      "maxLength": 160,
-      "minLength": 2,
       "title": "Name",
       "type": "string"
      },
@@ -5445,8 +5443,6 @@
      "name": {
       "anyOf": [
        {
-        "maxLength": 160,
-        "minLength": 2,
         "type": "string"
        },
        {

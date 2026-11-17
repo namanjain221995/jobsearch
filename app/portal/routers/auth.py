@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from .. import security
-from ..deps import (CSRF_COOKIE, SESSION_COOKIE, Principal, authenticated, client_ip, get_db, get_settings, same_origin)
+from ..deps import (CSRF_COOKIE, SESSION_COOKIE, Principal, authenticated, client_ip, get_db, get_settings, knows_client_address,
+                    same_origin)
 from ..models import Notification, User
 from ..schemas import ChangePasswordIn, ForgotPasswordIn, LoginIn, MeOut, Message, ResetPasswordIn
 from ..security import utcnow
@@ -45,23 +46,32 @@ async def login(data: LoginIn, request: Request, response: Response, db: AsyncSe
     limiter = request.app.state.limiter
     email, ip = data.email.strip().lower(), client_ip(request)
     window = settings.login_window_minutes * 60
-    key_pair, key_ip = f"jf:login:{email}|{ip}", f"jf:login-ip:{ip}"
-    if await limiter.count(key_pair, window) >= settings.login_max_failures \
-            or await limiter.count(key_ip, window) >= settings.login_max_failures * 6:
+    # Counters of failed attempts: this account from any address (always), and, when the caller's address is
+    # known, this account from this address and this address for any account.
+    key_pair, key_ip, key_account = f"jf:login:{email}|{ip}", f"jf:login-ip:{ip}", f"jf:login-account:{email}"
+    by_address = knows_client_address(request)
+    # Address unknown (no trusted proxy in front): the account itself is locked after the usual number of failures.
+    account_limit = settings.login_account_max_failures if by_address else settings.login_max_failures
+    if (by_address and (await limiter.count(key_pair, window) >= settings.login_max_failures
+                        or await limiter.count(key_ip, window) >= settings.login_max_failures * 6)) \
+            or await limiter.count(key_account, window) >= account_limit:
         audit(db, None, "auth.login_throttled", "user", None, None, {"email": email}, ip)
         await db.commit()
         raise HTTPException(429, "Too many failed sign-in attempts. Wait a few minutes and try again.")
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    valid = security.verify_password(user.password_hash if user else None, data.password)
+    valid = await security.verify_password_async(user.password_hash if user else None, data.password)
     if not valid or user is None or not user.is_active:
-        await limiter.hit(key_pair, window)
-        await limiter.hit(key_ip, window)
+        if by_address:
+            await limiter.hit(key_pair, window)
+            await limiter.hit(key_ip, window)
+        await limiter.hit(key_account, window)
         audit(db, user, "auth.login_failed", "user", user.id if user else None, user.team_id if user else None, {"email": email}, ip)
         await db.commit()
         raise HTTPException(401, "Invalid e-mail or password.")       # same answer whether or not the account exists
     await limiter.clear(key_pair)
+    await limiter.clear(key_account)
     if security.needs_rehash(user.password_hash):
-        user.password_hash = security.hash_password(data.password)
+        user.password_hash = await security.hash_password_async(data.password)
     token, csrf, _ = await security.create_session(db, user, settings, data.remember, ip, request.headers.get("user-agent", ""))
     user.last_login_at = utcnow()
     audit(db, user, "auth.login", "user", user.id, user.team_id, {"remember": data.remember}, ip)
@@ -92,15 +102,19 @@ async def forgot_password(data: ForgotPasswordIn, request: Request, db: AsyncSes
                           settings: Settings = Depends(get_settings)):
     limiter = request.app.state.limiter
     email, ip = data.email.strip().lower(), client_ip(request)
-    if await limiter.count(f"jf:forgot-ip:{ip}", 3600) >= 10 or await limiter.count(f"jf:forgot:{email}", 3600) >= 3:
+    by_address = knows_client_address(request)
+    if (by_address and await limiter.count(f"jf:forgot-ip:{ip}", 3600) >= 10) or await limiter.count(f"jf:forgot:{email}", 3600) >= 3:
         return Message(message=GENERIC_RESET)                         # throttled silently: no signal about the account
-    await limiter.hit(f"jf:forgot-ip:{ip}", 3600)
+    if by_address:
+        await limiter.hit(f"jf:forgot-ip:{ip}", 3600)
     await limiter.hit(f"jf:forgot:{email}", 3600)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user is not None and user.is_active and user.password_hash:
-        await invitation_service.issue_reset(db, settings, request.app.state.emailer, user, None)
+        _, _, (subject, body) = await invitation_service.prepare_reset(db, settings, user, None)
         audit(db, user, "auth.password_reset_requested", "user", user.id, user.team_id, {}, ip)
         await db.commit()
+        # Delivered after the answer: waiting for the mail server here would tell an existing address from an unknown one.
+        request.app.state.spawn(request.app.state.emailer.send(user.email, subject, body))
     return Message(message=GENERIC_RESET)
 
 
@@ -116,12 +130,13 @@ async def reset_password(data: ResetPasswordIn, request: Request, db: AsyncSessi
 async def change_password(data: ChangePasswordIn, request: Request, principal: Principal = Depends(authenticated),
                           db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
     user = principal.user
-    if not security.verify_password(user.password_hash, data.current_password):
+    if not await security.verify_password_async(user.password_hash, data.current_password):
         raise HTTPException(403, "Current password is incorrect.")
     problem = security.password_problem(data.new_password, settings, user.email, user.name)
     if problem:
         raise HTTPException(422, problem)
-    user.password_hash = security.hash_password(data.new_password)
+    user.password_hash = await security.hash_password_async(data.new_password)
+    await invitation_service.retire_reset_links(db, user.id)                         # links issued earlier die with the old password
     await security.revoke_user_sessions(db, user.id, keep=principal.session.id)      # other devices are signed out
     audit(db, user, "auth.password_changed", "user", user.id, user.team_id, {}, client_ip(request))
     await db.commit()

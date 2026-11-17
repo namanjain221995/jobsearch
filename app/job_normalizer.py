@@ -19,6 +19,7 @@ def html_to_text(value: str) -> str:
     return _WS.sub(" ", html.unescape(text)).strip()
 
 
+_TAG_START = re.compile(r"<(?=[A-Za-z/!?])")
 _INLINE_TAG = re.compile(r"(?i)</?\s*(a|abbr|b|code|em|font|i|mark|s|small|span|strike|strong|sub|sup|u)(\s[^>]*)?/?>")
 
 
@@ -36,6 +37,9 @@ def html_to_structured_text(value: str) -> str:
     text = _INLINE_TAG.sub("", text)                    # <b>word</b>. must not become "word ."
     text = _TAG.sub(" ", text)
     text = html.unescape(text)
+    # The source may have spelled a tag with entities, or left one unclosed. After decoding, nothing that can
+    # start a tag is kept: complete tags go, and a "<" directly before a letter, "/", "!" or "?" gets a space after it.
+    text = _TAG_START.sub("< ", _TAG.sub(" ", text))
     out: list[str] = []
     for line in (re.sub(r"[ \t\xa0\u200b]+", " ", raw).strip() for raw in text.split("\n")):
         if line.startswith("•"):

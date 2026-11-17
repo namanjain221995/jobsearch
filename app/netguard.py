@@ -12,13 +12,24 @@ class UnsafeURL(ValueError):
     pass
 
 
+_NAT64 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
+
+
 def _ip_allowed(ip: str) -> bool:
+    """Only globally routable unicast addresses. `is_global` (not just "not private") also excludes the shared
+    address space 100.64.0.0/10: carrier-grade NAT, VPN meshes and some cloud metadata services live there."""
     try:
-        addr = ipaddress.ip_address(ip)
+        addr = ipaddress.ip_address(ip.split("%", 1)[0])
     except ValueError:
         return False
-    return not (addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast
-                or addr.is_reserved or addr.is_unspecified or getattr(addr, "is_site_local", False))
+    if addr.version == 6:
+        embedded = addr.ipv4_mapped or addr.sixtofour or (addr.teredo[1] if addr.teredo else None)
+        if embedded is not None:                             # an IPv4 address in IPv6 clothing: judge the IPv4 address
+            addr = embedded
+        elif any(addr in network for network in _NAT64):
+            return False
+    return addr.is_global and not (addr.is_multicast or addr.is_reserved or addr.is_loopback or addr.is_link_local
+                                   or addr.is_unspecified)
 
 
 async def resolve_public(host: str, port: int) -> str:
@@ -45,8 +56,10 @@ async def resolve_public(host: str, port: int) -> str:
     return addresses[0]
 
 
-async def assert_public_url(url: str) -> None:
-    """Reject non-http(s) URLs, odd ports, credentials, and hosts that resolve to non-public addresses."""
+async def assert_public_url(url: str) -> str:
+    """Reject non-http(s) URLs, odd ports, credentials, and hosts that resolve to non-public addresses.
+    Returns the address that was checked. A caller that goes on to fetch the URL must connect to that address
+    (see `pinned`): resolving the name a second time would let it answer differently (DNS rebinding)."""
     try:
         p = urlsplit(url)
         port = p.port
@@ -56,7 +69,20 @@ async def assert_public_url(url: str) -> None:
         raise UnsafeURL("Only http(s) URLs are allowed")
     if p.username or p.password:
         raise UnsafeURL("Credentials in URL are not allowed")
-    await resolve_public(p.hostname, port or (443 if p.scheme == "https" else 80))
+    return await resolve_public(p.hostname, port or (443 if p.scheme == "https" else 80))
+
+
+def pinned(url: str, address: str) -> tuple[str, dict, dict]:
+    """How to request `url` from exactly `address`: (url with the address as host, extra headers, httpx extensions).
+    The Host header and the TLS server name stay the original host, so virtual hosting and certificate checks
+    work as usual. The connection is not reused, because it was opened for this one host name."""
+    p = urlsplit(url)
+    default = 443 if p.scheme == "https" else 80
+    host = p.hostname or ""
+    literal = f"[{address}]" if ":" in address else address
+    target = p._replace(netloc=literal if (p.port or default) == default else f"{literal}:{p.port}").geturl()
+    host_header = (f"[{host}]" if ":" in host else host) + ("" if (p.port or default) == default else f":{p.port}")
+    return target, {"Host": host_header, "Connection": "close"}, ({"sni_hostname": host} if p.scheme == "https" else {})
 
 
 class GuardProxy:

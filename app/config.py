@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     allowed_origins: str = ""                        # extra origins allowed to send state-changing requests (comma separated)
     cookie_secure: bool = False
     trust_proxy_headers: bool = True                 # the API sits behind the Next.js proxy; set false if it is exposed directly
+    trust_forwarded_for: bool = False                # true only when a reverse proxy in front of the web app sets X-Forwarded-For itself
+    trusted_proxy_hops: int = 1                      # how many such proxies append to X-Forwarded-For (the entry read counts from the right)
+    login_account_max_failures: int = 20             # failed sign-ins per account and window, from any address
+    api_docs: bool | None = None                     # /api/docs and /api/openapi.json; default: off in production
+    max_json_body_bytes: int = 512 * 1024            # any request that is not a file upload
+    max_csv_bytes: int = 2 * 1024 * 1024
+    max_active_searches_per_user: int = 3            # queued + running searches one person may have
+    max_active_searches: int = 12                    # queued + running searches in the whole installation
+    invitations_per_address_per_hour: int = 5
+    invitations_per_sender_per_hour: int = 60
     session_hours: int = 12
     remember_days: int = 30
     invitation_hours: int = 48

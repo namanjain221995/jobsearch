@@ -117,14 +117,42 @@ A date range selects assignments by the day they were assigned (UTC). Charts sho
 
 ## Security
 
-- **Passwords:** Argon2id. **Sessions:** random token in an HttpOnly, SameSite=Lax cookie; only its hash is stored; validated on the server for every request; revoked on sign-out, password reset and deactivation. Set `COOKIE_SECURE=true` (or `APP_ENV=production`) when served over HTTPS.
-- **CSRF:** state-changing requests need the `X-CSRF-Token` header matching the session, and the `Origin` must be the app's own.
-- **Sign-in throttling:** 5 failed attempts per e-mail and address in 15 minutes, counted in Redis.
-- **Authorization** is enforced in the API on every endpoint and query, never only in the UI. A Team Lead's queries are limited to their team; a member's to their own rows. Client-supplied team or member ids are checked against the session, not trusted.
-- **Job links for members:** raw URLs are not sent to members at all. The redirect target is read from the stored job, must be a public http(s) address, and cannot be changed by request parameters.
-- **Outbound requests** (page verification, URL import, headless browser) refuse private, loopback and link-local addresses. The headless browser reaches the network only through a local guard proxy.
-- **Audit log:** sign-ins, invitations, account changes, assignments, status changes, searches, settings.
+- **Passwords:** Argon2id, computed in worker threads so a sign-in never stalls other requests. **Sessions:** random token in an HttpOnly, SameSite=Lax cookie; only its hash is stored; validated on the server for every request; revoked on sign-out, password reset and deactivation. Set `COOKIE_SECURE=true` (or `APP_ENV=production`) when served over HTTPS.
+- **CSRF:** state-changing requests need the `X-CSRF-Token` header matching the session, and the `Origin` must be the app's own. The two GET requests that record something (opening an assignment, Open Job) do not record when the browser reports a cross-site request.
+- **Sign-in throttling**, counted in Redis: an account is locked for 15 minutes after 5 failed sign-ins. See "Client addresses" below for the finer limits that become available behind a reverse proxy.
+- **Authorization** is enforced in the API on every endpoint and query, never only in the UI. A Team Lead's queries are limited to the team they lead today (a lead who is moved or removed loses the old team's members, assignments and searches at once); a member's to their own rows. Client-supplied team or member ids are checked against the session, not trusted.
+- **One-time links** (invitations, password resets) are stored as hashes, expire, work once, and die early when the manager who issued them is deactivated or no longer manages that person, when the person moves to another team, and when a newer link or a password change replaces them. A link that was e-mailed is not also shown to the manager who requested it.
+- **Job links for members:** raw URLs are not sent to members at all, and web addresses written inside a posting's text are removed from the member's copy. The redirect target is read from the stored job, must be a public http(s) address, and cannot be changed by request parameters.
+- **What a member receives about other people:** names only. Sign-in e-mail addresses of managers, private notes (including their existence) and manager-only events are left out.
+- **Outbound requests** (page verification, URL import, headless browser) are allowed only to globally routable addresses, and the connection is made to the address that was checked, so a host name cannot answer differently the second time (DNS rebinding). The headless browser reaches the network only through a local guard proxy.
+- **Uploads and request sizes:** a request without a session is refused before its body is read; JSON bodies are limited to 512 KB, resumes to 10 MB, CSV imports to 2 MB. PDF and DOCX resumes are parsed in a separate process limited to 1 GB of memory, 10 s of CPU and 20 s of run time, and a file whose content inflates beyond the upload limit is refused, so a "decompression bomb" costs about a tenth of a second.
+- **Limits against abuse by a signed-in account:** at most 3 queued or running searches per person and 12 in total, 5 invitations per address and 60 per sender per hour. A search stops assigning as soon as the person who started it is deactivated or no longer manages that team.
+- **Audit log:** sign-ins, invitations, account changes, assignments, status changes, searches, settings. Request logs never hold tokens, query strings or bodies, and SQL parameters are kept out of error logs.
+- **API documentation** (`/api/docs`, `/api/openapi.json`) is switched off when `APP_ENV=production` (`API_DOCS=true` turns it back on).
 - **Resumes:** the extracted text and structured profile are stored in PostgreSQL; the uploaded file is not kept. Replacing a resume erases the text of the previous version. Resume text is sent to the configured AI providers when a search runs for that member; the UI says so. Resume and posting text are passed to models as untrusted data.
+
+The rules above were checked by an adversarial review on 2026-11-17; its 23 findings and their fixes are pinned by the 30 tests of `tests/portal/test_security_review.py`; further rules are in `tests/portal/test_hardening.py`.
+
+### Client addresses
+
+The browser talks to the Next.js app, which forwards `/api/*` to the API. Next.js passes an `X-Forwarded-For` header it receives on unchanged, so without anything in front of it that header is whatever the caller sent (measured on this installation). The API therefore ignores it by default: the audit trail shows the web app's address, and sign-in limits are per account only.
+
+For production put a TLS-terminating reverse proxy or load balancer in front of the web app (needed for HTTPS anyway), make it set `X-Forwarded-For` itself, and tell the API:
+
+```
+APP_ENV=production
+TRUST_FORWARDED_FOR=true
+TRUSTED_PROXY_HOPS=1        # number of such proxies; the entry read is counted from the right
+```
+
+Then the audit trail holds real client addresses and the limits become: 5 failures per account and address, 30 per address, 20 per account from all addresses, each in 15 minutes. Do not set `TRUST_FORWARDED_FOR` when the web app is reachable directly; anyone could then choose the address they are counted under.
+
+### Accepted limits
+
+- An authenticated manager can tell whether an e-mail address already has an account (inviting it is refused). The message does not say in which team or role.
+- With no trusted proxy, anyone who knows an account's e-mail address can keep that account locked by failing to sign in 5 times every 15 minutes.
+- The resume parser runs with limited resources but as the same operating-system user; it is not a full sandbox.
+- A name may still carry up to 100 characters of plain words into an invitation e-mail (no line breaks, no links).
 
 ### What the link and screenshot measures can and cannot do
 
@@ -144,7 +172,9 @@ See `.env.example` for every variable. The ones you are most likely to set:
 | `PUBLIC_BASE_URL` | Address of the web app (links in invitations, same-origin check) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_MODEL`, `ANTHROPIC_MODEL` | AI providers (the app also works with none) |
 | `SMTP_HOST`, `SMTP_FROM`, … | E-mail delivery for invitations and resets |
-| `COOKIE_SECURE`, `APP_ENV` | Secure cookies in production |
+| `COOKIE_SECURE`, `APP_ENV` | Secure cookies in production; production also switches the API docs off |
+| `TRUST_FORWARDED_FOR`, `TRUSTED_PROXY_HOPS` | Believe `X-Forwarded-For` (only behind a reverse proxy that sets it; see Security) |
+| `MAX_ACTIVE_SEARCHES_PER_USER`, `MAX_ACTIVE_SEARCHES` | Queued and running searches per person (3) and in total (12) |
 | `MAX_MEMBERS_PER_SEARCH`, `MAX_RESULTS_PER_SEARCH_RUN`, `MAX_AI_CALLS_PER_SEARCH` | Cost and concurrency limits |
 | `API_ORIGIN` (frontend) | Where Next.js forwards `/api/*` (default `http://127.0.0.1:8010`) |
 | `ANALYTICS_CACHE_SECONDS` | Lifetime of cached team and organization analytics in Redis (default 60, 0 turns the cache off) |

@@ -10,9 +10,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...netguard import UnsafeURL, assert_public_url
-from ..deps import Principal, any_user, assignment_scope, client_ip, get_db, managers
+from ...config import Settings
+from ..deps import Principal, any_user, assignment_scope, client_ip, from_this_site, get_db, get_settings, managers
 from ..models import JobAssignment, JobPosting, User
-from ..schemas import (AssignCreate, AssignmentDetail, AssignmentOut, BulkAssign, BulkAssignResult, Message, NoteIn, NoteOut, Page,
+from ..schemas import (Day, AssignCreate, AssignmentDetail, AssignmentOut, BulkAssign, BulkAssignResult, Message, NoteIn, NoteOut, Page,
                        StatusUpdate)
 from ..services import assignments as service
 from ..services.common import paginate, user_ref
@@ -61,7 +62,7 @@ async def list_assignments(principal: Principal = Depends(any_user), db: AsyncSe
                            member_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None,
                            status: str | None = Query(default=None, max_length=120), applied: bool | None = None,
                            q: str | None = Query(default=None, max_length=120), company: str | None = Query(default=None, max_length=120),
-                           date_from: date | None = None, date_to: date | None = None, search_run_id: uuid.UUID | None = None,
+                           date_from: Day | None = None, date_to: Day | None = None, search_run_id: uuid.UUID | None = None,
                            include_inactive: bool = False, sort: str = "recent", page: int = 1, page_size: int = 25):
     stmt = filtered(principal, member_id=member_id, team_id=team_id, status=status, applied=applied, q=q, company=company,
                     date_from=date_from, date_to=date_to, search_run_id=search_run_id, include_inactive=include_inactive)
@@ -75,7 +76,7 @@ async def list_assignments(principal: Principal = Depends(any_user), db: AsyncSe
 async def export_assignments(principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db),
                              member_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None,
                              status: str | None = Query(default=None, max_length=120), applied: bool | None = None,
-                             date_from: date | None = None, date_to: date | None = None):
+                             date_from: Day | None = None, date_to: Day | None = None):
     """Report of the caller's scope (Admin: organization, Team Lead: own team). Posting URLs are included for managers only."""
     stmt = filtered(principal, member_id=member_id, team_id=team_id, status=status, applied=applied, q=None, company=None,
                     date_from=date_from, date_to=date_to, search_run_id=None, include_inactive=False)
@@ -123,9 +124,11 @@ async def bulk_assign(data: BulkAssign, principal: Principal = Depends(managers)
 
 
 @router.get("/{assignment_id}", response_model=AssignmentDetail)
-async def get_assignment(assignment_id: uuid.UUID, principal: Principal = Depends(any_user), db: AsyncSession = Depends(get_db)):
+async def get_assignment(assignment_id: uuid.UUID, request: Request, principal: Principal = Depends(any_user),
+                         db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
     assignment = await service.load_scoped(db, principal, assignment_id)
-    await service.mark_viewed(db, principal, assignment)
+    if from_this_site(request, settings):                # a link on another site must not make a job count as "viewed"
+        await service.mark_viewed(db, principal, assignment)
     await db.flush()
     out = await service.detail(db, principal, assignment)
     await db.commit()
@@ -144,9 +147,12 @@ async def update_status(assignment_id: uuid.UUID, data: StatusUpdate, principal:
 
 
 @router.get("/{assignment_id}/open-job")
-async def open_job(assignment_id: uuid.UUID, principal: Principal = Depends(any_user), db: AsyncSession = Depends(get_db)):
+async def open_job(assignment_id: uuid.UUID, request: Request, principal: Principal = Depends(any_user),
+                   db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
     """Audited redirect to the posting. The destination is read from the stored job record only (nothing from the
     request), must be a public http(s) address, and opening it is logged without changing the applied state."""
+    if not from_this_site(request, settings):            # only the portal's own pages may trigger a recorded link-open
+        raise HTTPException(403, "Open this job from the portal.")
     assignment = await service.load_scoped(db, principal, assignment_id)
     target = await service.record_link_open(db, principal, assignment)
     try:

@@ -10,7 +10,7 @@ from ...config import Settings
 from ...providers import registry
 from ..deps import Principal, admin_only, any_user, client_ip, get_db, get_settings, member_in_scope
 from ..models import AuditLog, Notification
-from ..schemas import (AdminAnalytics, AuditOut, HealthOut, IntegrationsOut, MemberAnalytics, Message, NotificationOut, Page,
+from ..schemas import (Day, AdminAnalytics, AuditOut, HealthOut, IntegrationsOut, MemberAnalytics, Message, NotificationOut, Page,
                        SettingsOut, SettingsUpdate)
 from ..security import utcnow
 from ..services import analytics
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api", tags=["admin"])
 
 @router.get("/analytics/admin", response_model=AdminAnalytics)
 async def admin_analytics(request: Request, principal: Principal = Depends(admin_only), db: AsyncSession = Depends(get_db),
-                          date_from: date | None = None, date_to: date | None = None, team_id: uuid.UUID | None = None,
+                          date_from: Day | None = None, date_to: Day | None = None, team_id: uuid.UUID | None = None,
                           member_id: uuid.UUID | None = None,
                           status: str | None = Query(default=None, pattern="^(ASSIGNED|VIEWED|APPLYING|APPLIED|INTERVIEWING|OFFER|REJECTED|WITHDRAWN|SKIPPED)$"),
                           company: str | None = Query(default=None, max_length=120), role: str | None = Query(default=None, max_length=120)):
@@ -37,7 +37,7 @@ async def admin_analytics(request: Request, principal: Principal = Depends(admin
 
 @router.get("/analytics/member/{member_id}", response_model=MemberAnalytics)
 async def member_analytics(member_id: uuid.UUID, principal: Principal = Depends(any_user), db: AsyncSession = Depends(get_db),
-                           date_from: date | None = None, date_to: date | None = None):
+                           date_from: Day | None = None, date_to: Day | None = None):
     member = await member_in_scope(db, principal, member_id)
     if member.role != "MEMBER":
         raise HTTPException(404, "Member not found")
@@ -78,7 +78,7 @@ async def read_notification(notification_id: uuid.UUID, principal: Principal = D
 @router.get("/audit-logs", response_model=Page[AuditOut])
 async def audit_logs(principal: Principal = Depends(admin_only), db: AsyncSession = Depends(get_db),
                      action: str | None = Query(default=None, max_length=60), actor_id: uuid.UUID | None = None,
-                     team_id: uuid.UUID | None = None, date_from: date | None = None, date_to: date | None = None,
+                     team_id: uuid.UUID | None = None, date_from: Day | None = None, date_to: Day | None = None,
                      page: int = 1, page_size: int = 50):
     stmt = select(AuditLog)
     if action:

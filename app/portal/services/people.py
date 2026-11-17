@@ -8,8 +8,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...resume_parser import ResumeError, extract_text, heuristic_profile
-from ..models import (JobAssignment, MemberProfile, Resume, Team, TeamJobQueue, TeamLeadAssignment, User)
+from ...resume_parser import ResumeError, extract_text_safely, heuristic_profile
+from ..models import (Invitation, JobAssignment, MemberProfile, PasswordReset, Resume, Team, TeamJobQueue, TeamLeadAssignment, User)
 from ..schemas import ProfileIn, ProfileOut, ResumeOut, TeamOut, UserOut
 from ..security import utcnow
 from .audit import audit
@@ -88,7 +88,7 @@ async def save_resume(db: AsyncSession, settings: Settings, member: User, upload
     """Extract text in memory, store text + structured profile, and make it the member's current resume.
     The uploaded file is not kept. Text of the replaced version is erased (its metadata stays as history)."""
     try:
-        text, truncated = await asyncio.to_thread(extract_text, filename, data, settings.max_upload_bytes)
+        text, truncated = await extract_text_safely(filename, data, settings.max_upload_bytes)      # limited child process
     except ResumeError as exc:
         raise HTTPException(413 if "too large" in str(exc).lower() else 400, str(exc)) from None
     parsed = heuristic_profile(text)
@@ -151,6 +151,12 @@ async def transfer_member(db: AsyncSession, actor: User, member: User, team: Tea
         return
     member.team_id = team.id
     await db.execute(update(JobAssignment).where(JobAssignment.member_id == member.id).values(team_id=team.id))
+    # One-time links made under the old team stop working; the invitation history follows the member, so the
+    # new team's lead (not the old one) can see it and send a fresh link.
+    await db.execute(update(Invitation).where(Invitation.user_id == member.id, Invitation.accepted_at.is_(None),
+                                              Invitation.revoked_at.is_(None)).values(revoked_at=utcnow()))
+    await db.execute(update(Invitation).where(Invitation.user_id == member.id).values(team_id=team.id))
+    await db.execute(update(PasswordReset).where(PasswordReset.user_id == member.id, PasswordReset.used_at.is_(None)).values(used_at=utcnow()))
     audit(db, actor, "member.transferred", "user", member.id, team.id, {"from_team": str(old_team_id) if old_team_id else None})
 
 

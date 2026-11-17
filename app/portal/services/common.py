@@ -1,5 +1,6 @@
 """Shared building blocks: references, pagination and the one definition of every assignment metric."""
 import uuid
+from contextvars import ContextVar
 
 from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,8 +13,18 @@ PRE_APPLICATION = ("ASSIGNED", "VIEWED", "APPLYING")
 CLOSED = ("REJECTED", "WITHDRAWN", "SKIPPED")
 
 
+# Who the current request is answered for: (role, user id). Set once per request by deps.authenticated.
+viewer: ContextVar[tuple[str, uuid.UUID] | None] = ContextVar("portal_viewer", default=None)
+
+
 def user_ref(user: User | None) -> UserRef | None:
-    return UserRef(id=user.id, name=user.name, email=user.email) if user else None
+    """A person as shown next to an assignment, a note or an event. The e-mail address is the sign-in name, so a
+    Member is only given their own; managers see the addresses of the people they manage or work with."""
+    if user is None:
+        return None
+    seen_by = viewer.get()
+    hidden = seen_by is not None and seen_by[0] == "MEMBER" and seen_by[1] != user.id
+    return UserRef(id=user.id, name=user.name, email="" if hidden else user.email)
 
 
 def team_ref(team: Team | None) -> TeamRef | None:
@@ -64,7 +75,7 @@ async def stats_total(db: AsyncSession, where: list) -> AssignmentStats:
 
 
 async def paginate(db: AsyncSession, stmt: Select, page: int, page_size: int) -> tuple[list, int]:
-    page, page_size = max(1, page), max(1, min(page_size, 200))
+    page, page_size = max(1, min(page, 1_000_000)), max(1, min(page_size, 200))      # bounded: the offset must stay a sane integer
     total = (await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one()
     rows = (await db.execute(stmt.limit(page_size).offset((page - 1) * page_size))).all()
     return rows, total

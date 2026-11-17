@@ -1,91 +1,11 @@
-"""Resume upload validation and text extraction (PDF / DOCX / TXT), plus a deterministic
-skills profile used when no AI provider is available. Files are processed in memory only."""
-import io
+"""Resume profile extraction: a deterministic skills vocabulary and profile used when no AI provider is
+available. Reading the uploaded file itself (PDF / DOCX / TXT) lives in resume_extract.py, which runs the
+parsers in a separate, resource-limited process."""
 import re
-import zipfile
 
+from .resume_extract import (ALLOWED_EXTENSIONS, MAX_PDF_PAGES, MAX_TEXT_CHARS, ResumeError, extract_text,  # noqa: F401
+                             extract_text_safely)
 from .schemas import Profile
-
-MAX_TEXT_CHARS = 100_000
-MAX_PDF_PAGES = 60
-MAX_DOCX_UNCOMPRESSED = 60 * 1024 * 1024
-ALLOWED_EXTENSIONS = {"pdf", "docx", "txt"}
-
-
-class ResumeError(ValueError):
-    """User-facing validation error."""
-
-
-def _extension(filename: str) -> str:
-    return filename.rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
-
-
-def extract_text(filename: str, data: bytes, max_bytes: int) -> tuple[str, bool]:
-    """Return (text, truncated). Raises ResumeError with a friendly message."""
-    ext = _extension(filename)
-    if ext not in ALLOWED_EXTENSIONS:
-        raise ResumeError("Unsupported file type. Upload a PDF, DOCX or TXT resume.")
-    if not data:
-        raise ResumeError("The uploaded file is empty.")
-    if len(data) > max_bytes:
-        raise ResumeError(f"File is too large. Maximum size is {max_bytes // (1024 * 1024)} MB.")
-    try:
-        if ext == "pdf":
-            text = _pdf(data)
-        elif ext == "docx":
-            text = _docx(data)
-        else:
-            text = _txt(data)
-    except ResumeError:
-        raise
-    except Exception:
-        raise ResumeError(f"Could not read this {ext.upper()} file. It may be corrupted or password protected.") from None
-    text = re.sub(r"[ \t\r\f\v]+", " ", text.replace("\x00", " "))
-    text = re.sub(r"\n\s*\n+", "\n", text).strip()
-    if len(text) < 40:
-        raise ResumeError("No readable text found in the resume. Scanned image PDFs are not supported.")
-    truncated = len(text) > MAX_TEXT_CHARS
-    return text[:MAX_TEXT_CHARS], truncated
-
-
-def _pdf(data: bytes) -> str:
-    if not data.lstrip()[:5].startswith(b"%PDF"):
-        raise ResumeError("This file is not a valid PDF.")
-    import pymupdf
-    with pymupdf.open(stream=data, filetype="pdf") as doc:
-        if doc.needs_pass:
-            raise ResumeError("Password-protected PDFs are not supported.")
-        if doc.page_count > MAX_PDF_PAGES:
-            raise ResumeError(f"PDF has too many pages (limit {MAX_PDF_PAGES}).")
-        return "\n".join(page.get_text("text") for page in doc)
-
-
-def _docx(data: bytes) -> str:
-    if not data.startswith(b"PK"):
-        raise ResumeError("This file is not a valid DOCX document.")
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        if sum(i.file_size for i in zf.infolist()) > MAX_DOCX_UNCOMPRESSED:
-            raise ResumeError("DOCX file expands to an unreasonable size.")
-        if "word/document.xml" not in zf.namelist():
-            raise ResumeError("This file is not a valid DOCX document.")
-    import docx
-    document = docx.Document(io.BytesIO(data))
-    parts = [p.text for p in document.paragraphs]
-    for table in document.tables:
-        for row in table.rows:
-            parts.append(" ".join(c.text for c in row.cells))
-    return "\n".join(parts)
-
-
-def _txt(data: bytes) -> str:
-    if b"\x00" in data[:4096]:
-        raise ResumeError("This file does not look like plain text.")
-    for enc in ("utf-8-sig", "utf-16", "latin-1"):
-        try:
-            return data.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    raise ResumeError("Could not decode the text file.")
 
 
 # ---------------------------------------------------------------- skills vocabulary

@@ -15,12 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import Principal, assignment_scope, forbid
 from ..models import (ASSIGNMENT_STATUSES, ApplicationEvent, AssignmentNote, JobAssignment, JobPosting, SearchResult,
-                      TeamJobQueue, User)
+                      TeamJobQueue, User, SearchRun)
 from ..schemas import (AssignmentDetail, AssignmentOut, EventOut, JobAssignee, MatchExplanation, NoteOut, StatusUpdate)
 from ..security import utcnow
 from . import jobs as jobs_service
 from .audit import audit, notify
-from .common import PRE_APPLICATION, team_ref, teams_by_id, user_ref, users_by_id
+from .common import PRE_APPLICATION, team_ref, teams_by_id, user_ref, users_by_id, viewer
 
 A = JobAssignment
 MEMBER_STATUSES = ASSIGNMENT_STATUSES          # members may record every stage of their own application
@@ -62,6 +62,11 @@ async def create_assignments(db: AsyncSession, principal: Principal, pairs: list
     existing_jobs = set((await db.execute(select(JobPosting.id).where(JobPosting.id.in_(job_ids)))).scalars())
     if existing_jobs != job_ids:
         raise HTTPException(404, "Job not found")
+    if search_run_id is not None and not skip_scope_checks:
+        # The link to a search is stored and shown: it has to be a search the caller can open.
+        run = await db.get(SearchRun, search_run_id)
+        if run is None or (principal.is_team_lead and run.team_id != principal.user.team_id):
+            raise HTTPException(404, "Search not found") if principal.is_admin else forbid()
 
     # Match details computed for this member by a search (this run first, otherwise the member's latest result).
     result_rows = (await db.execute(
@@ -72,6 +77,10 @@ async def create_assignments(db: AsyncSession, principal: Principal, pairs: list
         key = (r.job_id, r.member_id)
         if key not in matches or r.search_run_id == search_run_id:
             matches[key] = r
+    # A member's own match details travel with them, but an assignment is only linked to a search of the member's
+    # current team (a search of the team they left belongs to that team).
+    run_teams = dict((await db.execute(select(SearchRun.id, SearchRun.team_id).where(
+        SearchRun.id.in_({m.search_run_id for m in matches.values()})))).all()) if matches else {}
 
     created: list[uuid.UUID] = []
     per_member: dict[uuid.UUID, int] = {}
@@ -81,7 +90,8 @@ async def create_assignments(db: AsyncSession, principal: Principal, pairs: list
         match = matches.get((job_id, member_id))
         stmt = pg_insert(A).values(
             id=uuid.uuid4(), job_id=job_id, member_id=member_id, team_id=member.team_id, assigned_by=actor.id,
-            search_run_id=search_run_id or (match.search_run_id if match else None), source=source,
+            search_run_id=search_run_id or (match.search_run_id if match and run_teams.get(match.search_run_id) == member.team_id else None),
+            source=source,
             match_score=match.match_score if match else None, match_explanation=match.match_explanation if match else {},
             status="ASSIGNED", is_active=True,
         ).on_conflict_do_nothing(index_elements=[A.job_id, A.member_id]).returning(A.id)
@@ -142,8 +152,12 @@ async def assignments_out(db: AsyncSession, assignments: list[JobAssignment]) ->
         select(ApplicationEvent.assignment_id, func.count(), func.max(ApplicationEvent.created_at))
         .where(ApplicationEvent.assignment_id.in_(ids), ApplicationEvent.event_type == "link_opened")
         .group_by(ApplicationEvent.assignment_id))).all()}
-    notes = dict((await db.execute(select(AssignmentNote.assignment_id, func.count()).where(
-        AssignmentNote.assignment_id.in_(ids)).group_by(AssignmentNote.assignment_id))).all())
+    seen_by = viewer.get()
+    note_where = [AssignmentNote.assignment_id.in_(ids)]
+    if seen_by is not None and seen_by[0] == "MEMBER":       # private notes are not counted for the member either
+        note_where.append(AssignmentNote.is_private.is_(False))
+    notes = dict((await db.execute(select(AssignmentNote.assignment_id, func.count()).where(*note_where)
+                                   .group_by(AssignmentNote.assignment_id))).all())
     return [AssignmentOut(
         id=a.id, job=jobs_service.summary_out(postings[a.job_id]), member=user_ref(users.get(a.member_id)),
         team=team_ref(teams.get(a.team_id)), status=a.status, is_active=a.is_active, source=a.source, match_score=a.match_score,
@@ -165,6 +179,8 @@ async def detail(db: AsyncSession, principal: Principal, assignment: JobAssignme
     if principal.is_member:
         note_stmt = note_stmt.where(AssignmentNote.is_private.is_(False))
     notes = list((await db.execute(note_stmt.limit(200))).scalars())
+    if principal.is_member:                                  # what managers do among themselves is not the member's history
+        events = [e for e in events if member_may_see(e.event_type, e.meta)]
     actors = await users_by_id(db, {e.actor_id for e in events} | {n.author_id for n in notes})
     others: list[JobAssignee] = []
     urls = None
@@ -177,7 +193,7 @@ async def detail(db: AsyncSession, principal: Principal, assignment: JobAssignme
                               status=r.status, assigned_at=r.assigned_at, applied_at=r.applied_at) for r in rows if r.member_id in members]
         urls = {"canonical_url": posting.canonical_url, "apply_url": posting.apply_url}
     data = base.model_dump()
-    data["job"] = jobs_service.detail_out(posting)
+    data["job"] = jobs_service.detail_out(posting, hide_links=principal.is_member)      # members open jobs through Open Job only
     return AssignmentDetail(
         **data, match=match_from(assignment.match_explanation), application_reference=assignment.application_reference,
         interviewed_at=assignment.interviewed_at, offer_at=assignment.offer_at, closed_at=assignment.closed_at,
@@ -186,6 +202,13 @@ async def detail(db: AsyncSession, principal: Principal, assignment: JobAssignme
         notes=[NoteOut(id=n.id, note=n.note, is_private=n.is_private, author=user_ref(actors.get(n.author_id)), created_at=n.created_at)
                for n in notes],
         allowed_statuses=allowed_statuses(principal, assignment), other_assignees=others, job_urls=urls)
+
+
+MANAGER_ONLY_EVENTS = ("link_opened_by_manager",)
+
+
+def member_may_see(event_type: str, meta: dict | None) -> bool:
+    return event_type not in MANAGER_ONLY_EVENTS and not (meta or {}).get("private")
 
 
 # ---------------------------------------------------------------- tracking
@@ -235,6 +258,8 @@ async def set_status(db: AsyncSession, principal: Principal, assignment: JobAssi
     if data.applied_at is not None:
         if data.applied_at > now + timedelta(minutes=5):
             raise HTTPException(422, "The application date cannot be in the future")
+        if data.applied_at < assignment.assigned_at - timedelta(minutes=5):
+            raise HTTPException(422, "The application date cannot be earlier than the day this job was assigned")
         if new in PRE_APPLICATION or new == "SKIPPED":
             raise HTTPException(422, "An application date only makes sense once the application was submitted")
     if new in ("APPLIED", "INTERVIEWING", "OFFER", "REJECTED"):

@@ -2,6 +2,7 @@
 
 Authorization is enforced here and in the service layer on every request. The frontend only hides
 navigation; it is never the security boundary."""
+import ipaddress
 import uuid
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import Settings
 from . import security
 from .models import JobAssignment, Session, User
+from .services.common import viewer
 
 SESSION_COOKIE = "jf_session"
 CSRF_COOKIE = "jf_csrf"
@@ -56,12 +58,31 @@ async def get_db(request: Request):
 
 
 def client_ip(request: Request) -> str:
-    """Caller address. Behind the web proxy the real client is the first X-Forwarded-For entry."""
+    """Address of the caller, for the audit trail and (only when it can be believed) for throttling.
+
+    The browser talks to the web app, and the web app passes an X-Forwarded-For header it received on to the
+    API unchanged. So unless a reverse proxy in front of the web app writes that header itself, its content is
+    whatever the caller typed, and the only address the API really knows is its socket peer (the web app).
+    TRUST_FORWARDED_FOR=true states that such a proxy exists. Then the entry it added is read: counted from the
+    right (`trusted_proxy_hops`), because everything to the left of it came from the caller."""
     settings: Settings = request.app.state.settings
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if settings.trust_proxy_headers and forwarded:
-        return forwarded.split(",")[0].strip()[:64] or "unknown"
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    if settings.trust_forwarded_for:
+        entries = [entry.strip() for entry in request.headers.get("x-forwarded-for", "").split(",") if entry.strip()]
+        hops = max(1, settings.trusted_proxy_hops)
+        if len(entries) >= hops:
+            try:
+                address = ipaddress.ip_address(entries[-hops].strip("[]").split("%", 1)[0])
+            except ValueError:
+                return peer
+            return str(getattr(address, "ipv4_mapped", None) or address)
+    return peer
+
+
+def knows_client_address(request: Request) -> bool:
+    """Whether client_ip() is the caller's own address. If not, every caller appears under the web app's address
+    and limits per address would make them share one budget, so only limits per account are applied."""
+    return bool(request.app.state.settings.trust_forwarded_for)
 
 
 def _allowed_origins(settings: Settings) -> set[str]:
@@ -103,9 +124,26 @@ async def authenticated(request: Request, db: AsyncSession = Depends(get_db),
         if not header or not cookie or not security.tokens_equal(header, cookie) \
                 or not security.tokens_equal(security.hash_token(header), session.csrf_hash):
             raise HTTPException(403, "CSRF token missing or invalid")
+    if user.role == "TEAM_LEAD" and request.method in UNSAFE_METHODS and user.team is not None and not user.team.is_active \
+            and not request.url.path.startswith(("/api/auth/", "/api/notifications")):
+        raise HTTPException(409, "Your team is deactivated. An administrator has to reactivate it before you can make changes.")
     request.state.principal = Principal(user, session)
     request.state.actor = (str(user.id), user.role)      # plain values for the request log: usable after the session is closed
+    viewer.set((user.role, user.id))                     # lets shared output builders hide what this role may not see
     return request.state.principal
+
+
+def from_this_site(request: Request, settings: Settings) -> bool:
+    """False when the browser reports that another site started this request (Sec-Fetch-Site, or a foreign Origin).
+    Used by the two GET routes that record something: a link on someone else's page must not be able to make a
+    member's browser "view" or "open" a job."""
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        return False
+    try:
+        check_origin(request, settings)
+    except HTTPException:
+        return False
+    return True
 
 
 def require(*roles: str):

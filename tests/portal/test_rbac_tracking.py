@@ -207,10 +207,21 @@ async def test_transfer_deactivation_and_team_management(world):
     assert (await member.get("/api/auth/me")).status_code == 401
     assert (await admin.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a2"])})).status_code == 409
     assert (await admin.patch(f"/api/users/{world.ids['admin']}", json={"is_active": False})).status_code == 409
+    # A lead may restore a member the lead deactivated, but not one an Admin deactivated.
+    assert (await tl_a.patch(f"/api/users/{world.ids['member_a2']}", json={"is_active": True})).json()["status"] == "active"
+    assert (await admin.patch(f"/api/users/{world.ids['member_a2']}", json={"is_active": False})).status_code == 200
+    assert (await tl_a.patch(f"/api/users/{world.ids['member_a2']}", json={"is_active": True})).status_code == 403
+    assert (await admin.patch(f"/api/users/{world.ids['member_a2']}", json={"is_active": True})).json()["status"] == "active"
+    assert (await tl_a.patch(f"/api/teams/{world.ids['team_alpha']}", json={"name": "Mine"})).status_code == 403     # leads do not edit teams
     renamed = await admin.patch(f"/api/teams/{world.ids['team_alpha']}", json={"name": "Team Apex", "is_active": False})
     assert renamed.status_code == 200 and renamed.json()["name"] == "Team Apex" and renamed.json()["is_active"] is False
     assert (await admin.patch(f"/api/teams/{world.ids['team_beta']}", json={"name": "team apex"})).status_code == 409
-    assert (await tl_a.patch(f"/api/teams/{world.ids['team_alpha']}", json={"name": "Mine"})).status_code == 403
+    # The lead of a deactivated team can still read, but changes nothing until an Admin reactivates the team.
+    assert (await tl_a.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a2"])})).status_code == 409
+    assert (await tl_a.post("/api/invitations", json={"name": "Late Joiner", "email": "late.joiner@example.com"})).status_code == 409
+    assert (await tl_a.post("/api/searches", json={"member_ids": [str(world.ids["member_a2"])]})).status_code == 409
+    assert (await tl_a.get(f"/api/teams/{world.ids['team_alpha']}/members")).status_code == 200
+    assert (await tl_a.post("/api/auth/change-password", json={"current_password": "wrong", "new_password": "x"})).status_code in (403, 422)   # own account still works
     swapped = await admin.patch(f"/api/teams/{world.ids['team_alpha']}", json={"remove_team_lead": True})
     assert swapped.json()["team_lead"] is None
     assert (await tl_a.get("/api/users")).json()["items"] == []                       # a lead without a team sees nobody

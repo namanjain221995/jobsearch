@@ -26,13 +26,27 @@ def scoped(principal: Principal):
 
 async def created_out(db: AsyncSession, invitation: Invitation, url: str, sent: bool) -> InvitationCreated:
     base = (await service.invitations_out(db, [invitation]))[0]
-    return InvitationCreated(**base.model_dump(), invite_url=url, email_sent=sent)
+    # A link that went out by e-mail is not also handed to the person who asked for it: whoever holds the
+    # link can set the password and sign in as the invited person.
+    return InvitationCreated(**base.model_dump(), invite_url="" if sent else url, email_sent=sent)
+
+
+async def throttle(request: Request, settings: Settings, sender_id, address: str) -> None:
+    """Invitations are e-mails the portal sends to addresses the inviter chooses: cap them per address and per sender."""
+    limiter = request.app.state.limiter
+    to_key, by_key = f"jf:invite-to:{address.strip().lower()}", f"jf:invite-by:{sender_id}"
+    if await limiter.count(to_key, 3600) >= settings.invitations_per_address_per_hour \
+            or await limiter.count(by_key, 3600) >= settings.invitations_per_sender_per_hour:
+        raise HTTPException(429, "Too many invitations in the last hour. Wait a while before sending another one.")
+    await limiter.hit(to_key, 3600)
+    await limiter.hit(by_key, 3600)
 
 
 @router.post("", response_model=InvitationCreated, status_code=201)
 async def create_invitation(data: InvitationCreate, request: Request, principal: Principal = Depends(managers),
                             db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
     portal = await settings_service.load(db, settings)
+    await throttle(request, settings, principal.user.id, data.email)
     invitation, url, sent = await service.create_invitation(db, settings, request.app.state.emailer, principal, data,
                                                             portal.invitation_hours, client_ip(request))
     out = await created_out(db, invitation, url, sent)
@@ -67,6 +81,7 @@ async def resend_invitation(invitation_id: uuid.UUID, request: Request, principa
                             db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
     invitation = await _own(db, principal, invitation_id)
     portal = await settings_service.load(db, settings)
+    await throttle(request, settings, principal.user.id, invitation.email)
     fresh, url, sent = await service.resend(db, settings, request.app.state.emailer, principal, invitation,
                                             portal.invitation_hours, client_ip(request))
     out = await created_out(db, fresh, url, sent)

@@ -23,7 +23,7 @@ import httpx
 from .job_normalizer import (analyze_authorization, detect_work_mode, extract_experience, extract_salary,
                              html_to_text, parse_ats)
 from .job_ranker import best_title_relevance
-from .netguard import UnsafeURL, assert_public_url  # noqa: F401  (assert_public_url is looked up on this module at call time)
+from .netguard import UnsafeURL, assert_public_url, pinned  # noqa: F401  (assert_public_url is looked up on this module at call time)
 from .providers.base import USER_AGENT, RobotsCache, now_iso
 from .schemas import Candidate, Job
 
@@ -90,9 +90,11 @@ class PageVerifier:
         """GET with manual, validated redirects and a size cap. Returns (status, final_url, text)."""
         current = url
         for _ in range(4):
-            await assert_public_url(current)
-            async with self.client.stream("GET", current, timeout=self.timeout, follow_redirects=False,
-                                          headers={"User-Agent": USER_AGENT, "Accept": "text/html,*/*;q=0.5"}) as r:
+            address = await assert_public_url(current)
+            target, extra, extensions = pinned(current, address) if address else (current, {}, {})
+            # The request goes to the address that was just checked, not to whatever the name resolves to next.
+            async with self.client.stream("GET", target, timeout=self.timeout, follow_redirects=False, extensions=extensions,
+                                          headers={"User-Agent": USER_AGENT, "Accept": "text/html,*/*;q=0.5", **extra}) as r:
                 if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
                     current = urljoin(current, r.headers["location"])
                     continue

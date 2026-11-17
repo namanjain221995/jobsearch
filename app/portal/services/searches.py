@@ -3,11 +3,11 @@ The search itself runs in the background worker (see portal/search_runner.py).""
 import uuid
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ..deps import Principal, forbid
+from ..deps import Principal, assignment_scope, forbid
 from ..models import JobAssignment, JobPosting, MemberProfile, Resume, SearchResult, SearchRun, SearchTarget, Team, User
 from ..schemas import (SearchCreate, SearchResultOut, SearchRunOut, SearchSkipped, SearchTargetOut, SettingsOut)
 from . import jobs as jobs_service
@@ -54,6 +54,13 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
         wanted = list(dict.fromkeys([*wanted, *team_members]))
     if not wanted:
         raise HTTPException(422, "Select at least one member")
+    # Searches cost provider calls and worker time: one person cannot fill the queue, and the queue has an end.
+    mine, everyone = (await db.execute(select(
+        func.count().filter(SearchRun.initiated_by == principal.user.id), func.count()).where(SearchRun.status.in_(ACTIVE)))).one()
+    if mine >= settings.max_active_searches_per_user:
+        raise HTTPException(429, f"You already have {mine} searches queued or running. Wait for one to finish or cancel it.")
+    if everyone >= settings.max_active_searches:
+        raise HTTPException(429, "The search queue is full. Try again when a running search has finished.")
     members = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(wanted)))).scalars()}
     for member_id in wanted:
         member = members.get(member_id)
@@ -102,10 +109,11 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
 
 
 def can_see_run(principal: Principal, run: SearchRun) -> bool:
+    """Admin: every run. Team Lead: runs of the team they lead today. Having started a run gives no lasting
+    access: a lead who was removed from a team, or moved to another one, leaves that team's searches behind."""
     if principal.is_admin:
         return True
-    return principal.is_team_lead and (run.initiated_by == principal.user.id
-                                       or (principal.user.team_id is not None and run.team_id == principal.user.team_id))
+    return principal.is_team_lead and principal.user.team_id is not None and run.team_id == principal.user.team_id
 
 
 async def load_run(db: AsyncSession, principal: Principal, run_id: uuid.UUID) -> SearchRun:
@@ -159,9 +167,12 @@ async def results_out(db: AsyncSession, principal: Principal, rows: list[SearchR
         return []
     postings = {p.id: p for p in (await db.execute(select(JobPosting).where(JobPosting.id.in_({r.job_id for r in rows})))).scalars()}
     users = await users_by_id(db, {r.member_id for r in rows})
+    # Assignment state and counters only as far as the caller may see assignments: a member who moved to another
+    # team took their assignments along, and the old team's results say nothing about them any more.
+    visible = assignment_scope(principal)
     existing = {(a.job_id, a.member_id): a for a in (await db.execute(select(JobAssignment).where(
-        JobAssignment.job_id.in_(list(postings)), JobAssignment.member_id.in_(list(users)), JobAssignment.is_active))).scalars()}
-    items = {i.id: i for i in await jobs_service.list_items(db, list(postings.values()), [])}
+        JobAssignment.job_id.in_(list(postings)), JobAssignment.member_id.in_(list(users)), JobAssignment.is_active, visible))).scalars()}
+    items = {i.id: i for i in await jobs_service.list_items(db, list(postings.values()), [visible])}
     out = []
     for r in rows:
         if r.job_id not in items or r.member_id not in users:

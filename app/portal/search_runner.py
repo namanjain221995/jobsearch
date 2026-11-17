@@ -31,6 +31,7 @@ log = logging.getLogger("jobfinder.search")
 MAX_ATTEMPTS = 2            # a run stopped by a worker shutdown, crash or timeout is resumed once
 RESUMED_NOTE = "The background worker restarted during this search. It resumed automatically; members already finished were kept."
 WAITING = "Waiting for the background worker"
+LOST_ACCESS = "Stopped: the person who started this search no longer manages this team."
 STAGE_LABELS = dict(STAGES) | {"done": "Finished", "": "Waiting"}
 _STATE_NAMES = {name: abbr for abbr, name in US_STATES.items()}
 
@@ -40,6 +41,14 @@ class RunnerDeps:
     sessions: async_sessionmaker[AsyncSession]
     engine: SearchEngine
     settings: Settings
+
+
+def still_manages(is_active: bool | None, role: str | None, user_team_id, run_team_id) -> bool:
+    """Whether the person who started a run may still have jobs assigned in their name: an active Admin, or the
+    active Team Lead of the run's team. Deactivation, removal from the team or a move to another team ends it."""
+    if not is_active:
+        return False
+    return role == "ADMIN" or (role == "TEAM_LEAD" and run_team_id is not None and user_team_id == run_team_id)
 
 
 def explanation_of(job: EngineJob) -> dict:
@@ -113,7 +122,10 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
             member = await db.get(User, target.member_id)
             pairs = []
             for rank, job in enumerate(jobs, start=1):
-                posting = await jobs_service.upsert_engine_job(db, job, initiator.id if initiator else None)
+                try:
+                    posting = await jobs_service.upsert_engine_job(db, job, initiator.id if initiator else None)
+                except ValueError:                           # no http(s) link: not a posting anyone could open
+                    continue
                 await db.execute(pg_insert(SearchResult).values(
                     id=uuid.uuid4(), search_run_id=run_id, member_id=target.member_id, job_id=posting.id, rank=rank,
                     match_score=job.score, match_explanation=explanation_of(job),
@@ -124,6 +136,11 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
             created, already = [], 0
             # Re-check the member right before assigning: they may have been deactivated or moved meanwhile.
             still_valid = member is not None and member.is_active and (team_id is None or member.team_id == team_id)
+            starter = await db.get(User, initiator.id) if initiator is not None else None
+            if starter is None or not still_manages(starter.is_active, starter.role, starter.team_id, team_id):
+                still_valid = False                          # nothing is assigned in the name of someone who lost that right
+                tracker[str(target.member_id)]["warnings"].append(LOST_ACCESS)
+                pairs = []
             if mode == "auto_assign" and pairs and initiator is not None and still_valid:
                 created, already = await assignments_service.create_assignments(
                     db, None, pairs, search_run_id=run_id, source="search", actor=initiator, skip_scope_checks=True)
@@ -202,10 +219,11 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
 
     tasks = [asyncio.create_task(run_member(t)) for t in targets if tracker[str(t.member_id)]["status"] != "completed"]
     cancelled = False                                      # asked for by a person
+    lost_access = False                                    # the person who started the run may no longer act for this team
     interrupted = False                                    # the worker is stopping, or the job ran out of time
 
     async def monitor() -> None:
-        nonlocal cancelled
+        nonlocal cancelled, lost_access
         last = None
         last_totals = (0, 0)
         while True:
@@ -213,7 +231,11 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
             progress, counts = snapshot()
             comparable = ({k: v for k, v in progress.items() if k != "updated_at"}, counts)
             async with deps.sessions() as db:
-                wants_cancel = (await db.execute(select(SearchRun.cancel_requested).where(SearchRun.id == run_id))).scalar_one_or_none()
+                row = (await db.execute(select(SearchRun.cancel_requested, User.is_active, User.role, User.team_id)
+                                        .outerjoin(User, User.id == SearchRun.initiated_by).where(SearchRun.id == run_id))).first()
+                wants_cancel = bool(row and row[0])
+                if row and initiator is not None and not still_manages(row[1], row[2], row[3], team_id):
+                    wants_cancel = lost_access = True        # deactivated, removed from the team or moved: stop working for them
                 values = {"heartbeat_at": utcnow()}
                 if comparable != last:
                     values.update(progress=progress, **counts)
@@ -256,7 +278,7 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
         if resume:
             status = "queued"
         elif cancelled:
-            status = "cancelled"
+            status, error = "cancelled", (LOST_ACCESS if lost_access else error)
         elif statuses and all(s == "failed" for s in statuses):
             status = "failed"
             error = "Interrupted: the background worker stopped during this search, twice." if interrupted else "Every member search failed."

@@ -47,7 +47,9 @@ def keep_analytics_cache(session: AsyncSession) -> None:
 
 
 def make_engine(url: str, pool_size: int = 10) -> AsyncEngine:
-    return create_async_engine(url, pool_size=pool_size, max_overflow=pool_size, pool_pre_ping=True, pool_recycle=1800)
+    # hide_parameters: statement values (names, e-mail addresses, notes) are left out of error messages and logs.
+    return create_async_engine(url, pool_size=pool_size, max_overflow=pool_size, pool_pre_ping=True, pool_recycle=1800,
+                               hide_parameters=True)
 
 
 def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

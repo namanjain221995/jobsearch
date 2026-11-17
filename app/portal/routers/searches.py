@@ -6,12 +6,13 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_, select
+from sqlalchemy import false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...providers import registry
-from ..deps import Principal, client_ip, get_db, get_settings, managers
+from .. import security
+from ..deps import SESSION_COOKIE, Principal, client_ip, get_db, get_settings, managers
 from ..models import SearchPreset, SearchResult, SearchRun, SearchTarget
 from ..schemas import (Message, Page, PresetIn, PresetOut, SearchCreate, SearchCreated, SearchOptions, SearchResultOut, SearchRunOut)
 from ..security import utcnow
@@ -24,12 +25,10 @@ router = APIRouter(prefix="/api", tags=["searches"])
 
 
 def scope(principal: Principal):
+    """Runs the caller may list: all of them (Admin) or those of the team they lead today (see service.can_see_run)."""
     if principal.is_admin:
         return []
-    clauses = [SearchRun.initiated_by == principal.user.id]
-    if principal.user.team_id:
-        clauses.append(SearchRun.team_id == principal.user.team_id)
-    return [or_(*clauses)]
+    return [SearchRun.team_id == principal.user.team_id] if principal.user.team_id else [false()]
 
 
 @router.get("/searches/options", response_model=SearchOptions)
@@ -95,15 +94,19 @@ async def search_events(search_id: uuid.UUID, request: Request, principal: Princ
     """Server-Sent Events: a snapshot of the run whenever it changes, until it finishes."""
     await service.load_run(db, principal, search_id)
     sessions = request.app.state.sessions
+    token = request.cookies.get(SESSION_COOKIE, "")
 
     async def stream():
         last = None
         while True:
             async with sessions() as session:
+                # A stream can stay open for the length of a search: every round asks again whether this session
+                # is still valid and still entitled to this run (signed out, deactivated, moved to another team).
+                loaded = await security.load_session(session, token)
                 run = await session.get(SearchRun, search_id)
-                payload = (await service.runs_out(session, [run]))[0].model_dump_json() if run else None
-            if payload is None:
-                return
+                if not loaded or run is None or not service.can_see_run(Principal(loaded[1], loaded[0]), run):
+                    return
+                payload = (await service.runs_out(session, [run]))[0].model_dump_json()
             if payload != last:
                 last = payload
                 yield f"event: progress\ndata: {payload}\n\n"

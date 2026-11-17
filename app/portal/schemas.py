@@ -1,9 +1,10 @@
 """API request and response models. These are the contract the Next.js frontend is generated from."""
+import re
 import uuid
 from datetime import date, datetime
-from typing import Generic, Literal, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, BeforeValidator, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from ..schemas import Authorization, WorkMode
 
@@ -15,8 +16,35 @@ Sponsorship = Literal["Yes", "No", "Unknown"]
 T = TypeVar("T")
 
 
+def _has_nul(value: Any, depth: int = 0) -> bool:
+    if isinstance(value, str):
+        return "\x00" in value
+    if depth < 6 and isinstance(value, dict):
+        return any(_has_nul(k, depth + 1) or _has_nul(v, depth + 1) for k, v in value.items())
+    if depth < 6 and isinstance(value, (list, tuple)):
+        return any(_has_nul(v, depth + 1) for v in value)
+    return False
+
+
+def _sane_day(value: date) -> date:
+    if not date(2000, 1, 1) <= value <= date(2100, 12, 31):
+        raise ValueError("Choose a date between 2000 and 2100")
+    return value
+
+
+Day = Annotated[date, AfterValidator(_sane_day)]          # date filters: "the day after" must always exist
+
+
 class Model(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_nul_characters(cls, data: Any) -> Any:
+        """PostgreSQL cannot store the NUL character in text; refuse it here instead of failing in the database."""
+        if isinstance(data, dict) and _has_nul(data):
+            raise ValueError("Text must not contain the NUL character")
+        return data
 
 
 class Page(Model, Generic[T]):
@@ -82,8 +110,21 @@ class ChangePasswordIn(Model):
 
 
 # ---------------------------------------------------------------- invitations
+def _person_name(value: str) -> str:
+    """A name goes into e-mails the portal sends to addresses the inviter chooses, so it may not carry a message
+    of its own: letters, digits, spaces and . , ' - ( ) only. No line breaks, no links."""
+    value = " ".join(str(value).split()) if isinstance(value, str) and not any(ord(c) < 32 or ord(c) == 127 for c in value) else value
+    if not isinstance(value, str) or not _PERSON_NAME.fullmatch(value):
+        raise ValueError("Enter a name of 2 to 100 characters: letters, digits, spaces and . , ' - ( ) only")
+    return value
+
+
+_PERSON_NAME = re.compile(r"[^\W_][\w .,'’()\-]{1,99}", re.UNICODE)
+PersonName = Annotated[str, BeforeValidator(_person_name)]
+
+
 class InvitationCreate(Model):
-    name: str = Field(min_length=2, max_length=160)
+    name: PersonName
     email: EmailStr
     role: Literal["TEAM_LEAD", "MEMBER"] = "MEMBER"
     team_id: uuid.UUID | None = None       # required for MEMBER invited by Admin; a Team Lead's own team is used (another team is refused)
@@ -106,7 +147,7 @@ class InvitationOut(Model):
 
 
 class InvitationCreated(InvitationOut):
-    invite_url: str                        # shown once to the authorized creator; copy it when e-mail is not configured
+    invite_url: str                        # the link to copy and pass on; empty when the mail server delivered it (email_sent)
     email_sent: bool                       # true only when an SMTP server accepted the message
 
 
@@ -187,13 +228,13 @@ class UserOut(Model):
 
 
 class UserUpdate(Model):
-    name: str | None = Field(default=None, min_length=2, max_length=160)
+    name: PersonName | None = None
     is_active: bool | None = None                  # Admin: anyone but themselves; Team Lead: own members
     team_id: uuid.UUID | None = None               # Admin only: transfer a member to another team
 
 
 class ResetLinkOut(Model):
-    reset_url: str
+    reset_url: str                         # empty when the mail server delivered the link (email_sent)
     expires_at: datetime
     email_sent: bool
 
@@ -524,7 +565,13 @@ class SearchOptions(Model):
 
 class PresetIn(Model):
     name: str = Field(min_length=2, max_length=120)
-    filters: dict
+    filters: dict                                  # the search form's values; checked against SearchCreate when saved
+
+    @field_validator("filters")
+    @classmethod
+    def _filters_fit_a_search(cls, value: dict) -> dict:
+        SearchCreate.model_validate({**value, "member_ids": [], "team_id": None})      # same limits as starting a search
+        return value
 
 
 class PresetOut(Model):
@@ -603,7 +650,7 @@ class NoteIn(Model):
 
 class StatusUpdate(Model):
     status: AssignmentStatus
-    applied_at: datetime | None = None             # optional: the real submission date when recording it later
+    applied_at: AwareDatetime | None = None        # optional: the real submission time (with time zone) when recording it later
     reference: str | None = Field(default=None, max_length=200)      # confirmation / reference number
     note: str | None = Field(default=None, max_length=4000)
 
