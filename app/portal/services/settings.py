@@ -63,10 +63,12 @@ async def save(db: AsyncSession, settings: Settings, actor: User, patch: Setting
 
 
 def ui(settings_out: SettingsOut, settings: Settings | None = None) -> UiSettings:
-    providers = [name for name, key in (("OpenAI", settings.openai_api_key), ("Anthropic", settings.anthropic_api_key)) if key] if settings else []
+    providers = [name for name, key in (("OpenAI", settings.openai_api_key), ("Anthropic", settings.anthropic_api_key),
+                                        ("TechSara (company model)", settings.techsara_api_key)) if key] if settings else []
     return UiSettings(watermark_enabled=settings_out.watermark_enabled, default_target_count=settings_out.default_target_count,
                       max_members_per_search=settings_out.max_members_per_search,
                       max_results_per_search_run=settings_out.max_results_per_search_run,
+                      max_target_count=settings.result_cap if settings else 1000,
                       default_min_match_score=settings_out.default_min_match_score,
                       deep_search_default=settings_out.deep_search_default, password_min_length=settings_out.password_min_length,
                       profile_extra_fields=settings_out.profile_extra_fields, ai_providers=providers)

@@ -67,6 +67,24 @@ SPECS: dict[str, Spec] = {s.name: s for s in [
     Spec("adzuna", "Adzuna", "search", adzuna.fetch, default_key="us", min_ttl=2 * 3600,
          needs=lambda s: bool(s.adzuna_app_id and s.adzuna_app_key), note="Aggregator API (optional, needs free key)"),
 ]}
+# Additional board readers (SmartRecruiters, BambooHR): returned only when switched on, both are off by default
+# (docs/board-sources.md explains why).
+from . import boards as _boards  # noqa: E402
+
+SPECS.update(_boards.extra_specs())
+
+# Not a posting source: it only finds employer boards and posting addresses, which are then read through the
+# sources above (see providers/searxng.py). Listed here so it appears with the other sources and can be switched off.
+async def _no_fetch(ctx: Ctx, key: str, scope: str) -> list[Job]:
+    return []
+
+
+SPECS["searxng"] = Spec("searxng", "Web search (SearXNG)", "discovery", _no_fetch, needs=lambda s: bool(s.searxng_url.strip()),
+                        note="Search-engine discovery of employer job boards on the ATS hosts above; found boards are read through their own API")
+SPECS["tinyfish"] = Spec("tinyfish", "Web search (TinyFish)", "discovery", _no_fetch, needs=lambda s: bool(s.tinyfish_api_key),
+                         note="Paid second search engine for employer job boards, used after the free sources; daily spending ceiling")
+SPECS["serpapi"] = Spec("serpapi", "Google Jobs (SerpApi)", "discovery", _no_fetch, needs=lambda s: bool(s.serpapi_api_key),
+                        note="Paid job-listing API with a monthly allowance, used after the free sources; job-board pages are never fetched")
 BOARD_LEAD_SOURCES = ("greenhouse", "lever", "ashby")      # AI leads on these are checked against the employer's full board
 
 
@@ -83,6 +101,8 @@ def plan_units(specs: dict[str, Spec], keys: dict[str, list[str]], queries: list
     """Units one search wants fresh: every known board, each feed, and each query against the search sources."""
     units: list[Unit] = []
     for name, spec in specs.items():
+        if spec.kind == "discovery":
+            continue
         targets = keys.get(name, []) if spec.keyed else [spec.default_key]
         wanted = queries[: spec.max_queries] if spec.max_queries else queries
         for key in targets:

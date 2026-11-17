@@ -4,6 +4,7 @@
 # Beside it on the server, never in git:
 #   .env         application settings and secrets, POSTGRES_PASSWORD, PUBLIC_BASE_URL, IMAGE_TAG (written by deploy.sh)
 #   tunnel.env   TUNNEL_TOKEN=... for the Cloudflare Tunnel
+#   .env also holds SEARXNG_SECRET (any random string) for the meta-search container
 #
 # Nothing listens on a public port. People reach the web app through the Cloudflare Tunnel, whose public hostname
 # points at http://frontend:3000. The web app is also on 127.0.0.1:3010 of the server for health checks.
@@ -25,6 +26,7 @@ x-backend: &backend
     # Cloudflare appends the caller's address to X-Forwarded-For; it is the only way in.
     TRUST_FORWARDED_FOR: "true"
     TRUSTED_PROXY_HOPS: "1"
+    SEARXNG_URL: http://searxng:8080           # the meta-search container below; no port is published
   logging: *logging
 
 services:
@@ -86,6 +88,17 @@ services:
       redis: { condition: service_healthy }
     restart: unless-stopped
 
+  # Meta-search used by the job search to find employer job boards it does not know yet. Reached only by the API and
+  # the worker, inside the compose network. It asks public search engines; when they refuse, searches go on without it.
+  searxng:
+    image: searxng/searxng:latest
+    configs:
+      - source: searxng_settings
+        target: /etc/searxng/settings.yml
+    mem_limit: 512m
+    restart: unless-stopped
+    logging: *logging
+
   frontend:
     image: ghcr.io/namanjain221995/jobsearch-frontend:${IMAGE_TAG:?IMAGE_TAG is not set}
     environment:
@@ -104,6 +117,18 @@ services:
     depends_on: [frontend]
     restart: unless-stopped
     logging: *logging
+
+configs:
+  searxng_settings:
+    content: |
+      use_default_settings: true
+      server:
+        secret_key: "${SEARXNG_SECRET:?SEARXNG_SECRET is not set}"
+        limiter: false
+        image_proxy: false
+      search:
+        formats: [html, json]
+        safe_search: 0
 
 volumes:
   pgdata:

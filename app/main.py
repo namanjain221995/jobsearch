@@ -174,10 +174,15 @@ async def parse_resume(request: Request, file: UploadFile = File(...)):
     }
 
 
+LEGACY_MAX_RESULTS = 500
+
+
 @app.post("/api/jobs/search", status_code=202)
 async def start_search(request: Request, body: SearchRequest):
     settings, registry, engine = request.app.state.settings, request.app.state.registry, request.app.state.engine
     registry.purge(settings.resume_ttl_seconds)
+    if body.result_count > LEGACY_MAX_RESULTS:      # the single-user app keeps its limit; the portal allows more per candidate
+        return error(422, "Invalid input", f"result_count: Input should be less than or equal to {LEGACY_MAX_RESULTS}")
     entry = registry.resumes.get(body.resume_id)
     if not entry:
         return error(400, "Resume not found", "Upload your resume again; uploads expire after an hour.")

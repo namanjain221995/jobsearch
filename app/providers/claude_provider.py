@@ -41,6 +41,16 @@ class ClaudeProvider:
         self.client = AsyncAnthropic(api_key=api_key, timeout=timeout, max_retries=2)
         self._use_fallbacks = model in _FALLBACK_MODELS
         self._web_tool = WEB_SEARCH_TOOL
+        self.usage = {"input_tokens": 0, "output_tokens": 0}       # tokens of this search, for the cost report
+
+    def _count(self, message) -> None:
+        usage = getattr(message, "usage", None)
+        for name, fields in (("input_tokens", ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")),
+                             ("output_tokens", ("output_tokens",))):
+            for f in fields:
+                value = getattr(usage, f, 0)
+                if isinstance(value, int):
+                    self.usage[name] += value
 
     async def _create(self, **kwargs):
         """messages.create with the refusal fallback enabled where the model supports it."""
@@ -66,6 +76,7 @@ class ClaudeProvider:
                 messages=[{"role": "user", "content": user}],
                 output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
             )
+            self._count(message)
             if message.stop_reason == "max_tokens":
                 raise ProviderError("response truncated")
             return json.loads(self._text(message))
@@ -76,13 +87,23 @@ class ClaudeProvider:
         except Exception as exc:
             raise ProviderError(sanitize_error(exc)) from None
 
-    async def web_discover(self, system: str, prompt: str, max_searches: int, restrict_to_ats: bool) -> tuple[list[Candidate], int]:
-        """Run live web search. Returns (candidates, number of searches actually executed)."""
+    async def web_discover(self, system: str, prompt: str, max_searches: int, restrict_to_ats: bool, *,
+                           allowed_domains: list[str] | None = None, blocked_domains: list[str] | None = None,
+                           region: str = "") -> tuple[list[Candidate], int]:
+        """Run live web search. Returns (candidates, number of searches actually executed).
+        Either `allowed_domains` (one ATS host per call) or `blocked_domains` (aggregators, for a general search) is
+        sent, never both: the API rejects the pair."""
         def tool(kind: str) -> dict:
-            t = {"type": kind, "name": "web_search", "max_uses": max_searches,
-                 "user_location": {"type": "approximate", "country": "US"}}
-            if restrict_to_ats:
+            location = {"type": "approximate", "country": "US"}
+            if region:
+                location["region"] = region
+            t = {"type": kind, "name": "web_search", "max_uses": max_searches, "user_location": location}
+            if allowed_domains:
+                t["allowed_domains"] = list(allowed_domains)
+            elif restrict_to_ats:
                 t["allowed_domains"] = ATS_DOMAINS
+            elif blocked_domains:
+                t["blocked_domains"] = list(blocked_domains)
             return t
 
         messages = [{"role": "user", "content": prompt}]
@@ -100,6 +121,7 @@ class ClaudeProvider:
                     self._web_tool = WEB_SEARCH_TOOL_BASIC
                     message = await self._create(max_tokens=8000, system=system, messages=messages,
                                                  tools=[tool(self._web_tool)], output_config={"effort": "low"})
+                self._count(message)
                 if message.stop_reason == "refusal":
                     raise ProviderError("request declined by the model")
                 for block in message.content:

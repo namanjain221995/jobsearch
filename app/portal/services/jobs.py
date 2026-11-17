@@ -150,7 +150,9 @@ async def upsert_engine_job(db: AsyncSession, job: EngineJob, created_by: uuid.U
         experience_min=job.required_years, requirements=list(job.skills or [])[:60],
         citizenship_requirement=job.citizenship_requirement, sponsorship_status=job.sponsorship,
         clearance_required=job.clearance_required, posted_at=_parse_date(job.posted_at),
-        last_verified_at=_parse_dt(job.verified_at) or utcnow(), verification_status="verified",
+        last_verified_at=_parse_dt(job.verified_at) or utcnow(),
+        # A job known only from a listing API (Google Jobs) is stored as "unverified", like a hand-entered one.
+        verification_status="verified" if job.verification_level == "verified" else "unverified",
         verification_note=job.verification[:300], source_label=job.source[:80])
     if posting is None:
         posting = JobPosting(identity_key=identity, ctl_key=ctl, external_source=job.ats[:40], external_job_id=job.ats_id[:160],

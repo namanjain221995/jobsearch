@@ -1,0 +1,5 @@
+{"id": "744000012345678", "name": "Machine Learning Engineer", "active": true,
+ "applyUrl": "https://jobs.smartrecruiters.com/ExampleCo/744000012345678-machine-learning-engineer?oga=true",
+ "jobAd": {"sections": {"companyDescription": {"title": "Company", "text": "<p>We build things.</p>"},
+                        "jobDescription": {"title": "Job", "text": "<p>Train models.</p>"},
+                        "qualifications": {"title": "Q", "text": "<p>Python.</p>"}}}}

@@ -21,9 +21,10 @@ class SearchRequest(BaseModel):
     authorization: Authorization = "Other / Prefer Not to Say"
     sponsorship_needed: Literal["Yes", "No", "Unknown"] = "Unknown"
     exclude_citizenship_required: bool = False
-    result_count: int = Field(default=50, ge=0, le=500)
+    result_count: int = Field(default=50, ge=0, le=1000)
     work_mode: WorkMode = "All"
     deep_search: bool = True      # include AI web search + browser crawl (slower, wider coverage)
+    locations: list[str] = Field(default_factory=list, max_length=30)   # preferred states: only steer discovery queries, never filter here
 
     @field_validator("job_titles")
     @classmethod
@@ -100,6 +101,8 @@ class Job(BaseModel):
     posted_at: str = ""                       # ISO date, "" when unknown
     verified_at: str = ""
     verification: str = ""                    # how the listing was verified
+    verification_level: str = "verified"      # "verified": read from the employer's board API or page; "listed": a licensed job
+                                              # listing API returned it and the employer's site was not checked
     citizenship_requirement: str = "Not stated"   # Required / Not required / Not stated
     sponsorship: str = "Not stated"               # Available / Not available / Not stated
     clearance_required: bool = False
@@ -113,6 +116,7 @@ class Job(BaseModel):
     reason: str = ""
     experience_comparison: str = ""
     title_relevance: float = 0.0
+    matched_query: str = ""                   # the requested title or title variant this posting was found under
 
     def public(self) -> dict:
         d = self.model_dump(exclude={"description", "description_rich", "raw_html", "country_hint", "title_relevance", "required_years",

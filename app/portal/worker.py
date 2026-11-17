@@ -121,10 +121,10 @@ _settings = get_settings()
 
 
 class WorkerSettings:
-    functions = [func(run_search, name="run_search", max_tries=1, timeout=3600, keep_result=60)]
+    functions = [func(run_search, name="run_search", max_tries=1, timeout=max(3600, _settings.worker_job_timeout_seconds), keep_result=60)]
     redis_settings = RedisSettings.from_dsn(_settings.redis_url)
     max_jobs = max(1, _settings.worker_max_searches)
-    job_timeout = 3600
+    job_timeout = max(3600, _settings.worker_job_timeout_seconds)
     on_startup = startup
     on_shutdown = shutdown
     health_check_interval = 30

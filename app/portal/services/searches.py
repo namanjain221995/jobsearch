@@ -70,6 +70,8 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
             raise forbid()                              # never trust client-supplied ids: other teams are off limits
         if not candidate.is_active:
             raise HTTPException(409, f"{candidate.name} is deactivated")
+    if data.target_count > settings.result_cap:
+        raise HTTPException(422, f"At most {settings.result_cap} jobs per candidate can be requested in one search.")
     if len(wanted) > portal.max_members_per_search:
         raise HTTPException(422, f"At most {portal.max_members_per_search} candidates can be searched in one run")
     if len(wanted) * data.target_count > portal.max_results_per_search_run:
@@ -162,7 +164,7 @@ async def runs_out(db: AsyncSession, runs: list[SearchRun], with_targets: bool =
                 message=m.get("message", ""), discovered=m.get("discovered", 0), verified=m.get("verified", 0),
                 duplicates=m.get("duplicates", 0), matched=m.get("matched", 0), assigned=m.get("assigned", 0),
                 filters={k: v for k, v in (t.candidate_specific_filters or {}).items() if k != "skills"},
-                warnings=m.get("warnings", [])))
+                warnings=m.get("warnings", []), round=int(m.get("round") or 1), discovery=m.get("discovery") or {}))
         out.append(SearchRunOut(
             id=run.id, mode=run.mode, status=run.status, cancel_requested=run.cancel_requested, attempts=run.attempts or 0, target_count=run.target_count,
             deep_search=run.deep_search, min_match_score=run.min_match_score, filters=run.search_filters or {},

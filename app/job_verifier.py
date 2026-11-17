@@ -233,7 +233,7 @@ def _how(page: Page) -> str:
 
 
 def _source(cand: Candidate) -> str:
-    return f"{cand.provider} web search" if cand.provider in ("OpenAI", "Claude") else (cand.provider or "Web crawl")
+    return f"{cand.provider} web search" if cand.provider in ("OpenAI", "Claude", "SearXNG") else (cand.provider or "Web crawl")
 
 
 def _job_from_jsonld(posting: dict, cand: Candidate, page: Page) -> tuple[Job | None, str]:

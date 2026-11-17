@@ -52,6 +52,14 @@ class OpenAIProvider:
         self.client = AsyncOpenAI(api_key=api_key, timeout=timeout, max_retries=2)
         # Extraction and scoring do not need deep reasoning; a low effort makes these calls much faster.
         self._reasoning = {"reasoning": {"effort": reasoning_effort}} if reasoning_effort else {}
+        self.usage = {"input_tokens": 0, "output_tokens": 0}       # tokens of this search, for the cost report
+
+    def _count(self, resp) -> None:
+        usage = getattr(resp, "usage", None)
+        for name in ("input_tokens", "output_tokens"):
+            value = getattr(usage, name, 0)
+            if isinstance(value, int):
+                self.usage[name] += value
 
     async def json_call(self, system: str, user: str, schema: dict, schema_name: str) -> dict:
         request = dict(model=self.model, instructions=system, input=user, store=False,
@@ -64,30 +72,50 @@ class OpenAIProvider:
                     raise
                 self._reasoning = {}          # this model has no reasoning-effort setting
                 resp = await self.client.responses.create(**request)
+            self._count(resp)
             return json.loads(resp.output_text)
         except ValueError as exc:
             raise ProviderError("model returned invalid JSON") from exc
         except Exception as exc:
             raise ProviderError(sanitize_error(exc)) from None
 
-    async def web_discover(self, system: str, prompt: str, max_searches: int, restrict_to_ats: bool) -> tuple[list[Candidate], int]:
-        """Run live web search. Returns (candidates, number of search calls actually executed)."""
-        tool: dict = {"type": "web_search", "user_location": {"type": "approximate", "country": "US"}}
-        if restrict_to_ats:
+    async def web_discover(self, system: str, prompt: str, max_searches: int, restrict_to_ats: bool, *,
+                           allowed_domains: list[str] | None = None, blocked_domains: list[str] | None = None,
+                           region: str = "") -> tuple[list[Candidate], int]:
+        """Run live web search. Returns (candidates, number of search calls actually executed).
+        `allowed_domains` (one ATS host per call finds more distinct boards) wins over `restrict_to_ats`;
+        `blocked_domains` keeps job-board aggregators out of a general search; `region` is a US state for the
+        approximate user location."""
+        location = {"type": "approximate", "country": "US"}
+        if region:
+            location["region"] = region
+        tool: dict = {"type": "web_search", "user_location": location}
+        if allowed_domains:
+            tool["filters"] = {"allowed_domains": list(allowed_domains)[:100]}
+        elif restrict_to_ats:
             tool["filters"] = {"allowed_domains": ATS_DOMAINS}
+        elif blocked_domains:
+            tool["filters"] = {"blocked_domains": list(blocked_domains)[:100]}
+
+        async def call(t: dict):
+            return await self.client.responses.create(
+                model=self.model, instructions=system, input=prompt, tools=[t], tool_choice="auto",
+                include=["web_search_call.action.sources"], max_tool_calls=max_searches, store=False)
+
         try:
-            resp = await self.client.responses.create(
-                model=self.model,
-                instructions=system,
-                input=prompt,
-                tools=[tool],
-                tool_choice="auto",
-                include=["web_search_call.action.sources"],
-                max_tool_calls=max_searches,
-                store=False,
-            )
+            try:
+                resp = await call(tool)
+            except BadRequestError:
+                if not (blocked_domains or region):
+                    raise
+                # This model or account does not take the finer settings: ask again the long-standing way.
+                plain: dict = {"type": "web_search", "user_location": {"type": "approximate", "country": "US"}}
+                if "allowed_domains" in tool.get("filters", {}):
+                    plain["filters"] = tool["filters"]
+                resp = await call(plain)
         except Exception as exc:
             raise ProviderError(sanitize_error(exc)) from None
+        self._count(resp)
         sourced: dict[str, str] = {}
         searches = 0
         text_parts: list[str] = []

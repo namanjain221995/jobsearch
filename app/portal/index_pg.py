@@ -69,8 +69,53 @@ class PgJobIndex:
             ats, slug, ok, job_count, time.time(), origin)
 
     async def known_boards(self) -> list[tuple[str, str]]:
-        rows = await self.pool.fetch("SELECT ats, slug FROM index_boards WHERE ok AND origin <> 'seed' ORDER BY job_count DESC")
+        # Imported catalogue boards (origin 'catalog', see app/board_catalog.py) join only after a read found postings,
+        # so registering thousands of them never makes every search plan thousands of unread boards.
+        rows = await self.pool.fetch("SELECT ats, slug FROM index_boards WHERE ok AND origin <> 'seed' "
+                                     "AND (origin <> 'catalog' OR job_count > 0) ORDER BY job_count DESC")
         return [(r["ats"], r["slug"]) for r in rows]
+
+    async def register_catalog(self, pairs: list[tuple[str, str]]) -> int:
+        """Register boards from the imported catalogue as not yet read (checked_at NULL). Existing rows are left alone.
+        Returns how many rows were new."""
+        if not pairs:
+            return 0
+        result = await self.pool.execute(
+            "INSERT INTO index_boards (ats, slug, ok, job_count, checked_at, origin) "
+            "SELECT a, s, true, 0, NULL, 'catalog' FROM unnest($1::text[], $2::text[]) AS t(a, s) ON CONFLICT (ats, slug) DO NOTHING",
+            [a for a, _ in pairs], [s for _, s in pairs])
+        return int(result.split()[-1])
+
+    async def board_slugs(self, ats: str) -> set[str]:
+        rows = await self.pool.fetch("SELECT slug FROM index_boards WHERE ats=$1", ats)
+        return {r["slug"] for r in rows}
+
+    async def catalog_due(self, per_ats: dict[str, int], recheck_seconds: float = 7 * 86400) -> list[tuple[str, str]]:
+        """Catalogue boards to read next: never read first, then empty ones not checked for `recheck_seconds`.
+        At most per_ats[ats] boards per ATS."""
+        names = [a for a, n in per_ats.items() if n > 0]
+        if not names:
+            return []
+        rows = await self.pool.fetch(
+            "SELECT ats, slug FROM (SELECT ats, slug, row_number() OVER (PARTITION BY ats ORDER BY checked_at NULLS FIRST, slug) AS rn "
+            "FROM index_boards WHERE origin='catalog' AND ok AND ats = ANY($1::text[]) "
+            "AND (checked_at IS NULL OR (job_count = 0 AND checked_at < $2))) t "
+            "WHERE rn <= (SELECT n FROM unnest($1::text[], $3::int[]) AS q(a, n) WHERE q.a = t.ats)",
+            names, time.time() - recheck_seconds, [per_ats[a] for a in names])
+        return [(r["ats"], r["slug"]) for r in rows]
+
+    async def catalog_touch(self, pairs: list[tuple[str, str]]) -> None:
+        """Mark catalogue boards as attempted now, so a board whose read fails is not picked again every minute."""
+        if pairs:
+            await self.pool.execute(
+                "UPDATE index_boards b SET checked_at=$3 FROM unnest($1::text[], $2::text[]) AS t(a, s) "
+                "WHERE b.ats=t.a AND b.slug=t.s AND b.origin='catalog'", [x for x, _ in pairs], [y for _, y in pairs], time.time())
+
+    async def catalog_stats(self) -> dict[str, dict[str, int]]:
+        rows = await self.pool.fetch(
+            "SELECT ats, count(*) AS total, count(checked_at) AS read, count(*) FILTER (WHERE ok AND job_count > 0) AS live, "
+            "count(*) FILTER (WHERE NOT ok) AS dead FROM index_boards WHERE origin='catalog' GROUP BY ats")
+        return {r["ats"]: {k: int(r[k]) for k in ("total", "read", "live", "dead")} for r in rows}
 
     async def dead_boards(self, max_age_seconds: int = 86400) -> set[tuple[str, str]]:
         rows = await self.pool.fetch("SELECT ats, slug FROM index_boards WHERE NOT ok AND checked_at > $1", time.time() - max_age_seconds)

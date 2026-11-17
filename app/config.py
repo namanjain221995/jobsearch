@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://jobfinder:jobfinder@127.0.0.1:55432/jobfinder"
     legacy_sqlite_path: str = "./jobfinder.db"       # the pre-PostgreSQL index file (source for migration, legacy app)
     redis_url: str = "redis://127.0.0.1:56379/0"
-    search_max_results: int = 500
+    search_max_results: int = 1000                   # most results one candidate search may return (hard ceiling of the engine)
 
     # Portal: sessions, invitations, e-mail.
     app_env: str = "development"                     # "production" enforces secure cookies
@@ -70,7 +70,9 @@ class Settings(BaseSettings):
 
     # Portal: team searches.
     max_members_per_search: int = 10
-    max_results_per_search_run: int = 500            # members x results-per-member allowed in one run
+    max_results_per_search_run: int = 500            # candidates x results-per-candidate allowed in one run; an Admin can raise it
+                                                     # in Settings (up to 5000). A 1,000-job request for one candidate needs 1000 here.
+    max_target_count: int = 1000                     # most results per candidate one search may ask for (never above SEARCH_MAX_RESULTS)
     member_search_concurrency: int = 2               # members of one run searched at the same time
     worker_max_searches: int = 2                     # search runs a worker processes at the same time
     analytics_cache_seconds: int = 60                # Redis cache for team / organisation analytics; 0 turns it off
@@ -108,6 +110,91 @@ class Settings(BaseSettings):
     max_ai_page_extractions: int = 8         # pages per search sent to the AI for job extraction (one batched call)
     ai_timeout_seconds: float = 180.0
 
+    # ---- Wider searches ("find more"): title expansion, search-engine discovery, larger AI budgets, rounds.
+    # Company model service (OpenAI-compatible, no per-call bill). Empty key = not used; everything falls back
+    # to OpenAI / Claude and the keyword scoring.
+    techsara_api_key: str = ""
+    techsara_base_url: str = "https://ai.techsarasolutions.com/v1"
+    techsara_model: str = "techsara-35b"             # chat: title expansion, page extraction, explanations beyond the top slice
+    techsara_rerank_model: str = "techsara-rerank"   # /v1/rerank: scores every remaining candidate against the profile
+    techsara_timeout_seconds: float = 90.0
+    techsara_retries: int = 3                        # attempts after a 503 / 429 / timeout (Retry-After is honoured, capped at 20 s)
+    techsara_concurrency: int = 4                    # requests to the company model at the same time (its queue is shared with the chat app)
+    techsara_rerank_batch: int = 32                  # documents per /v1/rerank request
+    techsara_rerank_max_jobs: int = 3000             # most candidates of one search sent to the reranker
+    techsara_explain_max_jobs: int = 400             # jobs beyond the OpenAI/Claude slice that get a written explanation from the chat model
+    techsara_explain_batch: int = 5
+    techsara_explain_seconds: float = 180.0          # time one search may spend on those explanations; the rest keep the rerank note
+
+    title_expansion: bool = True                     # one AI call per search: real-world variants of the requested titles
+    title_expansion_max: int = 12                    # most variants kept after validation
+    title_expansion_cache_hours: float = 168.0       # the same titles are not expanded again for a week
+
+    searxng_url: str = ""                            # e.g. http://searxng:8080 ; empty = search-engine discovery off
+    searxng_timeout_seconds: float = 12.0
+    searxng_min_interval_seconds: float = 2.0        # gap between two requests to the instance (it forwards to public engines)
+    searxng_cache_hours: float = 12.0                # an identical query is answered from the index for this long
+    searxng_queries_per_search: int = 12             # queries for a request of 50 or fewer
+    searxng_queries_per_search_max: int = 90         # hard ceiling however many results are requested
+    searxng_pages_per_query: int = 2                 # result pages read per query (page 2 only when page 1 was full of new addresses)
+    searxng_new_boards_per_search: int = 40          # for a request of 50 or fewer
+    searxng_new_boards_per_search_max: int = 400     # hard ceiling: employer boards one search may add to the index
+    searxng_page_leads_per_search: int = 40          # direct posting addresses (non-board hosts) passed to page verification
+    searxng_sites: str = ("boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co,jobs.ashbyhq.com,apply.workable.com,"
+                          "myworkdayjobs.com,jobs.smartrecruiters.com")
+
+    # ---- Paid sources. Spent only after the free ones (index, SearXNG, company model) left a search short.
+    # SerpApi, Google Jobs. The plan's monthly allowance is the binding limit: every call is counted per calendar month.
+    serpapi_api_key: str = Field(default="", validation_alias=AliasChoices("serpapi_KEY", "serpapi_key", "SERPAPI_API_KEY", "serpapi_api_key"))
+    serpapi_max_calls_per_search: int = 8            # result pages (10 jobs each) one candidate search may request
+    serpapi_monthly_limit: int = 250                 # the plan's searches per month, used when the account endpoint cannot be read
+    serpapi_monthly_reserve: int = 25                # calls kept back so the last searches of the month still get some
+    serpapi_pages_per_query: int = 3                 # a query is paged deeper only while a page brings new jobs
+    serpapi_cache_hours: float = 6.0                 # an identical query page is answered from the index for this long (no call)
+    serpapi_account_check_seconds: float = 300.0     # how often the remaining allowance is read from the account endpoint (free)
+    serpapi_include_listed_only: bool = True         # return jobs that only have job-board links, marked "unverified: listed on Google Jobs"
+    # Job boards and aggregators: their pages are never fetched, whoever names them.
+    aggregator_hosts: str = ("linkedin.com,indeed.com,glassdoor.com,ziprecruiter.com,simplyhired.com,dice.com,talent.com,jobleads.com,"
+                             "tealhq.com,theladders.com,bebee.com,recruit.net,monster.com,careerbuilder.com,jooble.org,adzuna.com,"
+                             "lensa.com,snagajob.com,jobrapido.com,whatjobs.com,learn4good.com,salary.com,jobget.com,builtin.com,"
+                             "wellfound.com,flexjobs.com,remoterocketship.com,jobgether.com,google.com")
+    # TinyFish: TinySearch as a second discovery engine beside SearXNG, TinyFetch for pages our own browser could not render.
+    # Its agent, research, browser and vault endpoints are never used.
+    tinyfish_api_key: str = Field(default="", validation_alias=AliasChoices("tinyfish_api_key", "TINYFISH_API_KEY"))
+    tinyfish_search_queries_per_search: int = 20     # TinySearch queries one candidate search may send
+    tinyfish_fetches_per_search: int = 10            # TinyFetch page reads one candidate search may request
+    tinyfish_search_usd: float = 0.005               # price per query (wallet endpoint, 2026-11-18)
+    tinyfish_fetch_usd: float = 0.001                # price per fetched address
+    tinyfish_daily_usd: float = 1.0                  # most that may be spent per UTC day, computed from the two prices above
+    tinyfish_wallet_reserve_usd: float = 2.0         # stop using TinyFish when the wallet balance is below this
+    tinyfish_wallet_check_seconds: float = 300.0
+    tinyfish_timeout_seconds: float = 30.0
+
+    # AI web search scales with the requested number. The base values above (OPENAI_SEARCH_CALLS, CLAUDE_SEARCH_CALLS,
+    # AI_WEB_SEARCHES_PER_CALL, MAX_AI_CALLS_PER_SEARCH, MAX_AI_RANKED_JOBS) apply to a request of 50 or fewer;
+    # these are the hard ceilings for large requests.
+    ai_budget_scaling: bool = True
+    openai_search_calls_max: int = 16
+    claude_search_calls_max: int = 16
+    ai_web_searches_per_call_max: int = 10
+    max_ai_calls_per_search_max: int = 260
+    max_ai_ranked_jobs_max: int = 400                # ceiling of the OpenAI/Claude-judged slice (40 % of the request, at least MAX_AI_RANKED_JOBS)
+    max_page_verifications_max: int = 600
+    max_detail_fetches_max: int = 1000
+    max_audit_jobs_max: int = 200
+    max_boards_per_search_max: int = 6000            # boards and source queries one search may ask to be fresh
+    max_index_candidates: int = 6000                 # postings of one search loaded from the index for screening (best title matches first)
+
+    # Rounds: while fewer verified matches than requested exist, discovery goes on with further variants / locations.
+    # A search stops only when the target is reached, SEARCH_STALE_ROUNDS rounds in a row added no new verified job,
+    # every source's budget is used up, the wall-clock ceiling is reached, or someone cancels it.
+    search_max_rounds: int = 12                      # safety ceiling on rounds; 1 = single pass, as before
+    search_stale_rounds: int = 2                     # consecutive rounds without a new verified job that end a search
+    search_max_seconds: float = 10800.0              # wall-clock ceiling of one candidate search: no new round starts after it
+    search_budget_rounds: int = 4                    # the search-wide discovery budgets are handed out over this many rounds
+    worker_job_timeout_seconds: int = 14400          # the worker's limit for one whole run (all its candidates)
+    round_fetch_deadline_seconds: float = 60.0       # how long a round waits for newly found boards to be read
+
     # Headless browser crawler (Playwright). Used only for pages that need JavaScript.
     browser_enabled: bool = True
     browser_concurrency: int = 6             # pages rendered at the same time
@@ -139,7 +226,7 @@ class Settings(BaseSettings):
     @field_validator("search_max_results", mode="before")
     @classmethod
     def _cap_default(cls, v):
-        return 500 if v in ("", None) else v
+        return 1000 if v in ("", None) else v
 
     @property
     def sqlite_path(self) -> str:
@@ -169,6 +256,15 @@ class Settings(BaseSettings):
     @property
     def salesforce_configured(self) -> bool:
         return bool(self.sf_client_id and self.sf_username and self.sf_login_url and self.sf_private_key_b64)
+
+    @property
+    def techsara_configured(self) -> bool:
+        return bool(self.techsara_api_key and self.techsara_base_url)
+
+    @property
+    def result_cap(self) -> int:
+        """Most results per candidate: the smaller of the engine ceiling and the per-candidate limit."""
+        return max(1, min(self.search_max_results, self.max_target_count))
 
     @property
     def smtp_configured(self) -> bool:

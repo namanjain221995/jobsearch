@@ -275,3 +275,97 @@ def apply_ai_ranking(job: Job, ranking: dict, profile: Profile, resume_text: str
         job.reason = str(ranking["reason"])[:500]
     if ranking.get("experience_comparison"):
         job.experience_comparison = str(ranking["experience_comparison"])[:300]
+
+
+# ---------------------------------------------------------------- one 0-100 scale for every scorer
+# Three scorers can put a number on a job: OpenAI / Claude judging the posting against the profile ("ai"),
+# the company rerank model ("company_model") and the keyword scoring ("heuristic"). The 0-100 scale is the
+# rubric scale (skills 35 + title 25 + experience 20 + arrangement 10 + additional 10). The reranker returns an
+# unbounded-looking relevance between 0 and 1 that is not on that scale (measured: most values below 0.05, good
+# matches near 1), so it is never used as a score directly. It is calibrated per search against jobs that carry a
+# score on the rubric scale:
+# - with OpenAI / Claude: the jobs they judged in the same search are the anchors. The fit is monotone (isotonic
+#   regression): a higher relevance never maps to a lower score, and the result always lies between the lowest and
+#   highest anchor score. A job therefore passes the minimum-score bar only if jobs of the same relevance were
+#   scored above the bar by OpenAI / Claude;
+# - without them: the keyword scores of the same jobs are handed out again in the order of the model's relevance
+#   (redistribute_scores). The set of scores is unchanged, so exactly as many jobs pass the bar as with keyword
+#   scoring alone; the reranker only decides which ones.
+MIN_ANCHORS = 12
+SCORER_ORDER = {"ai": 0, "company_model": 1}      # everything else (keyword scores) comes after
+
+
+def fit_calibration(pairs: list[tuple[float, float]]):
+    """Monotone map from raw relevance to the 0-100 scale, fitted on (raw, reference score) pairs.
+    Returns a function, or None when there are too few anchors to fit anything honest."""
+    points = sorted((float(r), float(s)) for r, s in pairs if r == r and s == s)
+    if len(points) < MIN_ANCHORS:
+        return None
+    blocks: list[list[float]] = []                  # [sum_raw, sum_score, n]; pool adjacent violators
+    for raw, score in points:
+        blocks.append([raw, score, 1.0])
+        while len(blocks) > 1 and blocks[-2][1] / blocks[-2][2] > blocks[-1][1] / blocks[-1][2]:
+            last = blocks.pop()
+            blocks[-1] = [blocks[-1][0] + last[0], blocks[-1][1] + last[1], blocks[-1][2] + last[2]]
+    xs = [b[0] / b[2] for b in blocks]
+    ys = [b[1] / b[2] for b in blocks]
+
+    def to_scale(raw: float) -> int:
+        if raw <= xs[0]:
+            value = ys[0]
+        elif raw >= xs[-1]:
+            value = ys[-1]
+        else:
+            import bisect
+            i = bisect.bisect_right(xs, raw)
+            span = xs[i] - xs[i - 1]
+            value = ys[i - 1] if span <= 0 else ys[i - 1] + (ys[i] - ys[i - 1]) * (raw - xs[i - 1]) / span
+        return max(0, min(100, int(round(value))))
+
+    return to_scale
+
+
+def redistribute_scores(pairs: list[tuple[str, float, int]]) -> dict[str, int]:
+    """(job id, raw relevance, keyword score) -> job id -> score. The same scores, in the order of relevance:
+    the most relevant job gets the highest keyword score of the set, and so on (ties keep their keyword order)."""
+    order = sorted(pairs, key=lambda p: (p[1], p[2]))
+    scores = sorted(p[2] for p in pairs)
+    return {p[0]: s for p, s in zip(order, scores)}
+
+
+def apply_model_score(job: Job, raw: float, score: int, anchors: int, reference: str) -> None:
+    """Give a job its calibrated company-model score and say so. The component points stay the keyword estimate."""
+    keyword_total = sum(job.score_breakdown.values()) if job.score_breakdown else job.score
+    job.score = max(0, min(100, int(score)))
+    job.score_source = "company_model"
+    job.reason = (f"Score {job.score} from the company rerank model (relevance {raw:.2f}), put on the 0-100 scale by comparing it with "
+                  f"{anchors} jobs of this search that {reference}. Not judged by OpenAI or Claude. "
+                  f"The component points are the keyword estimate (total {keyword_total}). " + (job.reason or ""))[:500]
+
+
+def apply_explanation(job: Job, ranking: dict, profile: Profile, resume_text: str) -> None:
+    """Take the written part of a company-chat-model judgement (skills, reason); the score is left alone."""
+    scratch = job.model_copy()
+    apply_ai_ranking(scratch, ranking, profile, resume_text)
+    if scratch.score_source != "ai":                # the ranking was unusable
+        return
+    job.matching_skills, job.missing_skills = scratch.matching_skills, scratch.missing_skills
+    if ranking.get("experience_comparison"):
+        job.experience_comparison = scratch.experience_comparison
+    if ranking.get("reason"):
+        note = job.reason.split(" The component points")[0] if job.score_source == "company_model" else ""
+        job.reason = (f"{str(ranking['reason'])[:260]} (Explanation written by the company model. {note})".replace(" )", ")"))[:500]
+
+
+def best_matching_title(job_title: str, titles: list[str], related: list[str]) -> str:
+    """Which requested title or variant a posting title matched best (the note kept on every result)."""
+    best, score = "", 0.0
+    for t in titles:
+        r = title_relevance(job_title, t)
+        if r > score:
+            best, score = t, r
+    for t in related:
+        r = title_relevance(job_title, t) * 0.85
+        if r > score:
+            best, score = t, r
+    return best

@@ -58,7 +58,7 @@ function buildSchema(limits: SearchOptions["limits"]) {
       }, message);
   return z.object({
     mode: z.enum(["auto_assign", "review"]),
-    target_count: numberText(1, 500, "Enter a whole number between 1 and 500.", true).refine((value) => value !== "", "Enter how many jobs to look for per candidate."),
+    target_count: numberText(1, limits.max_target_count, `Enter a whole number between 1 and ${limits.max_target_count}.`, true).refine((value) => value !== "", "Enter how many jobs to look for per candidate."),
     min_match_score: numberText(0, 100, "Enter a whole number between 0 and 100.", true),
     deep_search: z.boolean(),
     job_titles: z.array(z.string()).max(8, "Keep it to 8 job titles."),

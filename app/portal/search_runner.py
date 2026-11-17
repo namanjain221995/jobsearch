@@ -53,9 +53,26 @@ def still_manages(is_active: bool | None, role: str | None, user_team_id, run_te
 
 
 def explanation_of(job: EngineJob) -> dict:
-    return {"score_breakdown": job.score_breakdown, "score_source": job.score_source, "matching_skills": job.matching_skills,
+    return {"score_breakdown": job.score_breakdown, "score_source": job.score_source, "matched_query": job.matched_query,
+            "matching_skills": job.matching_skills,
             "missing_skills": job.missing_skills, "reason": job.reason, "experience_comparison": job.experience_comparison,
             "authorization_status": job.authorization_status, "eligibility_note": job.eligibility_note}
+
+
+DISCOVERY_KEYS = ("title_variants", "searx_queries", "searx_cached", "searx_results", "searx_failed", "new_boards",
+                  "new_board_postings", "gained_by_source", "ai_leads", "ai_ranked", "company_model_scored",
+                  "company_model_explained", "ai_calls", "rounds", "stop_reason", "serp_calls", "serp_cached", "serp_jobs",
+                  "serp_listed", "serp_skipped", "tiny_searches", "tiny_fetches", "tiny_usd", "tiny_skipped")
+
+
+def discovery_of(state: SearchState) -> dict:
+    """What the wider-search features did for one candidate: real counters of the engine, nothing derived."""
+    out = {k: state.stats[k] for k in DISCOVERY_KEYS if k in state.stats}
+    if state.title_variants:
+        out["variants"] = list(state.title_variants)
+    if state.usage:
+        out["usage"] = state.usage
+    return out
 
 
 def post_filter(jobs: list[EngineJob], filters: dict) -> list[EngineJob]:
@@ -115,7 +132,7 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
     for t in targets:
         entry = {"candidate_id": str(t.candidate_id), "name": candidates[t.candidate_id].name if t.candidate_id in candidates else "",
                  "status": "queued", "stage": "", "message": "", "discovered": 0, "verified": 0, "duplicates": 0,
-                 "matched": 0, "assigned": 0, "already_assigned": 0, "warnings": []}
+                 "matched": 0, "assigned": 0, "already_assigned": 0, "warnings": [], "round": 1, "discovery": {}}
         if t.status == "completed":                        # finished in an earlier attempt: results are saved, keep them
             entry.update({k: v for k, v in (t.stats or {}).items() if k in entry}, status="completed")
         tracker[str(t.candidate_id)] = entry
@@ -177,7 +194,7 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
             entry["status"] = "running"
             filters = target.candidate_specific_filters or {}
             needs_buffer = bool(filters.get("excluded_companies") or filters.get("preferred_states"))
-            want = min(500, target_count * 2 if needs_buffer else target_count)
+            want = min(deps.settings.result_cap, target_count * 2 if needs_buffer else target_count)
             try:
                 request = SearchRequest(
                     resume_id="portal-candidate-search", job_titles=", ".join(filters.get("job_titles") or []),
@@ -185,7 +202,8 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
                     authorization=filters.get("work_authorization") or "Other / Prefer Not to Say",
                     sponsorship_needed=filters.get("sponsorship_needed") or "Unknown",
                     exclude_citizenship_required=bool(filters.get("exclude_citizenship_required")),
-                    result_count=want, work_mode=filters.get("work_mode") or "All", deep_search=deep)
+                    result_count=want, work_mode=filters.get("work_mode") or "All", deep_search=deep,
+                    locations=[str(s)[:60] for s in (filters.get("preferred_states") or [])][:30])
                 state = SearchState(f"{run_id}:{mid}", want)
                 states[mid] = state
                 await deps.engine.run(state, request, resumes.get(target.candidate_id) or synthetic_resume(filters, candidate))
@@ -207,8 +225,11 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
             entry = tracker[mid]
             entry.update(discovered=state.stats["total_discovered"], verified=state.stats["verified_active"],
                          duplicates=state.stats["rejected_duplicates"])
+            entry["round"] = int(state.stats.get("round") or 1)
+            entry["discovery"] = discovery_of(state)
             if entry["status"] == "running":
-                entry["stage"] = STAGE_LABELS.get(state.stage, state.stage)
+                label = STAGE_LABELS.get(state.stage, state.stage)
+                entry["stage"] = f"Round {entry['round']}: {label}" if entry["round"] > 1 else label
             entry["warnings"] = list(dict.fromkeys([*entry["warnings"], *state.warnings]))[:8]
             if sum(v.get("boards_ok", 0) for v in state.sources.values()) >= sum(v.get("boards_ok", 0) for v in sources.values()):
                 sources = {k: {x: y for x, y in v.items() if x != "errors"} for k, v in state.sources.items()}

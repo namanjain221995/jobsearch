@@ -1,0 +1,3 @@
+{"offset": 100, "limit": 100, "totalFound": 101,
+ "content": [{"id": "744000012345680", "name": "Remote Platform Engineer", "location": {"country": "us", "remote": true}},
+             {"id": "744000012345678", "name": "Machine Learning Engineer", "location": {"city": "Austin", "country": "us"}}]}

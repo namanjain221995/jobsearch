@@ -223,3 +223,22 @@ def seed_pairs() -> list[tuple[str, str]]:
             if lists[name]:
                 out.append((name, lists[name].pop(0)))
     return out
+
+
+# ---------------------------------------------------------------- extra board sources (app/providers/ats_extra.py)
+def extra_specs(include_disabled: bool = False) -> dict:
+    """Spec objects for the additional board readers, ready to merge into registry.SPECS:
+        SPECS.update(boards.extra_specs())
+    Only sources switched on by their setting are returned (both are off by default; see docs/board-sources.md)."""
+    from . import ats_extra
+    from .registry import Spec
+    out = {}
+    if include_disabled or ats_extra.SMARTRECRUITERS_ENABLED:
+        out["smartrecruiters"] = Spec("smartrecruiters", "SmartRecruiters", "board", ats_extra.fetch_smartrecruiters, keyed=True,
+                                      detail=ats_extra.detail_smartrecruiters, min_ttl=6 * 3600,
+                                      note="Employer boards, public SmartRecruiters posting API")
+    if include_disabled or ats_extra.BAMBOOHR_ENABLED:
+        out["bamboohr"] = Spec("bamboohr", "BambooHR", "board", ats_extra.fetch_bamboohr, keyed=True,
+                               detail=ats_extra.detail_bamboohr, min_ttl=6 * 3600,
+                               note="Employer boards, public BambooHR careers page feed")
+    return out

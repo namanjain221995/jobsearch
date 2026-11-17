@@ -105,7 +105,7 @@ const makeSchema = (saved: ExtraField[]) =>
     .object({
       watermark_enabled: z.boolean(),
       deep_search_default: z.boolean(),
-      default_target_count: whole(1, 500),
+      default_target_count: whole(1, 1000),
       default_min_match_score: whole(0, 100),
       max_members_per_search: whole(1, 50),
       max_results_per_search_run: whole(1, 5000),
@@ -447,7 +447,7 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
               label="Default results per candidate"
               inputMode="numeric"
               autoComplete="off"
-              description="What the search form starts with. 1 to 500."
+              description="What the search form starts with. 1 to 1000."
               error={errors.default_target_count?.message}
               {...form.register("default_target_count")}
             />

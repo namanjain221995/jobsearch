@@ -122,6 +122,7 @@ class UiSettings(Model):
     default_target_count: int = 50
     max_members_per_search: int = 10               # candidates per search run (the setting keeps its name)
     max_results_per_search_run: int = 500
+    max_target_count: int = 1000                   # most jobs per candidate one search may ask for (server limit; the form's upper bound)
     default_min_match_score: int = 50
     deep_search_default: bool = True
     password_min_length: int = 10
@@ -654,7 +655,7 @@ class SearchCreate(Model):
     candidate_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
     team_id: uuid.UUID | None = None               # every active candidate of this team
     mode: SearchMode = "auto_assign"
-    target_count: int = Field(default=50, ge=1, le=500)      # per candidate
+    target_count: int = Field(default=50, ge=1, le=1000)     # per candidate; the server's own ceiling (limits.max_target_count) may be lower
     deep_search: bool = True
     min_match_score: int | None = Field(default=None, ge=0, le=100)
     filters: SearchFilters = SearchFilters()
@@ -673,6 +674,8 @@ class SearchTargetOut(Model):
     assigned: int = 0
     filters: dict = {}
     warnings: list[str] = []
+    round: int = 1                                 # discovery round this candidate's search is in (or ended in)
+    discovery: dict = {}                           # title variants, search-engine queries, new boards, postings gained, rounds, stop reason, AI calls
 
 
 class SearchRunOut(Model):
@@ -715,7 +718,8 @@ class SearchCreated(Model):
 
 class MatchExplanation(Model):
     score_breakdown: dict = {}                     # skills /35, title /25, experience /20, arrangement /10, additional /10
-    score_source: str = ""                         # "ai" or "heuristic" (keyword based)
+    score_source: str = ""                         # "ai" (OpenAI / Claude), "company_model" (company rerank model, calibrated) or "heuristic" (keyword based)
+    matched_query: str = ""                        # the requested title or title variant this posting was found under
     matching_skills: list[str] = []
     missing_skills: list[str] = []
     reason: str = ""
@@ -1014,7 +1018,7 @@ class SettingsOut(Model):
 
 class SettingsUpdate(Model):
     watermark_enabled: bool | None = None
-    default_target_count: int | None = Field(default=None, ge=1, le=500)
+    default_target_count: int | None = Field(default=None, ge=1, le=1000)
     default_min_match_score: int | None = Field(default=None, ge=0, le=100)
     max_members_per_search: int | None = Field(default=None, ge=1, le=50)
     max_results_per_search_run: int | None = Field(default=None, ge=1, le=5000)

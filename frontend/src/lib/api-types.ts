@@ -1343,6 +1343,7 @@ export interface components {
              *       "authorization_status": "Unknown",
              *       "eligibility_note": "Not specified",
              *       "experience_comparison": "",
+             *       "matched_query": "",
              *       "matching_skills": [],
              *       "missing_skills": [],
              *       "reason": "",
@@ -2733,6 +2734,11 @@ export interface components {
              */
             experience_comparison: string;
             /**
+             * Matched Query
+             * @default
+             */
+            matched_query: string;
+            /**
              * Matching Skills
              * @default []
              */
@@ -3671,6 +3677,13 @@ export interface components {
              */
             discovered: number;
             /**
+             * Discovery
+             * @default {}
+             */
+            discovery: {
+                [key: string]: unknown;
+            };
+            /**
              * Duplicates
              * @default 0
              */
@@ -3694,6 +3707,11 @@ export interface components {
             message: string;
             /** Resume Id */
             resume_id?: string | null;
+            /**
+             * Round
+             * @default 1
+             */
+            round: number;
             /**
              * Stage
              * @default
@@ -4046,6 +4064,11 @@ export interface components {
              * @default 500
              */
             max_results_per_search_run: number;
+            /**
+             * Max Target Count
+             * @default 1000
+             */
+            max_target_count: number;
             /**
              * Password Min Length
              * @default 10

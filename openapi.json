@@ -376,6 +376,7 @@
        "authorization_status": "Unknown",
        "eligibility_note": "Not specified",
        "experience_comparison": "",
+       "matched_query": "",
        "matching_skills": [],
        "missing_skills": [],
        "reason": "",
@@ -3543,6 +3544,11 @@
       "title": "Experience Comparison",
       "type": "string"
      },
+     "matched_query": {
+      "default": "",
+      "title": "Matched Query",
+      "type": "string"
+     },
      "matching_skills": {
       "default": [],
       "items": {
@@ -5216,7 +5222,7 @@
      },
      "target_count": {
       "default": 50,
-      "maximum": 500.0,
+      "maximum": 1000.0,
       "minimum": 1.0,
       "title": "Target Count",
       "type": "integer"
@@ -5725,6 +5731,12 @@
       "title": "Discovered",
       "type": "integer"
      },
+     "discovery": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Discovery",
+      "type": "object"
+     },
      "duplicates": {
       "default": 0,
       "title": "Duplicates",
@@ -5757,6 +5769,11 @@
        }
       ],
       "title": "Resume Id"
+     },
+     "round": {
+      "default": 1,
+      "title": "Round",
+      "type": "integer"
      },
      "stage": {
       "default": "",
@@ -5954,7 +5971,7 @@
      "default_target_count": {
       "anyOf": [
        {
-        "maximum": 500.0,
+        "maximum": 1000.0,
         "minimum": 1.0,
         "type": "integer"
        },
@@ -6498,6 +6515,11 @@
      "max_results_per_search_run": {
       "default": 500,
       "title": "Max Results Per Search Run",
+      "type": "integer"
+     },
+     "max_target_count": {
+      "default": 1000,
+      "title": "Max Target Count",
       "type": "integer"
      },
      "password_min_length": {

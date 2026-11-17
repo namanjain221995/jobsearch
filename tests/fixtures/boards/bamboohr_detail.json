@@ -1,0 +1,34 @@
+{
+ "meta": {},
+ "result": {
+  "jobOpening": {
+   "jobOpeningShareUrl": "https://10squared.bamboohr.com/careers/28",
+   "jobOpeningName": "Senior Coach ",
+   "jobOpeningStatus": "Open",
+   "jobCategoryId": null,
+   "departmentId": "18605",
+   "departmentLabel": "Coaching Team",
+   "employmentStatusLabel": "Full-Time",
+   "employmentType": null,
+   "location": {
+    "city": "Austin",
+    "state": "Texas",
+    "postalCode": "78704",
+    "addressCountry": "United States"
+   },
+   "atsLocation": {
+    "country": null,
+    "countryId": null,
+    "state": null,
+    "city": null
+   },
+   "description": "<p>WHO WE ARE</p><p>Based in Austin, Texas. (Recorded 2026-11-18; description shortened.)</p>",
+   "compensation": "110,000-130,000",
+   "datePosted": "2024-11-20",
+   "minimumExperience": "Experienced",
+   "locationType": "0",
+   "seekPromoted": false,
+   "aiProcessingDisclosureEnabled": false
+  }
+ }
+}
