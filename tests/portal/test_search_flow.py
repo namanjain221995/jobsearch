@@ -25,12 +25,12 @@ async def wait_done(world, client, run_id, timeout=60):
 
 async def test_tl_search_auto_assigns_only_to_selected_members(world):
     tl = await world.as_tl("alpha")
-    a1, a2 = str(world.ids["member_a1"]), str(world.ids["member_a2"])
-    started = await tl.post("/api/searches", json={"member_ids": [a1], "target_count": 10, "deep_search": False})
+    a1, a2 = str(world.ids["cand_a1"]), str(world.ids["cand_a2"])
+    started = await tl.post("/api/searches", json={"candidate_ids": [a1], "target_count": 10, "deep_search": False})
     assert started.status_code == 202, started.text                    # acknowledged immediately with an id
     body = started.json()
     run_id = body["search"]["id"]
-    assert body["search"]["status"] in ("queued", "running") and body["skipped"] == [] and body["search"]["member_count"] == 1
+    assert body["search"]["status"] in ("queued", "running") and body["skipped"] == [] and body["search"]["candidate_count"] == 1
     run = await wait_done(world, tl, run_id)
     assert run["status"] == "completed" and run["matched_count"] == 10 and run["assigned_count"] == 10
     assert run["discovered_count"] == 24 and run["verified_count"] >= 10 and run["targets"][0]["matched"] == 10
@@ -51,17 +51,19 @@ async def test_tl_search_auto_assigns_only_to_selected_members(world):
     assert (await (await world.as_member("a2")).get("/api/assignments")).json()["total"] == 0        # not selected: gets nothing
     assert (await (await world.as_member("b1")).get("/api/assignments")).json()["total"] == 0
     note = (await member.get("/api/notifications")).json()["items"][0]
-    assert note["type"] == "jobs_assigned" and note["payload"]["count"] == 10
+    assert note["type"] == "candidate_jobs_assigned" and note["payload"]["count"] == 10
+    assert note["payload"]["candidate_id"] == a1 and note["payload"]["candidate_name"] == "Candidate A1"
+    assert all(a["candidate"]["name"] == "Candidate A1" and a["member"]["name"] == "Member A1" for a in mine["items"])
     assert (await tl.get("/api/notifications")).json()["items"][0]["type"] == "search_finished"
 
     # Searching again never duplicates an assignment; the same job may go to another qualifying member.
-    again = await tl.post("/api/searches", json={"member_ids": [a1, a2], "target_count": 10, "deep_search": False})
+    again = await tl.post("/api/searches", json={"candidate_ids": [a1, a2], "target_count": 10, "deep_search": False})
     second = await wait_done(world, tl, again.json()["search"]["id"])
-    per_member = {t["member"]["name"]: t for t in second["targets"]}
-    assert per_member["Member A1"]["assigned"] == 0 and per_member["Member A2"]["assigned"] == 10 and second["assigned_count"] == 10
+    per_candidate = {t["candidate"]["name"]: t for t in second["targets"]}
+    assert per_candidate["Candidate A1"]["assigned"] == 0 and per_candidate["Candidate A2"]["assigned"] == 10 and second["assigned_count"] == 10
     assert CALLS[GH] == 1                                              # second run reused the index: no refetch
     async with world.sessions() as db:
-        rows = (await db.execute(select(JobAssignment.job_id, JobAssignment.member_id))).all()
+        rows = (await db.execute(select(JobAssignment.job_id, JobAssignment.candidate_id))).all()
         assert len(rows) == 20 == len(set(rows))
         assert (await db.execute(select(JobPosting))).scalars().all().__len__() == 10                # one global row per vacancy
     team = (await tl.get(f"/api/teams/{world.ids['team_alpha']}/analytics")).json()
@@ -72,16 +74,16 @@ async def test_tl_search_auto_assigns_only_to_selected_members(world):
 
 async def test_search_scope_and_validation(world):
     tl = await world.as_tl("alpha")
-    b1 = str(world.ids["member_b1"])
-    assert (await tl.post("/api/searches", json={"member_ids": [b1]})).status_code == 403                 # other team's member
+    b1 = str(world.ids["cand_b1"])
+    assert (await tl.post("/api/searches", json={"candidate_ids": [b1]})).status_code == 403                 # other team's member
     assert (await tl.post("/api/searches", json={"team_id": str(world.ids["team_beta"])})).status_code == 403
-    assert (await tl.post("/api/searches", json={"member_ids": []})).status_code == 422
-    assert (await tl.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"])], "target_count": 0})).status_code == 422
-    too_many = await tl.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"]), str(world.ids["member_a2"])], "target_count": 400})
+    assert (await tl.post("/api/searches", json={"candidate_ids": []})).status_code == 422
+    assert (await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 0})).status_code == 422
+    too_many = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"]), str(world.ids["cand_a2"])], "target_count": 400})
     assert too_many.status_code == 422 and "limit" in too_many.json()["error"]
     admin = await world.as_admin()
     started = await admin.post("/api/searches", json={"team_id": str(world.ids["team_beta"]), "target_count": 3, "deep_search": False})
-    assert started.status_code == 202 and started.json()["search"]["member_count"] == 2 and started.json()["search"]["team"]["name"] == "Team Beta"
+    assert started.status_code == 202 and started.json()["search"]["candidate_count"] == 2 and started.json()["search"]["team"]["name"] == "Team Beta"
     run = await wait_done(world, admin, started.json()["search"]["id"])
     assert run["assigned_count"] == 6
     assert (await tl.get(f"/api/searches/{run['id']}")).status_code == 403                               # Alpha's lead cannot read Beta's run
@@ -93,44 +95,44 @@ async def test_search_scope_and_validation(world):
 
 async def test_review_mode_then_bulk_assign(world):
     tl = await world.as_tl("alpha")
-    a1, a2 = str(world.ids["member_a1"]), str(world.ids["member_a2"])
-    started = await tl.post("/api/searches", json={"member_ids": [a1, a2], "mode": "review", "target_count": 5, "deep_search": False,
+    a1, a2 = str(world.ids["cand_a1"]), str(world.ids["cand_a2"])
+    started = await tl.post("/api/searches", json={"candidate_ids": [a1, a2], "mode": "review", "target_count": 5, "deep_search": False,
                                                    "filters": {"job_titles": ["AI Engineer", "Machine Learning Engineer"]}})
     run = await wait_done(world, tl, started.json()["search"]["id"])
     assert run["status"] == "completed" and run["mode"] == "review" and run["matched_count"] == 10 and run["assigned_count"] == 0
     assert (await (await world.as_member("a1")).get("/api/assignments")).json()["total"] == 0             # nothing assigned yet
-    results = (await tl.get(f"/api/searches/{run['id']}/results", params={"member_id": a1})).json()
+    results = (await tl.get(f"/api/searches/{run['id']}/results", params={"candidate_id": a1})).json()
     assert results["total"] == 5 and [r["rank"] for r in results["items"]] == [1, 2, 3, 4, 5]
     assert all(r["assignment_id"] is None and r["match"]["reason"] and r["job"]["canonical_url"].startswith("https://") for r in results["items"])
     chosen = [r["job"]["id"] for r in results["items"][:2]]
-    assigned = await tl.post("/api/assignments/bulk", json={"job_ids": chosen, "member_ids": [a1, a2], "search_run_id": run["id"]})
+    assigned = await tl.post("/api/assignments/bulk", json={"job_ids": chosen, "candidate_ids": [a1, a2], "search_run_id": run["id"]})
     assert assigned.status_code == 201 and assigned.json()["created"] == 4
-    after = (await tl.get(f"/api/searches/{run['id']}/results", params={"member_id": a1})).json()["items"]
+    after = (await tl.get(f"/api/searches/{run['id']}/results", params={"candidate_id": a1})).json()["items"]
     assert [bool(r["assignment_id"]) for r in after] == [True, True, False, False, False]
     mine = (await (await world.as_member("a1")).get("/api/assignments")).json()
     assert mine["total"] == 2 and all(a["match_score"] is not None and a["source"] == "search" for a in mine["items"])
     # A Team Lead of another team cannot assign these jobs: they never appeared in that team's scope.
-    assert (await (await world.as_tl("beta")).post("/api/assignments", json={"job_id": chosen[0], "member_id": str(world.ids["member_b1"])})).status_code == 403
+    assert (await (await world.as_tl("beta")).post("/api/assignments", json={"job_id": chosen[0], "candidate_id": str(world.ids["cand_b1"])})).status_code == 403
 
 
 async def test_members_without_resume_or_titles_are_reported_not_searched(world):
-    from app.portal.models import MemberProfile, Resume
+    from app.portal.models import CandidateProfile
     async with world.sessions() as db:
-        await db.execute(update(MemberProfile).where(MemberProfile.user_id == world.ids["member_a2"]).values(desired_titles=[]))
+        await db.execute(update(CandidateProfile).where(CandidateProfile.candidate_id == world.ids["cand_a2"]).values(desired_titles=[]))
         await db.commit()
     tl = await world.as_tl("alpha")
-    started = await tl.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"]), str(world.ids["member_a2"])], "target_count": 2, "deep_search": False})
+    started = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"]), str(world.ids["cand_a2"])], "target_count": 2, "deep_search": False})
     assert started.status_code == 202
-    assert [s["member"]["name"] for s in started.json()["skipped"]] == ["Member A2"] and "job title" in started.json()["skipped"][0]["reason"]
+    assert [s["candidate"]["name"] for s in started.json()["skipped"]] == ["Candidate A2"] and "job title" in started.json()["skipped"][0]["reason"]
     run = await wait_done(world, tl, started.json()["search"]["id"])
-    assert run["member_count"] == 1 and run["assigned_count"] == 2
-    only = await tl.post("/api/searches", json={"member_ids": [str(world.ids["member_a2"])], "deep_search": False})
+    assert run["candidate_count"] == 1 and run["assigned_count"] == 2
+    only = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a2"])], "deep_search": False})
     assert only.status_code == 422                                     # nothing searchable: refused, not silently empty
 
 
 async def test_low_scores_are_not_assigned_to_fill_the_quota(world):
     tl = await world.as_tl("alpha")
-    started = await tl.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"])], "target_count": 50, "min_match_score": 101 - 1,
+    started = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 50, "min_match_score": 101 - 1,
                                                    "deep_search": False})
     run = await wait_done(world, tl, started.json()["search"]["id"])
     # The fixtures hold 18 qualifying US postings: 50 were asked for, 18 real matches is what is reported.
@@ -149,7 +151,7 @@ async def test_cancel_and_restart_recovery(world):
         return await original(state, req, resume)
 
     world.engine.run = slow
-    started = await tl.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"])], "target_count": 5, "deep_search": False})
+    started = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 5, "deep_search": False})
     run_id = started.json()["search"]["id"]
     for _ in range(50):
         if (await tl.get(f"/api/searches/{run_id}")).json()["status"] == "running":
@@ -177,7 +179,7 @@ async def test_deep_search_leads_are_verified_and_progress_is_streamed(world, mo
         Candidate(url="https://careers.example.com/jobs/gone", title="AI Engineer", company="Example", provider="Claude", cited=True),
     ]
     admin = await world.as_admin()
-    started = await admin.post("/api/searches", json={"member_ids": [str(world.ids["member_b1"])], "target_count": 50, "deep_search": True,
+    started = await admin.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_b1"])], "target_count": 50, "deep_search": True,
                                                       "filters": {"job_titles": ["AI Engineer", "Machine Learning Engineer"]}})
     run = await wait_done(world, admin, started.json()["search"]["id"])
     assert run["status"] == "completed"

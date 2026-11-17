@@ -26,11 +26,17 @@ export function TeamMembersView() {
     <>
       <PageHeader
         title="Team Members"
-        description="Who is on your team, whether their resume is in, and how far each of them is with the jobs assigned to them."
+        description="The members of your team: how many candidates each is responsible for, and how far they are with those candidates' jobs."
         actions={add}
       />
       {me.team ? (
-        <MemberTable listState={listState} teamId={me.team.id} memberHref={(id) => `/tl/members/${id}`} emptyAction={add} />
+        <MemberTable
+          listState={listState}
+          teamId={me.team.id}
+          memberHref={(id) => `/tl/members/${id}`}
+          candidatesHref={(user) => `/tl/candidates?member=${user.id}`}
+          emptyAction={add}
+        />
       ) : (
         <div className="rounded-lg border bg-card">
           <ErrorState error={new Error("You are not assigned to a team yet. Ask an Admin to make you the Team Lead of a team.")} />
@@ -55,10 +61,16 @@ export function AdminMembersView() {
     <>
       <PageHeader
         title="Members"
-        description="Every member in every team, with their resume state and application figures."
+        description="Every member in every team: the candidates each is responsible for, and the figures over those candidates' jobs."
         actions={add}
       />
-      <MemberTable listState={listState} showTeam memberHref={(id) => `/admin/members/${id}`} emptyAction={add} />
+      <MemberTable
+        listState={listState}
+        showTeam
+        memberHref={(id) => `/admin/members/${id}`}
+        candidatesHref={(user) => `/admin/candidates?${user.team ? `team=${user.team.id}&` : ""}member=${user.id}`}
+        emptyAction={add}
+      />
       <InvitationDialog open={inviting} onOpenChange={setInviting} preset={{ role: "MEMBER" }} />
     </>
   );

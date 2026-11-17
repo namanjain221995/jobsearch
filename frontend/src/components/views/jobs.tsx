@@ -90,7 +90,7 @@ function VerifyAction({ job }: { job: JobListItem }) {
 /**
  * Job postings. An Admin sees every posting; a Team Lead only those their team
  * has, was sent, or found (GET /api/jobs decides). One posting is one row,
- * however many members have it.
+ * however many candidates have it.
  */
 export function JobsTable({ listState }: { listState: ListState<JobListState> }) {
   const me = useMe();
@@ -175,7 +175,7 @@ export function JobsTable({ listState }: { listState: ListState<JobListState> })
               }}
             >
               <ClipboardCheck />
-              Assign to Members
+              Assign to Candidates
             </DropdownMenuItem>
             {isAdmin && (
               <DropdownMenuItem
@@ -245,7 +245,7 @@ export function JobsTable({ listState }: { listState: ListState<JobListState> })
             )}
             <Button onClick={() => setDialog("members")}>
               <ClipboardCheck data-icon="inline-start" />
-              Assign to Members
+              Assign to Candidates
             </Button>
           </div>
         </div>
@@ -354,7 +354,7 @@ export function AdminJobsView() {
     <>
       <PageHeader
         title="Jobs"
-        description="Every job posting in the portal, counted once however many members have it. Select jobs to send them to a team's queue or straight to members."
+        description="Every job posting in the portal, counted once however many candidates have it. Select jobs to send them to a team's queue or straight to candidates."
         actions={
           <>
             <Button variant="outline" onClick={() => setDialog("csv")}>
@@ -397,7 +397,7 @@ const QUEUE_FILTERS = [
 
 /**
  * The jobs an Admin sent to a team (GET /api/teams/{id}/queue). Waiting jobs can
- * be ticked and distributed to members, or dismissed; a dismissed job can be
+ * be ticked and distributed to candidates, or dismissed; a dismissed job can be
  * put back.
  */
 export function TeamQueue({ teamId }: { teamId: string }) {
@@ -501,7 +501,7 @@ export function TeamQueue({ teamId }: { teamId: string }) {
           )}
           <Button disabled={picked.size === 0} onClick={() => setAssigning(true)}>
             <ClipboardCheck data-icon="inline-start" />
-            Distribute to Members{picked.size > 0 ? ` (${picked.size})` : ""}
+            Distribute to Candidates{picked.size > 0 ? ` (${picked.size})` : ""}
           </Button>
         </div>
       </FilterBar>
@@ -534,7 +534,7 @@ export function TeamQueue({ teamId }: { teamId: string }) {
             title={status === "pending" ? "No jobs are waiting" : "Nothing here"}
             description={
               status === "pending"
-                ? "When an Admin sends jobs to this team, they wait here until they are handed to members."
+                ? "When an Admin sends jobs to this team, they wait here until they are handed to candidates."
                 : "No queue entries with this status."
             }
           />
@@ -621,7 +621,7 @@ export function TeamJobsView() {
     <>
       <PageHeader
         title="Pending Jobs"
-        description="Jobs your Admin sent to your team wait here until you hand them to members. Team Jobs lists every job your team has, was sent, or found."
+        description="Jobs your Admin sent to your team wait here until you hand them to candidates. Team Jobs lists every job your team has, was sent, or found."
         actions={
           <SegmentedFilter
             label="View"

@@ -28,7 +28,7 @@ const STATUS_VIEW: Record<string, { label: string; tone: Tone; icon: LucideIcon;
   skipped: { label: "Skipped", tone: "neutral", icon: SkipForward },
 };
 
-/** Status of a whole search run, or of one member inside it. */
+/** Status of a whole search run, or of one candidate inside it. */
 export function SearchStatusTag({ status, cancelling = false }: { status: string; cancelling?: boolean }) {
   const view = STATUS_VIEW[status];
   if (!view) return <Tag>{humanize(status)}</Tag>;
@@ -47,7 +47,7 @@ export function searchStatusLabel(status: string): string {
 /**
  * Shown only for a run that was started more than once: the background worker
  * restarted while it ran, and the run went back to "queued" and continued with
- * the members that were not finished. That is a normal course, not a failure.
+ * the candidates that were not finished. That is a normal course, not a failure.
  */
 export function RunAttempts({ run }: { run: SearchRun }) {
   if (run.attempts < 2) return null;
@@ -84,37 +84,37 @@ function Counter({ label, value, definition, className }: { label: string; value
  * many postings it will find.
  */
 export function RunCounters({ run, className }: { run: SearchRun; className?: string }) {
-  const requested = run.target_count * Math.max(1, run.member_count);
+  const requested = run.target_count * Math.max(1, run.candidate_count);
   return (
     <dl className={cn("grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3 lg:grid-cols-6", className)}>
       <Counter
         label="Requested"
         value={requested.toLocaleString()}
-        definition={`${run.target_count} per member, for ${plural(run.member_count, "member")}. This is an upper limit, not a promise: only real postings that match are returned.`}
+        definition={`${run.target_count} per candidate, for ${plural(run.candidate_count, "candidate")}. This is an upper limit, not a promise: only real postings that match are returned.`}
       />
       <Counter
         label="Discovered"
         value={run.discovered_count.toLocaleString()}
-        definition="Postings examined. With several members this is the largest figure of any one member."
+        definition="Postings examined. With several candidates this is the largest figure of any one candidate."
       />
       <Counter
         label="Verified"
         value={run.verified_count.toLocaleString()}
-        definition="Postings confirmed as live, in the United States and not a duplicate. The largest figure of any one member."
+        definition="Postings confirmed as live, in the United States and not a duplicate. The largest figure of any one candidate."
       />
       <Counter
         label="Duplicates removed"
         value={run.duplicate_count.toLocaleString()}
         definition="Copies of a posting already found from another source."
       />
-      <Counter label="Matched" value={run.matched_count.toLocaleString()} definition="Results kept, added up over all members." />
+      <Counter label="Matched" value={run.matched_count.toLocaleString()} definition="Results kept, added up over all candidates." />
       <Counter
         label="Assigned"
         value={run.assigned_count.toLocaleString()}
         definition={
           run.mode === "review"
-            ? "Assignments created, added up over all members. In review mode nothing is assigned until you choose jobs on the results page."
-            : "Assignments created, added up over all members. Jobs below the minimum match score are kept as results but not assigned."
+            ? "Assignments created, added up over all candidates. In review mode nothing is assigned until you choose jobs on the results page."
+            : "Assignments created, added up over all candidates. Jobs below the minimum match score are kept as results but not assigned."
         }
       />
     </dl>
@@ -166,7 +166,7 @@ export function RunSources({ sources }: { sources: SearchRun["sources"] }) {
   );
 }
 
-/* ------------------------------------------------------------------ members */
+/* ------------------------------------------------------------------ candidates */
 
 function TargetFigures({ target }: { target: SearchTarget }) {
   const cells: Array<[string, number]> = [
@@ -188,16 +188,16 @@ function TargetFigures({ target }: { target: SearchTarget }) {
   );
 }
 
-/** One block per member in the run: where their search is, what it found, and any warnings. */
+/** One block per candidate in the run: where their search is, what it found, and any warnings. */
 export function RunTargets({ targets, renderAction }: { targets: SearchTarget[]; renderAction?: (target: SearchTarget) => ReactNode }) {
-  if (targets.length === 0) return <p className="text-sm text-muted-foreground">No members in this search.</p>;
+  if (targets.length === 0) return <p className="text-sm text-muted-foreground">No candidates in this search.</p>;
   return (
     <ul className="flex flex-col divide-y rounded-lg border">
       {targets.map((target) => (
-        <li key={target.member.id} className="flex flex-col gap-2.5 px-3 py-3">
+        <li key={target.candidate.id} className="flex flex-col gap-2.5 px-3 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium">{target.member.name}</span>
+              <span className="truncate text-sm font-medium">{target.candidate.name}</span>
               <span className="truncate text-2sm text-muted-foreground">
                 {target.message || target.stage || (target.status === "queued" ? "Waiting to start" : "")}
               </span>
@@ -250,18 +250,18 @@ export function RunWarnings({ run }: { run: SearchRun }) {
   );
 }
 
-/** Members that were selected but cannot be searched, each with the API's reason. */
+/** Candidates that were selected but cannot be searched, each with the API's reason. */
 export function SkippedList({ skipped }: { skipped: SearchSkipped[] }) {
   if (skipped.length === 0) return null;
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-warning/40 bg-warning/8 px-3 py-2">
       <p className="text-sm font-medium">
-        {plural(skipped.length, "selected member")} {skipped.length === 1 ? "was" : "were"} left out of this search
+        {plural(skipped.length, "selected candidate")} {skipped.length === 1 ? "was" : "were"} left out of this search
       </p>
       <ul className="flex flex-col gap-1">
         {skipped.map((item) => (
-          <li key={item.member.id} className="text-sm">
-            <span className="font-medium">{item.member.name}:</span> <span className="text-muted-foreground">{item.reason}</span>
+          <li key={item.candidate.id} className="text-sm">
+            <span className="font-medium">{item.candidate.name}:</span> <span className="text-muted-foreground">{item.reason}</span>
           </li>
         ))}
       </ul>
@@ -290,14 +290,14 @@ function filterValue(value: unknown): string {
   return String(value);
 }
 
-/** The settings a search ran with. An override the launcher left empty used each member's saved value. */
+/** The settings a search ran with. An override the launcher left empty used each candidate's saved value. */
 export function RunSettings({ run }: { run: SearchRun }) {
   const overrides = Object.entries(run.filters as Record<string, unknown>).filter(([, value]) => value !== null && value !== undefined);
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 text-sm">
       <dt className="text-muted-foreground">Mode</dt>
       <dd>{MODE_LABELS[run.mode]}</dd>
-      <dt className="text-muted-foreground">Results per member</dt>
+      <dt className="text-muted-foreground">Results per candidate</dt>
       <dd className="tabular-nums">{run.target_count}</dd>
       <dt className="text-muted-foreground">Minimum match score</dt>
       <dd className="tabular-nums">{run.min_match_score}</dd>
@@ -307,7 +307,7 @@ export function RunSettings({ run }: { run: SearchRun }) {
         <>
           <dt className="text-muted-foreground">Attempts</dt>
           <dd>
-            {run.attempts}. The background worker restarted while this search ran, and it resumed with the members
+            {run.attempts}. The background worker restarted while this search ran, and it resumed with the candidates
             that were not finished.
           </dd>
         </>
@@ -315,7 +315,7 @@ export function RunSettings({ run }: { run: SearchRun }) {
       {overrides.length === 0 ? (
         <>
           <dt className="text-muted-foreground">Overrides</dt>
-          <dd>None. Every member was searched with their own saved profile.</dd>
+          <dd>None. Every candidate was searched with their own saved profile.</dd>
         </>
       ) : (
         overrides.map(([key, value]) => (

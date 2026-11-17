@@ -316,7 +316,7 @@ function JobFields({
             inputMode="url"
             autoComplete="off"
             placeholder="https://"
-            description="Members open this through Open Job. They never see the address itself."
+            description="Members open this through Open Job when they apply for a candidate. They never see the address itself."
             error={errors.canonical_url?.message}
             {...form.register("canonical_url")}
           />

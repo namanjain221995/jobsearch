@@ -10,6 +10,7 @@ import { z } from "@/lib/zod";
 
 import { FormField, FormMessage, TextField } from "@/components/shared/form-fields";
 import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
+import { Tag } from "@/components/shared/status-badge";
 import { TagInput } from "@/components/shared/tag-input";
 import { useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ import {
   WORK_MODE_LABELS,
   WORK_MODES,
 } from "@/lib/options";
-import { qk, useProfile, useUpdateProfile } from "@/lib/queries";
+import { qk, useCandidateProfile, useUpdateCandidateProfile } from "@/lib/queries";
 import type { ExtraField, Profile, ProfileIn } from "@/lib/types";
 
 const numberText = (max: number, message: string, integer = false) =>
@@ -342,12 +343,12 @@ function ExtraAnswerField({ field, form, error }: { field: ExtraField; form: Use
   );
 }
 
-function Editor({ profile, memberId, onBehalfOf }: { profile: Profile; memberId: string; onBehalfOf?: string }) {
+function Editor({ profile, candidateId, candidateName }: { profile: Profile; candidateId: string; candidateName: string }) {
   const switchId = useId();
   const client = useQueryClient();
   // The extra fields the Admin defined, the same list for everyone (GET /api/auth/me).
   const fields = useMe().settings.profile_extra_fields;
-  const save = useUpdateProfile(memberId);
+  const save = useUpdateCandidateProfile(candidateId);
   const schema = useMemo(() => buildSchema(fields), [fields]);
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: toValues(profile, fields) });
   const { errors, isDirty } = form.formState;
@@ -376,7 +377,7 @@ function Editor({ profile, memberId, onBehalfOf }: { profile: Profile; memberId:
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
-      <Group title="What to look for" description="Searches use these to find and rank jobs.">
+      <Group title="What to look for" description="Searches for this candidate use these to find and rank jobs.">
         <Controller
           control={form.control}
           name="desired_titles"
@@ -606,7 +607,7 @@ function Editor({ profile, memberId, onBehalfOf }: { profile: Profile; memberId:
 
       <div className="flex flex-wrap items-center justify-end gap-3 border-t pt-4">
         {failure && <FormMessage className="mr-auto">{errorMessage(save.error)}</FormMessage>}
-        {onBehalfOf && <span className="mr-auto text-2sm text-muted-foreground">You are editing {onBehalfOf}&apos;s profile.</span>}
+        {!failure && <span className="mr-auto text-2sm text-muted-foreground">Searches for {candidateName} use this profile.</span>}
         {isDirty && (
           <Button type="button" variant="ghost" onClick={() => form.reset()} disabled={save.isPending}>
             Discard changes
@@ -621,10 +622,145 @@ function Editor({ profile, memberId, onBehalfOf }: { profile: Profile; memberId:
   );
 }
 
-/** A member's search profile: what jobs to look for, where, and under which work authorization. */
-export function ProfileForm({ memberId, onBehalfOf }: { memberId: string; onBehalfOf?: string }) {
-  const profile = useProfile(memberId);
+/** A candidate's job-search profile: what jobs to look for, where, and under which work authorization. Managers edit it. */
+export function ProfileForm({ candidateId, candidateName }: { candidateId: string; candidateName: string }) {
+  const profile = useCandidateProfile(candidateId);
   if (profile.isPending) return <LoadingSkeleton variant="form" count={5} />;
   if (profile.isError) return <ErrorState compact error={profile.error} onRetry={() => profile.refetch()} />;
-  return <Editor key={memberId} profile={profile.data} memberId={memberId} onBehalfOf={onBehalfOf} />;
+  return <Editor key={candidateId} profile={profile.data} candidateId={candidateId} candidateName={candidateName} />;
+}
+
+/** How complete a candidate's profile is, loaded on its own (beside the form). */
+export function CandidateProfileCompletion({ candidateId }: { candidateId: string }) {
+  const profile = useCandidateProfile(candidateId);
+  if (profile.isPending) return <LoadingSkeleton variant="form" count={1} />;
+  if (profile.isError) return <ErrorState compact error={profile.error} onRetry={() => profile.refetch()} />;
+  return <ProfileCompletion profile={profile.data} />;
+}
+
+/* ------------------------------------------------------------------ read-only */
+
+const NOT_SET = "Not set";
+
+function FactList({ facts }: { facts: Array<{ label: string; value: React.ReactNode }> }) {
+  return (
+    <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+      {facts.map((fact) => (
+        <div key={fact.label} className="flex min-w-0 flex-col gap-1">
+          <dt className="text-2sm text-muted-foreground">{fact.label}</dt>
+          <dd className="text-sm break-words">{fact.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function TagList({ items }: { items: string[] }) {
+  if (items.length === 0) return <span className="text-muted-foreground">{NOT_SET}</span>;
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <li key={item}>
+          <Tag className="h-auto min-h-5.5 max-w-full whitespace-normal">{item}</Tag>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A short line of the facts that decide which jobs fit: titles, experience, where, work authorization. */
+export function profileHeadline(profile: Profile): string[] {
+  const parts: string[] = [];
+  if (profile.desired_titles.length > 0) parts.push(profile.desired_titles.slice(0, 2).join(", ") + (profile.desired_titles.length > 2 ? ` +${profile.desired_titles.length - 2}` : ""));
+  if (profile.years_experience !== null && profile.years_experience !== undefined) {
+    parts.push(`${profile.years_experience} ${profile.years_experience === 1 ? "year" : "years"} of experience`);
+  }
+  const mode = WORK_MODE_LABELS[oneOf(WORK_MODES, profile.work_mode, "All")];
+  const places = [...profile.preferred_cities, ...profile.preferred_states];
+  parts.push(places.length > 0 ? `${mode}: ${places.slice(0, 3).join(", ")}${places.length > 3 ? ` +${places.length - 3}` : ""}` : mode);
+  if (profile.work_authorization && profile.work_authorization !== "Other / Prefer Not to Say") parts.push(profile.work_authorization);
+  return parts;
+}
+
+/**
+ * A candidate's profile as the responsible member reads it: the same facts the form holds,
+ * with nothing to edit. The extra fields the Admin defined are shown with their answers.
+ */
+export function ProfileFacts({ candidateId }: { candidateId: string }) {
+  const profile = useCandidateProfile(candidateId);
+  const fields = useMe().settings.profile_extra_fields;
+  if (profile.isPending) return <LoadingSkeleton variant="form" count={4} />;
+  if (profile.isError) return <ErrorState compact error={profile.error} onRetry={() => profile.refetch()} />;
+  const data = profile.data;
+  const stored = data.extra ?? {};
+  const answered = fields
+    .map((field) => ({ field, text: extraAnswerText(field, Object.hasOwn(stored, field.key) ? stored[field.key] : undefined) }))
+    .map(({ field, text }) => ({
+      label: field.label,
+      value: text === "" ? <span className="text-muted-foreground">No answer</span> : text === EXTRA_YES && field.type === "yes_no" ? "Yes" : text === EXTRA_NO && field.type === "yes_no" ? "No" : text,
+    }));
+
+  return (
+    <div className="flex flex-col gap-6">
+      <FactList
+        facts={[
+          { label: "Desired job titles", value: <TagList items={data.desired_titles} /> },
+          {
+            label: "Experience",
+            value:
+              data.years_experience === null || data.years_experience === undefined ? (
+                <span className="text-muted-foreground">{NOT_SET}</span>
+              ) : (
+                `${data.years_experience} ${data.years_experience === 1 ? "year" : "years"}${data.seniority ? `, ${data.seniority}` : ""}`
+              ),
+          },
+          { label: "Work arrangement", value: WORK_MODE_LABELS[oneOf(WORK_MODES, data.work_mode, "All")] },
+          { label: "Preferred states", value: <TagList items={data.preferred_states} /> },
+          { label: "Preferred cities", value: <TagList items={data.preferred_cities} /> },
+          { label: "Work authorization in the United States", value: data.work_authorization },
+          { label: "Visa sponsorship", value: SPONSORSHIP_LABELS[oneOf(SPONSORSHIP, data.sponsorship_needed, "Unknown")] },
+          {
+            label: "Jobs that require US citizenship",
+            value: data.exclude_citizenship_required ? "Left out of searches" : "Kept in searches",
+          },
+          {
+            label: "Minimum salary (per year)",
+            value:
+              data.salary_min === null || data.salary_min === undefined ? (
+                <span className="text-muted-foreground">{NOT_SET}</span>
+              ) : (
+                data.salary_min.toLocaleString()
+              ),
+          },
+          { label: "Required keywords", value: <TagList items={data.required_keywords} /> },
+          { label: "Companies to leave out", value: <TagList items={data.excluded_companies} /> },
+        ]}
+      />
+      <div className="flex flex-col gap-2 border-t pt-4">
+        <h4 className="text-2sm text-muted-foreground">Skills ({data.skills.length})</h4>
+        <TagList items={data.skills} />
+      </div>
+      {answered.length > 0 && (
+        <div className="flex flex-col gap-3 border-t pt-4">
+          <h4 className="font-label text-sm">Additional information</h4>
+          <div className="wrap-anywhere">
+            <FactList facts={answered} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The candidate's profile: the form for managers, the same facts without controls when `readOnly` (the responsible member). */
+export function CandidateProfilePanel({
+  candidateId,
+  candidateName,
+  readOnly = false,
+}: {
+  candidateId: string;
+  candidateName: string;
+  readOnly?: boolean;
+}) {
+  return readOnly ? <ProfileFacts candidateId={candidateId} /> : <ProfileForm candidateId={candidateId} candidateName={candidateName} />;
 }

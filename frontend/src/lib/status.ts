@@ -186,7 +186,7 @@ export const METRIC_DEFINITIONS: Record<MetricKey, { label: string; definition: 
   interviews: { label: "Interviews", definition: "Assignments that reached the interview stage." },
   offers: { label: "Offers", definition: "Assignments that reached the offer stage." },
   closed: { label: "Closed", definition: "Rejected, withdrawn and skipped assignments together." },
-  viewed: { label: "Viewed", definition: "Assignments whose job details were opened by the member." },
+  viewed: { label: "Viewed", definition: "Assignments whose job details were opened by the candidate's responsible member." },
   link_opens: {
     label: "Job link opens",
     definition: "How many times Open Job was used. Opening a job is never counted as applying.",

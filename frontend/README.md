@@ -85,8 +85,10 @@ value.
 | `src/components/shared` | `DataTable`, `KPIStatCard`, status badge and stage rail, empty / loading / error states, form fields, date and search inputs |
 | `src/components/charts` | Charts (Recharts) and the pipeline funnel |
 | `src/components/jobs` | `JobCard`, `JobDetails`, description rendering, match, tracking, status dialog, watermark, job forms |
-| `src/components/people` | `MemberTable`, `TeamPerformanceTable`, `InvitationDialog`, `ResumeUpload`, profile form |
-| `src/components/search` | `SearchForm`, the progress window and its indicator, member picker |
+| `src/components/people` | Accounts (Team Leads and members, the employees): `MemberTable`, `TeamPerformanceTable`, `InvitationDialog`, account actions |
+| `src/components/candidates` | Candidates (the people who need a job; records, not accounts): table, picker, add/edit/assign dialogs, profile form, resume upload and download |
+| `src/components/member` | The member area: candidate cards and a candidate's job list |
+| `src/components/search` | `SearchForm`, the progress window and its indicator |
 | `src/components/views` | One component per screen, shared between roles |
 | `src/lib` | `apiFetch`, generated API types, TanStack Query hooks, status and metric definitions, the API's input rules mirrored for forms (`forms.ts`, `date-range.ts`) |
 

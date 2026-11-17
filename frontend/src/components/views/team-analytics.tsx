@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Inbox, Search, Users } from "lucide-react";
+import { Contact, Inbox, Search, Users } from "lucide-react";
 
 import { PendingVsAppliedChart, StatusDistributionChart } from "@/components/charts/distribution";
 import { PipelineFunnel } from "@/components/charts/pipeline-funnel";
 import { ApplicationsOverTimeChart, WeeklyActivityChart } from "@/components/charts/time-series";
+import { CandidatePerformanceTable } from "@/components/candidates/candidate-table";
 import { MemberPerformanceTable } from "@/components/people/member-table";
 import { DateRangeFilter } from "@/components/shared/date-range-filter";
 import { FilterBar } from "@/components/shared/filters";
@@ -18,12 +19,23 @@ import { useTeamAnalytics } from "@/lib/queries";
 import type { TeamAnalytics } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Three facts about the team right now, each a link to where it is dealt with. */
+/** Four facts about the team right now, each a link to where it is dealt with. */
 function TeamNow({ data, teamId }: { data: TeamAnalytics | undefined; teamId: string }) {
   const me = useMe();
   const area = useArea();
   const own = me.role === "TEAM_LEAD";
+  const unassigned = data?.unassigned_candidates ?? 0;
   const items = [
+    {
+      icon: Contact,
+      value: data?.candidate_count,
+      label: `${data?.candidate_count === 1 ? "active candidate" : "active candidates"}${unassigned > 0 ? `, ${unassigned} unassigned` : ""}`,
+      href: own
+        ? unassigned > 0
+          ? "/tl/candidates?member=unassigned"
+          : "/tl/candidates"
+        : `${area}/teams/${teamId}?tab=candidates`,
+    },
     {
       icon: Users,
       value: data?.member_count,
@@ -44,7 +56,7 @@ function TeamNow({ data, teamId }: { data: TeamAnalytics | undefined; teamId: st
     },
   ];
   return (
-    <ul className="grid gap-3 sm:grid-cols-3">
+    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
         <li key={item.label}>
           <Link
@@ -113,11 +125,28 @@ export function TeamAnalyticsPanels({ teamId, variant }: { teamId: string; varia
       )}
 
       <Section
+        title="Candidates"
+        description={
+          variant === "dashboard"
+            ? "Every candidate of the team, sorted by jobs still waiting for an application. Select a column to sort by it."
+            : "Each candidate's figures for the chosen date range."
+        }
+      >
+        <CandidatePerformanceTable
+          rows={data?.candidates}
+          loading={loading}
+          fetching={fetching}
+          candidateHref={(id) => `${area}/candidates/${id}`}
+          memberHref={memberHref}
+        />
+      </Section>
+
+      <Section
         title="Members"
         description={
           variant === "dashboard"
-            ? "Sorted by jobs still waiting for an application. Select a column to sort by it."
-            : "Each member's figures for the chosen date range."
+            ? "Each member's totals over the candidates they are responsible for today. Candidates without a responsible member are in no member's row."
+            : "Each member's totals over their candidates, for the chosen date range."
         }
       >
         <MemberPerformanceTable rows={data?.members} loading={loading} fetching={fetching} memberHref={memberHref} />
@@ -140,7 +169,7 @@ export function TeamLeadDashboardView() {
     <>
       <PageHeader
         title={me.team ? me.team.name : "Dashboard"}
-        description="Where your team's assigned jobs stand, and who still has jobs waiting."
+        description="Where the jobs of your team's candidates stand, and which candidates still have jobs waiting."
         actions={
           <>
             <MetricDefinitions />
@@ -164,7 +193,7 @@ export function TeamLeadAnalyticsView() {
     <>
       <PageHeader
         title="Analytics"
-        description="Your team's assignments and applications over time. Choose a date range to look at one period."
+        description="Assignments and applications for your team's candidates over time. Choose a date range to look at one period."
       />
       {me.team ? <TeamAnalyticsPanels teamId={me.team.id} variant="analytics" /> : <NoTeam />}
     </>

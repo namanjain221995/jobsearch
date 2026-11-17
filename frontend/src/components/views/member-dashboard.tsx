@@ -1,19 +1,27 @@
 "use client";
 
+import Link from "next/link";
+import { Contact } from "lucide-react";
+
+import { CandidatePerformanceTable } from "@/components/candidates/candidate-table";
 import { InterviewOutcomesChart, PendingVsAppliedChart, StatusDistributionChart } from "@/components/charts/distribution";
 import { PipelineFunnel } from "@/components/charts/pipeline-funnel";
 import { ApplicationsOverTimeChart, WeeklyActivityChart } from "@/components/charts/time-series";
 import { DateRangeFilter } from "@/components/shared/date-range-filter";
 import { FilterBar } from "@/components/shared/filters";
-import { PageHeader } from "@/components/shared/page-header";
-import { ErrorState } from "@/components/shared/states";
+import { PageHeader, Section } from "@/components/shared/page-header";
+import { EmptyState, ErrorState } from "@/components/shared/states";
 import { useMe } from "@/components/shell/me-context";
+import { Button } from "@/components/ui/button";
 import { AssignmentKpis, MetricDefinitions, useDashboardRange } from "@/components/views/dashboard-kit";
+import { memberCandidateHref } from "@/lib/member-candidates";
 import { useMemberDashboard } from "@/lib/queries";
 
 /**
- * Everything one member's dashboard shows comes from GET /api/users/{id}/dashboard.
- * Used by the member for themselves and, with `embedded`, inside a manager's view of a member.
+ * Everything one member's dashboard shows comes from GET /api/users/{id}/dashboard: the totals over
+ * the candidates assigned to the member today, the pipeline, and one row per candidate.
+ * Used by the member for themselves and, with `embedded`, inside a manager's view of a member
+ * (which brings its own list of the member's candidates, so the breakdown is left out there).
  */
 export function MemberAnalyticsPanels({ memberId, embedded = false }: { memberId: string; embedded?: boolean }) {
   const me = useMe();
@@ -43,7 +51,7 @@ export function MemberAnalyticsPanels({ memberId, embedded = false }: { memberId
       </FilterBar>
 
       <AssignmentKpis
-        label={embedded ? "Assignment figures for this member" : "Your assignment figures"}
+        label={embedded ? "Job figures for this member's candidates" : "Job figures for your candidates"}
         stats={data?.stats}
         loading={loading}
         hrefs={
@@ -60,6 +68,34 @@ export function MemberAnalyticsPanels({ memberId, embedded = false }: { memberId
       />
 
       <PipelineFunnel data={data?.funnel} {...chart} />
+
+      {own && !embedded && (
+        <Section
+          title="By candidate"
+          description="The same figures for each of your candidates. The rows add up to the totals above."
+          actions={
+            <Button asChild variant="outline" size="sm">
+              <Link href="/member/candidates">My Candidates</Link>
+            </Button>
+          }
+        >
+          <CandidatePerformanceTable
+            rows={data?.candidates}
+            loading={loading}
+            fetching={fetching}
+            showMember={false}
+            candidateHref={memberCandidateHref}
+            empty={
+              <EmptyState
+                compact
+                icon={Contact}
+                title="Your Team Lead has not assigned a candidate to you yet"
+                description="Once a candidate is assigned to you, their figures are listed here."
+              />
+            }
+          />
+        </Section>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-3">
         <ApplicationsOverTimeChart data={data?.applications_over_time} className="lg:col-span-2" {...chart} />
@@ -81,7 +117,7 @@ export function MemberDashboardView() {
     <>
       <PageHeader
         title={`Welcome back, ${me.name.split(" ")[0]}`}
-        description="Where your assigned jobs stand: what is waiting, what you have applied to, and how employers have answered."
+        description="Where the jobs of your candidates stand: what is waiting, what you have applied to on their behalf, and how employers have answered."
       />
       <MemberAnalyticsPanels memberId={me.id} />
     </>

@@ -24,20 +24,21 @@ router = APIRouter(prefix="/api", tags=["admin"])
 @router.get("/analytics/admin", response_model=AdminAnalytics)
 async def admin_analytics(request: Request, principal: Principal = Depends(admin_only), db: AsyncSession = Depends(get_db),
                           date_from: Day | None = None, date_to: Day | None = None, team_id: uuid.UUID | None = None,
-                          member_id: uuid.UUID | None = None,
+                          member_id: uuid.UUID | None = None, candidate_id: uuid.UUID | None = None,
                           status: str | None = Query(default=None, pattern="^(ASSIGNED|VIEWED|APPLYING|APPLIED|INTERVIEWING|OFFER|REJECTED|WITHDRAWN|SKIPPED)$"),
                           company: str | None = Query(default=None, max_length=120), role: str | None = Query(default=None, max_length=120)):
     if company or role:                                  # free-text filters change with every keystroke: always live
-        return await analytics.admin_analytics(db, date_from, date_to, team_id, member_id, status, company, role)
-    params = {"from": date_from, "to": date_to, "team": team_id, "member": member_id, "status": status}
+        return await analytics.admin_analytics(db, date_from, date_to, team_id, member_id, status, company, role, candidate_id)
+    params = {"from": date_from, "to": date_to, "team": team_id, "member": member_id, "candidate": candidate_id, "status": status}
     return await request.app.state.cache.cached(
         "admin", params, AdminAnalytics,
-        lambda: analytics.admin_analytics(db, date_from, date_to, team_id, member_id, status, None, None))
+        lambda: analytics.admin_analytics(db, date_from, date_to, team_id, member_id, status, None, None, candidate_id))
 
 
 @router.get("/analytics/member/{member_id}", response_model=MemberAnalytics)
 async def member_analytics(member_id: uuid.UUID, principal: Principal = Depends(any_user), db: AsyncSession = Depends(get_db),
                            date_from: Day | None = None, date_to: Day | None = None):
+    """The same answer as GET /api/users/{id}/dashboard: totals over the candidates assigned to this member today."""
     member = await member_in_scope(db, principal, member_id)
     if member.role != "MEMBER":
         raise HTTPException(404, "Member not found")

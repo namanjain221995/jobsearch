@@ -18,7 +18,7 @@ from app.config import Settings
 from app.portal import security
 from app.portal.app import create_app
 from app.portal.index_pg import PgJobIndex
-from app.portal.models import MemberProfile, Resume, Team, TeamLeadAssignment, User
+from app.portal.models import Candidate, CandidateProfile, Resume, Team, TeamLeadAssignment, User
 from app.portal.queue import InlineQueue
 from app.portal.search_runner import RunnerDeps, execute_search
 from app.search_engine import SearchEngine
@@ -66,7 +66,9 @@ def database():
 
 @dataclass
 class World:
-    """One Admin, two teams (Alpha, Beta), each with a Team Lead and two members. All active, password PASSWORD."""
+    """One Admin, two teams (Alpha, Beta), each with a Team Lead and two members (recruiters). All active, password
+    PASSWORD. Every member is responsible for one candidate of their team: "Candidate A1" belongs to "Member A1"
+    (ids["cand_a1"] / ids["member_a1"]) and so on; each candidate has a profile and a resume with its file."""
     app: object
     settings: Settings
     sessions: object
@@ -142,13 +144,18 @@ async def world(database):
                     member = User(name=f"Member {code.upper()}", email=f"member.{code}@example.com", role="MEMBER", team_id=team.id, password_hash=hashed)
                     db.add(member)
                     await db.flush()
-                    db.add(MemberProfile(user_id=member.id, desired_titles=["AI Engineer"], years_experience=3, skills=["Python", "PyTorch"],
+                    candidate = Candidate(name=f"Candidate {code.upper()}", email=f"candidate.{code}@example.com", phone="+1 555 0100",
+                                          team_id=team.id, assigned_member_id=member.id, created_by=lead.id)
+                    db.add(candidate)
+                    await db.flush()
+                    db.add(CandidateProfile(candidate_id=candidate.id, desired_titles=["AI Engineer"], years_experience=3, skills=["Python", "PyTorch"],
                                          preferred_states=[], preferred_cities=[], excluded_companies=[], required_keywords=[], extra={},
                                          work_authorization="Green Card / US Permanent Resident", sponsorship_needed="No",
                                          exclude_citizenship_required=True))
-                    db.add(Resume(user_id=member.id, filename="resume.txt", size_bytes=len(RESUME), sha256="0" * 64, text=RESUME,
-                                  parsed_profile={"skills": ["Python"]}, version=1, is_current=True, uploaded_by=member.id))
-                    w.ids[f"member_{code}"] = member.id
+                    db.add(Resume(candidate_id=candidate.id, filename="resume.txt", size_bytes=len(RESUME.encode()), sha256="0" * 64, text=RESUME,
+                                  file_data=RESUME.encode(), parsed_profile={"skills": ["Python"]}, version=1, is_current=True,
+                                  uploaded_by=lead.id))
+                    w.ids[f"member_{code}"], w.ids[f"cand_{code}"] = member.id, candidate.id
             w.ids["admin"] = admin.id
             await db.commit()
         try:

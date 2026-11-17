@@ -26,22 +26,23 @@ async def test_manual_jobs_csv_import_and_delegation_scenario(world):
     listing = (await admin.get("/api/jobs", params={"company": "contoso"})).json()
     assert listing["total"] == 2 and {j["origin"] for j in listing["items"]} == {"import"}
     job_ids = [j["id"] for j in listing["items"]] + [first]
-    # Scenario: Admin delegates to Team Beta, its lead splits the jobs between two members.
+    # Scenario: Admin delegates to Team Beta, its lead splits the jobs between two candidates (one per member).
     tl = await world.as_tl("beta")
     assert (await admin.post(f"/api/teams/{world.ids['team_beta']}/queue", json={"job_ids": job_ids, "note": "Priority"})).status_code == 201
     assert (await tl.get("/api/notifications")).json()["items"][0]["type"] == "jobs_delegated"
     queue = (await tl.get(f"/api/teams/{world.ids['team_beta']}/queue")).json()["items"]
     assert len(queue) == 3 and all(q["note"] == "Priority" for q in queue)
-    b1, b2 = str(world.ids["member_b1"]), str(world.ids["member_b2"])
-    await tl.post("/api/assignments/bulk", json={"job_ids": [queue[0]["job"]["id"], queue[1]["job"]["id"]], "member_ids": [b1],
+    b1, b2 = str(world.ids["cand_b1"]), str(world.ids["cand_b2"])
+    await tl.post("/api/assignments/bulk", json={"job_ids": [queue[0]["job"]["id"], queue[1]["job"]["id"]], "candidate_ids": [b1],
                                                  "queue_item_ids": [queue[0]["id"], queue[1]["id"]]})
-    await tl.post("/api/assignments/bulk", json={"job_ids": [queue[2]["job"]["id"]], "member_ids": [b2], "queue_item_ids": [queue[2]["id"]]})
+    await tl.post("/api/assignments/bulk", json={"job_ids": [queue[2]["job"]["id"]], "candidate_ids": [b2], "queue_item_ids": [queue[2]["id"]]})
     assert (await (await world.as_member("b1")).get("/api/assignments")).json()["total"] == 2
     assert (await (await world.as_member("b2")).get("/api/assignments")).json()["total"] == 1
     assert (await tl.get(f"/api/teams/{world.ids['team_beta']}/queue")).json()["total"] == 0
     overview = (await admin.get("/api/analytics/admin")).json()
     beta = next(t for t in overview["teams"] if t["team"]["name"] == "Team Beta")
     assert beta["stats"]["assigned"] == 3 and beta["members"] == 2 and overview["totals"]["job_postings"] == 3
+    assert beta["candidates"] == 2 and overview["totals"]["candidates"] == 4
     assert overview["totals"]["teams"] == 2 and overview["totals"]["members"] == 4 and overview["totals"]["team_leads"] == 2
     filtered = (await admin.get("/api/analytics/admin", params={"company": "contoso"})).json()
     assert filtered["stats"]["assigned"] == 2
@@ -61,7 +62,7 @@ async def test_settings_presets_notifications_and_health(world):
     assert (await tl.patch("/api/settings", json={"watermark_enabled": True})).status_code == 403
     me = (await (await world.as_member("a1")).get("/api/auth/me")).json()
     assert me["settings"]["watermark_enabled"] is False
-    limited = await tl.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"]), str(world.ids["member_a2"])], "target_count": 5})
+    limited = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"]), str(world.ids["cand_a2"])], "target_count": 5})
     assert limited.status_code == 422 and "At most 1" in limited.json()["error"]
     options = (await tl.get("/api/searches/options")).json()
     assert next(s for s in options["sources"] if s["name"] == "amazon")["enabled"] is False and options["limits"]["max_members_per_search"] == 1

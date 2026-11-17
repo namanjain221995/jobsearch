@@ -132,7 +132,7 @@ async def team_queue(team_id: uuid.UUID, principal: Principal = Depends(managers
 @router.post("/teams/{team_id}/queue", response_model=list[QueueItemOut], status_code=201)
 async def delegate_jobs(team_id: uuid.UUID, data: QueueDelegate, request: Request, principal: Principal = Depends(admin_only),
                         db: AsyncSession = Depends(get_db)):
-    """Admin hands jobs to a team; its Team Lead distributes them to members."""
+    """Admin hands jobs to a team; its Team Lead distributes them to the team's candidates."""
     team = await load_team(db, principal, team_id)
     if not team.is_active:
         raise HTTPException(409, "This team is deactivated")

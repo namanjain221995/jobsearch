@@ -53,6 +53,12 @@ printf '%s' "$token" | docker login ghcr.io -u github-actions --password-stdin >
 trap 'docker logout ghcr.io > /dev/null 2>&1 || true' EXIT
 IMAGE_TAG="$tag" docker compose -f docker-compose.yml.new pull -q
 
+# A dump of the database as it is before this release touches it. Going back to the previous build after a migration
+# that the previous build cannot live with needs this dump (see README, Deployment).
+if [ -n "$previous" ] && [ "$previous" != "$tag" ] && [ -x ./backup.sh ]; then
+  ./backup.sh
+fi
+
 [ -f docker-compose.yml ] && cp -p docker-compose.yml docker-compose.yml.previous
 mv docker-compose.yml.new docker-compose.yml
 set_tag "$tag"
@@ -68,7 +74,8 @@ echo "deploy: $tag did not become healthy" >&2
 docker compose ps >&2 || true
 docker compose logs --tail 40 migrate backend worker frontend >&2 || true
 if [ -n "$previous" ] && [ "$previous" != "$tag" ] && [ -f docker-compose.yml.previous ]; then
-  echo "deploy: going back to $previous" >&2
+  echo "deploy: going back to $previous. If this release changed the database, the previous build may not work on it:" >&2
+  echo "deploy: the dump taken before the release is the newest file in /opt/jobfinder/backups" >&2
   cp -p docker-compose.yml.previous docker-compose.yml
   set_tag "$previous"
   docker compose up -d --remove-orphans >&2 || true

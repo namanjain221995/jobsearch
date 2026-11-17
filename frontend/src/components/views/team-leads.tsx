@@ -71,7 +71,7 @@ export function TeamLeadsView() {
     <>
       <PageHeader
         title="Team Leads"
-        description="The people who run teams: they invite members, start searches and hand out jobs. To change which team someone leads, open Teams."
+        description="The people who run teams: they invite members, add candidates, start searches and decide which member handles which candidate. To change which team someone leads, open Teams."
         actions={create}
       />
       <FilterBar canClear={filtered} onClear={() => setState({ q: "", status: "" })}>

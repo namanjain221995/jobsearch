@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { FileCheck2, FileWarning, SearchX, Users } from "lucide-react";
+import { SearchX, Users } from "lucide-react";
 
+import { EMPTY_STATS } from "@/components/candidates/candidate-meta";
+import { CompletionMeter, StatGrid } from "@/components/candidates/candidate-table";
 import { UserActions, UserStatusTag } from "@/components/people/user-actions";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { FilterBar, FilterSelect } from "@/components/shared/filters";
@@ -11,12 +13,11 @@ import { SearchInput } from "@/components/shared/search-input";
 import { EmptyState } from "@/components/shared/states";
 import { Tag } from "@/components/shared/status-badge";
 import { useNow } from "@/hooks/use-now";
-import { formatPercent, formatRelative } from "@/lib/format";
+import { formatRelative, plural } from "@/lib/format";
 import type { ListState } from "@/lib/list-state";
 import { useTeams, useUsers } from "@/lib/queries";
-import type { AssignmentStats, MemberRow, TeamRow, User, UserListParams } from "@/lib/types";
+import type { MemberRow, TeamRow, User, UserListParams } from "@/lib/types";
 import { toPositiveInt } from "@/lib/url-state";
-import { cn } from "@/lib/utils";
 
 export const MEMBER_LIST_DEFAULTS = { q: "", status: "", team: "", sort: "name", page: "1", page_size: "25" };
 export type MemberListState = typeof MEMBER_LIST_DEFAULTS;
@@ -33,71 +34,16 @@ const STATUSES = [
   { value: "deactivated", label: "Deactivated" },
 ];
 
-const EMPTY_STATS: AssignmentStats = {
-  assigned: 0,
-  not_applied: 0,
-  applied: 0,
-  interviews: 0,
-  offers: 0,
-  closed: 0,
-  viewed: 0,
-  link_opens: 0,
-  completion_rate: 0,
-};
-
-/** Applied as a share of what could have been applied to. A bar and the figure, so rows compare at a glance. */
-export function CompletionMeter({ rate, className }: { rate: number; className?: string }) {
-  const value = Math.max(0, Math.min(100, rate));
-  return (
-    <span className={cn("inline-flex items-center gap-2", className)}>
-      <span aria-hidden="true" className="h-1.5 w-14 overflow-hidden rounded-full bg-foreground/8">
-        <span className="block h-full rounded-full bg-status-applied" style={{ width: `${value}%` }} />
-      </span>
-      <span className="min-w-9 text-right tabular-nums">{formatPercent(value)}</span>
-    </span>
-  );
-}
-
-export function ResumeTag({ hasResume }: { hasResume: boolean }) {
-  return hasResume ? (
-    <Tag tone="success">
-      <FileCheck2 aria-hidden="true" />
-      Resume uploaded
-    </Tag>
-  ) : (
-    <Tag tone="warning">
-      <FileWarning aria-hidden="true" />
-      No resume
-    </Tag>
-  );
-}
-
 function LastActivity({ value }: { value: string | null | undefined }) {
   const now = useNow();
   return <span className="whitespace-nowrap text-muted-foreground">{value ? formatRelative(value, now) : "No activity yet"}</span>;
 }
 
-function StatGrid({ stats }: { stats: AssignmentStats }) {
-  const cells: Array<[string, number]> = [
-    ["Assigned", stats.assigned],
-    ["Not applied", stats.not_applied],
-    ["Applied", stats.applied],
-    ["Interviews", stats.interviews],
-  ];
-  return (
-    <dl className="grid grid-cols-4 gap-2">
-      {cells.map(([label, value]) => (
-        <div key={label} className="flex flex-col">
-          <dt className="text-xs text-muted-foreground">{label}</dt>
-          <dd className="font-figure text-xl leading-tight">{value.toLocaleString()}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
+export { CompletionMeter };
 
 /**
- * Members with their resume state and application figures. Searching, sorting
+ * Members: the employees who apply to jobs on their candidates' behalf. Each row shows how many
+ * candidates the member is responsible for today and the figures over those candidates' jobs. Searching, sorting
  * and paging are done by the API (GET /api/users).
  */
 export function MemberTable({
@@ -105,6 +51,7 @@ export function MemberTable({
   teamId,
   showTeam = false,
   memberHref,
+  candidatesHref,
   actions,
   emptyAction,
 }: {
@@ -114,6 +61,8 @@ export function MemberTable({
   /** Show the team column and filter (Admin, across teams). */
   showTeam?: boolean;
   memberHref: (id: string) => string;
+  /** Where "N candidates" leads: the candidates list filtered to that member. Left out, the count is plain text. */
+  candidatesHref?: (user: User) => string;
   /** Buttons shown at the end of the filter row (Add Member). */
   actions?: ReactNode;
   emptyAction?: ReactNode;
@@ -152,14 +101,17 @@ export function MemberTable({
       ? [{ id: "team", header: "Team", cell: (user: User) => user.team?.name ?? <span className="text-muted-foreground">No team</span> }]
       : []),
     {
-      id: "resume",
-      header: "Resume",
-      cell: (user) => (
-        <div className="flex flex-col items-start gap-1">
-          <ResumeTag hasResume={user.has_resume} />
-          <span className="text-xs text-muted-foreground">Profile {user.profile_completion}% complete</span>
-        </div>
-      ),
+      id: "candidates",
+      header: "Candidates",
+      align: "right",
+      cell: (user) =>
+        candidatesHref && user.candidate_count > 0 ? (
+          <Link href={candidatesHref(user)} className="rounded-sm underline-offset-4 hover:underline" aria-label={`${plural(user.candidate_count, "candidate")} of ${user.name}`}>
+            {user.candidate_count.toLocaleString()}
+          </Link>
+        ) : (
+          user.candidate_count.toLocaleString()
+        ),
     },
     { id: "assigned", header: "Assigned", align: "right", cell: (user) => (user.stats ?? EMPTY_STATS).assigned.toLocaleString() },
     { id: "not_applied", header: "Not applied", align: "right", cell: (user) => (user.stats ?? EMPTY_STATS).not_applied.toLocaleString() },
@@ -203,7 +155,7 @@ export function MemberTable({
             <EmptyState
               icon={Users}
               title="No members yet"
-              description="Invite the first member. They appear here as soon as the invitation is created."
+              description="Invite the first member: an employee who applies to jobs for the candidates you assign to them. They appear here as soon as the invitation is created."
               action={emptyAction}
             />
           )
@@ -225,7 +177,7 @@ export function MemberTable({
             </div>
             <StatGrid stats={user.stats ?? EMPTY_STATS} />
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-              <ResumeTag hasResume={user.has_resume} />
+              <span className="text-2sm text-muted-foreground">{plural(user.candidate_count, "candidate")}</span>
               <CompletionMeter rate={(user.stats ?? EMPTY_STATS).completion_rate} />
             </div>
             <LastActivity value={user.last_activity_at} />
@@ -248,7 +200,7 @@ export function MemberTable({
 
 /* ------------------------------------------------------------------ analytics tables (every row is loaded, so they sort in the browser) */
 
-/** Members of one team with their figures for the chosen date range (TeamAnalytics.members). */
+/** The members of one team as the people responsible for candidates: how many each holds today, and the figures over those candidates' jobs (TeamAnalytics.members). */
 export function MemberPerformanceTable({
   rows,
   loading,
@@ -273,10 +225,10 @@ export function MemberPerformanceTable({
             </Link>
             {row.status !== "active" && <UserStatusTag status={row.status} />}
           </span>
-          {!row.has_resume && <span className="text-xs text-warning">No resume uploaded</span>}
         </div>
       ),
     },
+    { id: "candidates", header: "Candidates", align: "right", sortValue: (row) => row.candidates, cell: (row) => row.candidates.toLocaleString() },
     { id: "assigned", header: "Assigned", align: "right", sortValue: (row) => row.stats.assigned, cell: (row) => row.stats.assigned.toLocaleString() },
     { id: "not_applied", header: "Not applied", align: "right", sortValue: (row) => row.stats.not_applied, cell: (row) => row.stats.not_applied.toLocaleString() },
     { id: "applied", header: "Applied", align: "right", sortValue: (row) => row.stats.applied, cell: (row) => row.stats.applied.toLocaleString() },
@@ -294,7 +246,7 @@ export function MemberPerformanceTable({
       loading={loading}
       fetching={fetching}
       defaultSort={{ id: "not_applied", direction: "desc" }}
-      empty={<EmptyState compact icon={Users} title="No members in this team yet" description="Invite members to see how each of them is doing." />}
+      empty={<EmptyState compact icon={Users} title="No members in this team yet" description="Invite members, then assign candidates to them." />}
       mobileCard={(row) => (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -305,7 +257,7 @@ export function MemberPerformanceTable({
           </div>
           <StatGrid stats={row.stats} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <ResumeTag hasResume={row.has_resume} />
+            <span className="text-2sm text-muted-foreground">{plural(row.candidates, "candidate")}</span>
             <CompletionMeter rate={row.stats.completion_rate} />
           </div>
         </div>
@@ -334,6 +286,7 @@ export function TeamPerformanceTable({ rows, loading, fetching }: { rows: TeamRo
       ),
     },
     { id: "members", header: "Members", align: "right", sortValue: (row) => row.members, cell: (row) => row.members.toLocaleString() },
+    { id: "candidates", header: "Candidates", align: "right", sortValue: (row) => row.candidates, cell: (row) => row.candidates.toLocaleString() },
     { id: "assigned", header: "Assigned", align: "right", sortValue: (row) => row.stats.assigned, cell: (row) => row.stats.assigned.toLocaleString() },
     { id: "not_applied", header: "Not applied", align: "right", sortValue: (row) => row.stats.not_applied, cell: (row) => row.stats.not_applied.toLocaleString() },
     { id: "applied", header: "Applied", align: "right", sortValue: (row) => row.stats.applied, cell: (row) => row.stats.applied.toLocaleString() },
@@ -361,7 +314,7 @@ export function TeamPerformanceTable({ rows, loading, fetching }: { rows: TeamRo
               {!row.is_active && <Tag>Deactivated</Tag>}
             </span>
             <span className="text-2sm text-muted-foreground">
-              {row.team_lead ? `Led by ${row.team_lead.name}` : "No Team Lead"}, {row.members} member{row.members === 1 ? "" : "s"}
+              {row.team_lead ? `Led by ${row.team_lead.name}` : "No Team Lead"}, {plural(row.members, "member")}, {plural(row.candidates, "candidate")}
             </span>
           </div>
           <StatGrid stats={row.stats} />

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { MemberPicker, type PickedMember } from "@/components/search/member-picker";
+import { CandidatePicker, type PickedCandidate } from "@/components/candidates/candidate-picker";
 import { FormField, FormMessage } from "@/components/shared/form-fields";
 import { useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,7 @@ function JobSummaryList({ jobs }: { jobs: JobRef[] }) {
 }
 
 /**
- * Assign the chosen jobs to chosen members: every job to every member
+ * Assign the chosen jobs to chosen candidates: every job to every candidate
  * (POST /api/assignments/bulk). The picker is step one; step two states exactly
  * what will be created and asks for confirmation.
  */
@@ -66,7 +66,7 @@ export function AssignmentDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   jobs: JobRef[];
-  /** Only offer members of this team (a Team Lead distributing the team queue). */
+  /** Only offer candidates of this team (a Team Lead distributing the team queue). */
   teamId?: string;
   /** Queue entries these jobs came from; they are marked as distributed. */
   queueItemIds?: string[];
@@ -104,14 +104,15 @@ function AssignmentSteps({
 }) {
   const me = useMe();
   const assign = useBulkAssign();
-  const [selected, setSelected] = useState<ReadonlyMap<string, PickedMember>>(() => new Map());
+  const [selected, setSelected] = useState<ReadonlyMap<string, PickedCandidate>>(() => new Map());
   const [confirming, setConfirming] = useState(false);
   const total = jobs.length * selected.size;
-  const members = [...selected.values()];
+  const candidates = [...selected.values()];
+  const unassigned = candidates.filter((candidate) => !candidate.member);
 
   const submit = () =>
     assign.mutate(
-      { job_ids: jobs.map((job) => job.id), member_ids: [...selected.keys()], queue_item_ids: queueItemIds ?? [] },
+      { job_ids: jobs.map((job) => job.id), candidate_ids: [...selected.keys()], queue_item_ids: queueItemIds ?? [] },
       {
         onSuccess: (result) => {
           toast.success("Jobs assigned", { description: assignResultText(result) });
@@ -126,18 +127,26 @@ function AssignmentSteps({
       <>
         <DialogHeader>
           <DialogTitle className="text-lg">
-            Assign {plural(jobs.length, "job")} to {plural(members.length, "member")}?
+            Assign {plural(jobs.length, "job")} to {plural(candidates.length, "candidate")}?
           </DialogTitle>
           <DialogDescription>
-            This creates up to {plural(total, "assignment")}: each job for each member. A member who already has a job
-            keeps it unchanged. Members are notified.
+            This creates up to {plural(total, "assignment")}: each job for each candidate. A candidate who already has
+            a job keeps it unchanged. Each candidate&apos;s responsible member is notified.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <JobSummaryList jobs={jobs} />
           <p className="text-sm">
-            <span className="text-muted-foreground">To:</span> {members.map((member) => member.name).join(", ")}
+            <span className="text-muted-foreground">To:</span>{" "}
+            {candidates.map((candidate) => `${candidate.name} (${candidate.member ? candidate.member.name : "unassigned"})`).join(", ")}
           </p>
+          {unassigned.length > 0 && (
+            <FormMessage tone="info">
+              {unassigned.map((candidate) => candidate.name).join(", ")} {unassigned.length === 1 ? "has" : "have"} no
+              responsible member. The jobs are assigned to the candidate all the same and wait until you choose a
+              member for them.
+            </FormMessage>
+          )}
           {assign.error && <FormMessage>{errorMessage(assign.error)}</FormMessage>}
         </div>
         <DialogFooter>
@@ -156,14 +165,14 @@ function AssignmentSteps({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="text-lg">Assign to Members</DialogTitle>
+        <DialogTitle className="text-lg">Assign to Candidates</DialogTitle>
         <DialogDescription>
-          {jobs.length === 1 ? `${jobs[0].title} at ${jobs[0].company}` : `${jobs.length} selected jobs`}. Choose who
-          should get {jobs.length === 1 ? "it" : "them"}.
+          {jobs.length === 1 ? `${jobs[0].title} at ${jobs[0].company}` : `${jobs.length} selected jobs`}. Choose the
+          candidates {jobs.length === 1 ? "it is" : "they are"} for.
         </DialogDescription>
       </DialogHeader>
       {jobs.length > 1 && <JobSummaryList jobs={jobs} />}
-      <MemberPicker selected={selected} onChange={setSelected} teamId={teamId} showTeam={me.role === "ADMIN" && !teamId} max={50} />
+      <CandidatePicker selected={selected} onChange={setSelected} teamId={teamId} showTeam={me.role === "ADMIN" && !teamId} max={50} />
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
           Cancel
@@ -178,7 +187,7 @@ function AssignmentSteps({
 
 /**
  * Hand jobs to a team: they land in the team's queue and its Team Lead
- * distributes them to members (POST /api/teams/{id}/queue). Admin only.
+ * distributes them to candidates (POST /api/teams/{id}/queue). Admin only.
  */
 export function DelegateDialog({
   open,
@@ -230,7 +239,7 @@ function DelegateForm({ jobs, onDelegated, onClose }: { jobs: JobRef[]; onDelega
       <DialogHeader>
         <DialogTitle className="text-lg">Assign to Team Lead</DialogTitle>
         <DialogDescription>
-          The jobs go into the team&apos;s queue. Its Team Lead decides which members get them.
+          The jobs go into the team&apos;s queue. Its Team Lead decides which candidates get them.
         </DialogDescription>
       </DialogHeader>
       <JobSummaryList jobs={jobs} />

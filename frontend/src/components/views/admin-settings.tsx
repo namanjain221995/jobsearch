@@ -43,7 +43,7 @@ const whole = (min: number, max: number) =>
       return value !== "" && Number.isInteger(number) && number >= min && number <= max;
     }, `Enter a whole number between ${min.toLocaleString()} and ${max.toLocaleString()}.`);
 
-/** One extra profile field as this form holds it. */
+/** One extra candidate-profile field as this form holds it. */
 const fieldRow = z.object({
   /** Empty until the field has been saved once. After that it is never changed. */
   key: z.string(),
@@ -74,7 +74,7 @@ const toRow = (field: ExtraField): FieldRow => ({
 /**
  * The rows as PATCH /api/settings takes them. A row that has not been saved yet gets its key here,
  * from its label; a row that exists keeps the key it has, whatever its label says now, because the
- * members' answers are stored under it. Options only travel with a choice.
+ * the candidates' answers are stored under it. Options only travel with a choice.
  *
  * `saved` is the list the API gave. A field that was not touched goes back exactly as it came, so
  * that saving something else never rewrites it.
@@ -193,7 +193,7 @@ function SwitchRow({
 const NEW_FIELD: FieldRow = { key: "", label: "", type: "text", options: "" };
 
 /**
- * The extra profile fields: add, rename, change the kind, put in order, remove. Nothing is stored
+ * The extra candidate-profile fields: add, rename, change the kind, put in order, remove. Nothing is stored
  * until the settings are saved, so a removal can still be discarded.
  */
 function ExtraFieldsPanel({
@@ -245,8 +245,8 @@ function ExtraFieldsPanel({
 
   return (
     <Panel
-      title="Extra profile fields"
-      description="Questions added to every member's profile, under Additional information. Members answer them; their Team Lead and Admins see the answers on the member's page and can fill them in too."
+      title="Extra candidate profile fields"
+      description="Questions added to every candidate's profile, under Additional information. The Team Lead or an Admin fills in the answers on the candidate's page; the candidate's responsible member can read them."
     >
       <div className="flex flex-col gap-4">
         {refusals.length > 0 && (
@@ -261,9 +261,9 @@ function ExtraFieldsPanel({
         {errors?.root?.message && <FormMessage>{errors.root.message}</FormMessage>}
 
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No extra fields yet. Members see the built-in profile fields only.</p>
+          <p className="text-sm text-muted-foreground">No extra fields yet. Candidate profiles have the built-in fields only.</p>
         ) : (
-          <ol ref={listRef} aria-label="Extra profile fields" className="flex flex-col gap-3">
+          <ol ref={listRef} aria-label="Extra candidate profile fields" className="flex flex-col gap-3">
             {rows.map((row, index) => {
               const current = values[index] ?? row;
               const rowErrors = errors?.[index];
@@ -350,7 +350,7 @@ function ExtraFieldsPanel({
                         label="Options"
                         rows={3}
                         placeholder={"Small\nMedium\nLarge"}
-                        description={`One per line, ${EXTRA_OPTIONS_MIN} to ${EXTRA_OPTIONS_MAX} of them. A member chooses one.`}
+                        description={`One per line, ${EXTRA_OPTIONS_MIN} to ${EXTRA_OPTIONS_MAX} of them. One of them is chosen for each candidate.`}
                         error={rowErrors?.options?.message}
                         {...form.register(`profile_extra_fields.${index}.options`)}
                       />
@@ -428,7 +428,7 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
               checked={field.value}
               onChange={field.onChange}
               label="Show a watermark on member job views"
-              description="The member's e-mail address and the current time are laid faintly over their job pages, so a copy can be traced back. It does not stop anyone from taking a screenshot."
+              description="The member's e-mail address and the current time are laid faintly over the job pages of their candidates, so a copy can be traced back. It does not stop anyone from taking a screenshot."
             />
           )}
         />
@@ -438,7 +438,7 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
         <div className="flex flex-col gap-5">
           <div className="grid gap-5 sm:grid-cols-2">
             <TextField
-              label="Default results per member"
+              label="Default results per candidate"
               inputMode="numeric"
               autoComplete="off"
               description="What the search form starts with. 1 to 500."
@@ -454,7 +454,7 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
               {...form.register("default_min_match_score")}
             />
             <TextField
-              label="Most members in one search"
+              label="Most candidates in one search"
               inputMode="numeric"
               autoComplete="off"
               description="1 to 50."
@@ -465,7 +465,7 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
               label="Most results in one search"
               inputMode="numeric"
               autoComplete="off"
-              description="Members times results per member may not exceed this. 1 to 5,000."
+              description="Candidates times results per candidate may not exceed this. 1 to 5,000."
               error={errors.max_results_per_search_run?.message}
               {...form.register("max_results_per_search_run")}
             />

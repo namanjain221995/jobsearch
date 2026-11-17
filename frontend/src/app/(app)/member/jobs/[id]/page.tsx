@@ -10,7 +10,7 @@ export default function MemberJobsDetailPage({ params }: { params: Promise<{ id:
   return (
     <Suspense fallback={<PageFallback />}>
       {params.then(({ id }) => (
-        <AssignmentDetailPage assignmentId={id} back={{ href: "/member/jobs", label: "My Jobs" }} />
+        <AssignmentDetailPage assignmentId={id} />
       ))}
     </Suspense>
   );

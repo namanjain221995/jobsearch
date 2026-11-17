@@ -47,7 +47,7 @@ function describe(event: AssignmentEvent): Described {
       return { icon: ExternalLink, text: `Job posting opened by ${who}`, notes };
     case "status_changed": {
       if (meta.correction) notes.push("Correction: later dates were cleared.");
-      if (meta.on_behalf_of_member) notes.push(`Recorded by ${who} on the member's behalf.`);
+      if (meta.on_behalf_of_member) notes.push(`Recorded by ${who} in place of the responsible member.`);
       if (meta.applied_at_inferred) notes.push("No earlier application was recorded, so the applied date was set to this moment.");
       if (meta.reference_recorded) notes.push("A reference number was saved.");
       if (typeof meta.previous_applied_at === "string" && !meta.correction) {
@@ -62,10 +62,10 @@ function describe(event: AssignmentEvent): Described {
       return { icon: ArrowRightLeft, text, notes };
     }
     case "note_added":
-      if (meta.private) notes.push("Private note, hidden from the member.");
+      if (meta.private) notes.push("Private note, hidden from the responsible member.");
       return { icon: StickyNote, text: `Note added by ${who}`, notes };
     case "unassigned":
-      return { icon: Undo2, text: `Removed from the member's list by ${who}`, notes };
+      return { icon: Undo2, text: `Removed from the candidate's list by ${who}`, notes };
     default:
       return { icon: CircleDashed, text: `${humanize(event.event_type)} (${who})`, notes };
   }

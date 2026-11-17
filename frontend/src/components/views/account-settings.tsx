@@ -76,3 +76,16 @@ export function TeamLeadSettingsView() {
     </>
   );
 }
+
+/** Member "Settings": their own account. A member is an employee; candidates' profiles and resumes live with the candidates. */
+export function MemberSettingsView() {
+  return (
+    <>
+      <PageHeader
+        title="Settings"
+        description="Your own account: your name, your password and how the portal looks. Your candidates' profiles and resumes are kept by your Team Lead."
+      />
+      <AccountPanels />
+    </>
+  );
+}

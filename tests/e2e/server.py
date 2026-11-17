@@ -7,9 +7,18 @@
   from synthetic fixtures: no network, no AI cost, same result every time.
 - Demo accounts (this database only), password "Demo-Password-42!":
     admin@example.com · lead.alpha@example.com · lead.beta@example.com
-    maya@example.com · noah@example.com · omar@example.com (Team Alpha) · priya@example.com · quinn@example.com (Team Beta)"""
+    maya@example.com · noah@example.com · omar@example.com (Team Alpha) · priya@example.com · quinn@example.com (Team Beta)
+- Members are recruiters; the people who need a job are candidates (records, no accounts). Seeded candidates:
+    Team Alpha: Jordan Rivera, Elena Petrova (Maya's) · Samuel Okafor (Noah's) · Hannah Kim (unassigned, has jobs from
+                a search) · Diego Morales (unassigned, no resume, incomplete profile). Omar holds no candidate.
+    Team Beta:  Aisha Rahman, Tom Becker (Priya's) · Grace Liu (Quinn's) · Lucas Meyer (unassigned) ·
+                Victor Hale (unassigned and deactivated).
+  Every candidate except Diego has a resume whose file can be downloaded (a .txt file). Jordan, Samuel and Aisha have
+  jobs in varied statuses, recorded by their responsible member; Hannah's jobs are all still "ASSIGNED".
+  Jordan also has a finished "review" search with nothing assigned from it."""
 import argparse
 import asyncio
+import hashlib
 import os
 import subprocess
 import sys
@@ -26,7 +35,7 @@ from app.portal import security
 from app.portal.app import create_app
 from app.portal.deps import Principal
 from app.portal.index_pg import PgJobIndex
-from app.portal.models import (ApplicationEvent, JobAssignment, MemberProfile, Resume, SearchRun, SearchTarget, Team,
+from app.portal.models import (ApplicationEvent, Candidate, CandidateProfile, JobAssignment, Resume, SearchRun, SearchTarget, Team,
                                TeamJobQueue, TeamLeadAssignment, User)
 from app.portal.queue import InlineQueue
 from app.portal.schemas import JobCreate, StatusUpdate
@@ -44,6 +53,13 @@ PASSWORD = "Demo-Password-42!"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PEOPLE = {"alpha": ("Team Alpha", "Lena Alpha", [("Maya Chen", "maya"), ("Noah Patel", "noah"), ("Omar Haddad", "omar")]),
           "beta": ("Team Beta", "Ben Beta", [("Priya Nair", "priya"), ("Quinn Lopez", "quinn")])}
+# team -> (candidate name, key, responsible member's slug or None, has a resume, active)
+CANDIDATES = {"alpha": [("Jordan Rivera", "jordan", "maya", True, True), ("Elena Petrova", "elena", "maya", True, True),
+                        ("Samuel Okafor", "samuel", "noah", True, True), ("Hannah Kim", "hannah", None, True, True),
+                        ("Diego Morales", "diego", None, False, True)],
+              "beta": [("Aisha Rahman", "aisha", "priya", True, True), ("Tom Becker", "tom", "priya", True, True),
+                       ("Grace Liu", "grace", "quinn", True, True), ("Lucas Meyer", "lucas", None, True, True),
+                       ("Victor Hale", "victor", None, True, False)]}
 
 
 def settings() -> Settings:
@@ -89,57 +105,69 @@ async def seed(sessions, deps: RunnerDeps) -> None:
             await db.flush()
             db.add(TeamLeadAssignment(team_id=team.id, user_id=lead.id))
             ids[f"team_{key}"], ids[f"lead_{key}"] = team, lead
-            for i, (name, slug) in enumerate(members):
+            for name, slug in members:
                 member = User(name=name, email=f"{slug}@example.com", role="MEMBER", team_id=team.id, password_hash=hashed)
                 db.add(member)
                 await db.flush()
-                has_resume = slug != "omar"                  # one member without a resume, to show that state
-                db.add(MemberProfile(
-                    user_id=member.id, desired_titles=["Machine Learning Engineer", "AI Engineer"] if i != 2 else ["Data Scientist"],
+                ids[slug] = member
+            for i, (name, slug, owner, has_resume, active) in enumerate(CANDIDATES[key]):
+                candidate = Candidate(name=name, email=f"{slug}.candidate@example.com" if i != 1 else "", team_id=team.id,
+                                      phone=f"+1 555 01{len(ids):02d}" if i != 4 else "", is_active=active, created_by=lead.id,
+                                      notes="Prefers employers with a clear remote policy." if i == 0 else "",
+                                      assigned_member_id=ids[owner].id if owner else None)
+                db.add(candidate)
+                await db.flush()
+                db.add(CandidateProfile(
+                    candidate_id=candidate.id, desired_titles=["Machine Learning Engineer", "AI Engineer"] if i != 2 else ["Data Scientist"],
                     years_experience=3 + i, skills=["Python", "PyTorch", "SQL", "AWS"] if has_resume else [],
                     preferred_states=["NY", "WA"] if i == 0 else [], preferred_cities=[], excluded_companies=[], required_keywords=[],
                     extra={}, work_authorization="Green Card / US Permanent Resident", sponsorship_needed="No",
                     exclude_citizenship_required=True, work_mode="All"))
                 if has_resume:
-                    db.add(Resume(user_id=member.id, filename=f"{slug}-resume.txt", size_bytes=len(RESUME), sha256="0" * 64,
-                                  text=RESUME.replace("Jordan Rivera", name), version=1, is_current=True, uploaded_by=member.id,
+                    text = RESUME.replace("Jordan Rivera", name)
+                    db.add(Resume(candidate_id=candidate.id, filename=f"{slug}-resume.txt", content_type="text/plain",
+                                  size_bytes=len(text.encode()), sha256=hashlib.sha256(text.encode()).hexdigest(),
+                                  text=text, file_data=text.encode(), version=1, is_current=True, uploaded_by=lead.id,
                                   parsed_profile={"skills": ["Python", "PyTorch", "TensorFlow", "SQL", "Docker", "AWS"],
                                                   "job_titles": ["Machine Learning Engineer", "Software Engineer"], "education": ["B.S. Computer Science"]}))
-                ids[slug] = member
+                ids[slug] = candidate
         ids["admin"] = admin
         await db.commit()
 
     # Real searches (synthetic network) so results, match explanations and assignments are genuine pipeline output.
-    async def run(lead, members, mode="auto_assign", titles=None, count=14):
+    async def run(lead, candidates, mode="auto_assign", titles=None, count=14):
         async with sessions() as db:
             search = SearchRun(initiated_by=lead.id, team_id=lead.team_id, mode=mode, target_count=count, deep_search=False,
                                min_match_score=50, search_filters={"job_titles": titles} if titles else {}, status="queued", progress={})
             db.add(search)
             await db.flush()
-            for m in members:
-                profile = (await db.execute(select(MemberProfile).where(MemberProfile.user_id == m.id))).scalar_one()
-                db.add(SearchTarget(search_run_id=search.id, member_id=m.id, assignment_mode=mode, status="queued", stats={},
-                                    member_specific_filters={"job_titles": titles or profile.desired_titles, "years_experience": float(profile.years_experience or 0),
-                                                             "work_authorization": profile.work_authorization, "sponsorship_needed": profile.sponsorship_needed,
-                                                             "exclude_citizenship_required": True, "work_mode": "All",
-                                                             "preferred_states": [], "excluded_companies": [], "skills": profile.skills}))
+            for c in candidates:
+                profile = (await db.execute(select(CandidateProfile).where(CandidateProfile.candidate_id == c.id))).scalar_one()
+                db.add(SearchTarget(search_run_id=search.id, candidate_id=c.id, assignment_mode=mode, status="queued", stats={},
+                                    candidate_specific_filters={"job_titles": titles or profile.desired_titles, "years_experience": float(profile.years_experience or 0),
+                                                                "work_authorization": profile.work_authorization, "sponsorship_needed": profile.sponsorship_needed,
+                                                                "exclude_citizenship_required": True, "work_mode": "All",
+                                                                "preferred_states": [], "excluded_companies": [], "skills": profile.skills}))
             await db.commit()
             run_id = search.id
         await execute_search(run_id, deps)
         return run_id
 
-    await run(ids["lead_alpha"], [ids["maya"], ids["noah"]])
-    await run(ids["lead_alpha"], [ids["maya"]], mode="review", titles=["Data Scientist", "Backend Engineer"], count=6)
-    await run(ids["lead_beta"], [ids["priya"]], count=8)
+    await run(ids["lead_alpha"], [ids["jordan"], ids["samuel"]])
+    await run(ids["lead_alpha"], [ids["jordan"]], mode="review", titles=["Data Scientist", "Backend Engineer"], count=6)
+    await run(ids["lead_alpha"], [ids["hannah"]], count=5)        # a candidate needs no responsible member to be searched
+    await run(ids["lead_beta"], [ids["aisha"]], count=8)
 
     # Application progress spread over the last two weeks (so charts have a shape), through the real status service.
     async with sessions() as db:
         now = utcnow()
-        for slug, plan in (("maya", ["OFFER", "INTERVIEWING", "APPLIED", "APPLIED", "APPLIED", "REJECTED", "SKIPPED", "VIEWED", "APPLYING"]),
-                           ("noah", ["APPLIED", "APPLIED", "INTERVIEWING", "VIEWED"]), ("priya", ["APPLIED", "REJECTED", "VIEWED"])):
-            member = await db.get(User, ids[slug].id)
+        # Each candidate's jobs are worked on by the member responsible for that candidate.
+        for slug, plan in (("jordan", ["OFFER", "INTERVIEWING", "APPLIED", "APPLIED", "APPLIED", "REJECTED", "SKIPPED", "VIEWED", "APPLYING"]),
+                           ("samuel", ["APPLIED", "APPLIED", "INTERVIEWING", "VIEWED"]), ("aisha", ["APPLIED", "REJECTED", "VIEWED"])):
+            candidate = ids[slug]
+            member = await db.get(User, candidate.assigned_member_id)
             principal = Principal(member, None)
-            rows = list((await db.execute(select(JobAssignment).where(JobAssignment.member_id == member.id)
+            rows = list((await db.execute(select(JobAssignment).where(JobAssignment.candidate_id == candidate.id)
                                           .order_by(JobAssignment.match_score.desc().nulls_last(), JobAssignment.id))).scalars())
             for n, (assignment, status) in enumerate(zip(rows, plan)):
                 assigned = now - timedelta(days=13 - n % 6)
@@ -152,7 +180,7 @@ async def seed(sessions, deps: RunnerDeps) -> None:
                     await assignments_service.set_status(db, principal, assignment, StatusUpdate(
                         status=status, applied_at=applied_at, reference=f"REF-{1000 + n}" if status == "APPLIED" else None,
                         note="Recruiter replied within a day." if status == "INTERVIEWING" else None))
-            await db.execute(update(JobAssignment).where(JobAssignment.member_id == member.id, JobAssignment.assigned_at > now - timedelta(minutes=5))
+            await db.execute(update(JobAssignment).where(JobAssignment.candidate_id == candidate.id, JobAssignment.assigned_at > now - timedelta(minutes=5))
                              .values(assigned_at=now - timedelta(days=2)))
         await db.flush()
         # Spread event dates to match (events were all written "now").

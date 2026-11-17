@@ -28,7 +28,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Member Analytics */
+        /**
+         * Member Analytics
+         * @description The same answer as GET /api/users/{id}/dashboard: totals over the candidates assigned to this member today.
+         */
         get: operations["member_analytics_api_analytics_member__member_id__get"];
         put?: never;
         post?: never;
@@ -62,7 +65,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Assignments */
+        /**
+         * List Assignments
+         * @description Jobs assigned to candidates, within the caller's scope (a member: the candidates assigned to them today).
+         *     `candidate_id` narrows to one candidate, `member_id` to the candidates of one responsible member.
+         */
         get: operations["list_assignments_api_assignments_get"];
         put?: never;
         /** Create Assignment */
@@ -322,6 +329,149 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Candidates
+         * @description Filters only ever narrow the caller's scope. `unassigned=true`: candidates without a responsible member;
+         *     `unassigned=false`: those with one. Sorts: `name`, `recent` (created), `updated`, `newest_job` (newest active
+         *     assignment first, candidates without jobs last), `not_applied` (most jobs still to apply to first).
+         */
+        get: operations["list_candidates_api_candidates_get"];
+        put?: never;
+        /** Create Candidate */
+        post: operations["create_candidate_api_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Candidate */
+        get: operations["get_candidate_api_candidates__candidate_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Candidate */
+        patch: operations["update_candidate_api_candidates__candidate_id__patch"];
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Candidate Activity */
+        get: operations["candidate_activity_api_candidates__candidate_id__activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Candidate Analytics */
+        get: operations["candidate_analytics_api_candidates__candidate_id__analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Candidate Profile */
+        get: operations["get_candidate_profile_api_candidates__candidate_id__profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Candidate Profile */
+        patch: operations["update_candidate_profile_api_candidates__candidate_id__profile_patch"];
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Candidate Resume
+         * @description The current resume with its extracted text, or null when the candidate has none.
+         */
+        get: operations["get_candidate_resume_api_candidates__candidate_id__resume_get"];
+        put?: never;
+        /**
+         * Upload Candidate Resume
+         * @description A Team Lead or Admin uploads the candidate's resume (PDF, DOCX or TXT). The text is extracted for searching
+         *     and the file itself is kept, so the responsible member can download it when applying. It replaces the current one.
+         */
+        post: operations["upload_candidate_resume_api_candidates__candidate_id__resume_post"];
+        /**
+         * Delete Candidate Resume
+         * @description Deletes the current resume: its text and its file.
+         */
+        delete: operations["delete_candidate_resume_api_candidates__candidate_id__resume_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/resume/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Candidate Resume
+         * @description The file that was uploaded, for exactly the people who may see the candidate. Always an attachment, with a
+         *     content type chosen by the server from the file's extension, so a browser never renders or interprets it.
+         */
+        get: operations["download_candidate_resume_api_candidates__candidate_id__resume_download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -535,23 +685,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/members/{member_id}/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Member Resume */
-        get: operations["member_resume_api_members__member_id__resume_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/notifications": {
         parameters: {
             query?: never;
@@ -598,44 +731,6 @@ export interface paths {
         /** Read Notification */
         post: operations["read_notification_api_notifications__notification_id__read_post"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/resumes/upload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Upload Resume
-         * @description A member uploads their own resume; a Team Lead or Admin may upload one for a member in their scope.
-         */
-        post: operations["upload_resume_api_resumes_upload_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/resumes/{resume_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Resume */
-        get: operations["get_resume_api_resumes__resume_id__get"];
-        put?: never;
-        post?: never;
-        /** Delete Resume */
-        delete: operations["delete_resume_api_resumes__resume_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -899,7 +994,7 @@ export interface paths {
         put?: never;
         /**
          * Delegate Jobs
-         * @description Admin hands jobs to a team; its Team Lead distributes them to members.
+         * @description Admin hands jobs to a team; its Team Lead distributes them to the team's candidates.
          */
         post: operations["delegate_jobs_api_teams__team_id__queue_post"];
         delete?: never;
@@ -956,7 +1051,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Member Activity */
+        /**
+         * Member Activity
+         * @description What happened on the jobs of the candidates this member is responsible for today.
+         */
         get: operations["member_activity_api_users__user_id__activity_get"];
         put?: never;
         post?: never;
@@ -973,7 +1071,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Member Dashboard */
+        /**
+         * Member Dashboard
+         * @description Totals over the candidates this member is responsible for today, with one row per candidate.
+         */
         get: operations["member_dashboard_api_users__user_id__dashboard_get"];
         put?: never;
         post?: never;
@@ -981,24 +1082,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/users/{user_id}/profile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Profile */
-        get: operations["get_profile_api_users__user_id__profile_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Profile */
-        patch: operations["update_profile_api_users__user_id__profile_patch"];
         trace?: never;
     };
     "/api/users/{user_id}/reset-link": {
@@ -1033,6 +1116,7 @@ export interface components {
              * Format: uuid
              */
             assignment_id: string;
+            candidate: components["schemas"]["CandidateRef"];
             /** Company */
             company: string;
             /**
@@ -1049,7 +1133,7 @@ export interface components {
             id: string;
             /** Job Title */
             job_title: string;
-            member: components["schemas"]["UserRef"];
+            member?: components["schemas"]["UserRef"] | null;
             /** New Status */
             new_status?: string | null;
             /** Old Status */
@@ -1059,6 +1143,11 @@ export interface components {
         AdminAnalytics: {
             /** Applications Over Time */
             applications_over_time: components["schemas"]["SeriesPoint"][];
+            /**
+             * Candidate Distribution
+             * @default []
+             */
+            candidate_distribution: components["schemas"]["NameValue"][];
             /** Funnel */
             funnel: components["schemas"]["NameValue"][];
             /** Member Distribution */
@@ -1084,30 +1173,30 @@ export interface components {
         /** AssignCreate */
         AssignCreate: {
             /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /**
              * Job Id
              * Format: uuid
              */
             job_id: string;
-            /**
-             * Member Id
-             * Format: uuid
-             */
-            member_id: string;
             /** Search Run Id */
             search_run_id?: string | null;
         };
         /** AssignItem */
         AssignItem: {
             /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /**
              * Job Id
              * Format: uuid
              */
             job_id: string;
-            /**
-             * Member Id
-             * Format: uuid
-             */
-            member_id: string;
             /** Search Run Id */
             search_run_id?: string | null;
         };
@@ -1131,6 +1220,7 @@ export interface components {
              */
             assigned_at: string;
             assigned_by?: components["schemas"]["UserRef"] | null;
+            candidate: components["schemas"]["CandidateRef"];
             /** Closed At */
             closed_at?: string | null;
             /**
@@ -1177,7 +1267,7 @@ export interface components {
             match: components["schemas"]["MatchExplanation"];
             /** Match Score */
             match_score?: number | null;
-            member: components["schemas"]["UserRef"];
+            member?: components["schemas"]["UserRef"] | null;
             /**
              * Note Count
              * @default 0
@@ -1216,6 +1306,7 @@ export interface components {
              */
             assigned_at: string;
             assigned_by?: components["schemas"]["UserRef"] | null;
+            candidate: components["schemas"]["CandidateRef"];
             /**
              * Id
              * Format: uuid
@@ -1236,7 +1327,7 @@ export interface components {
             link_opens: number;
             /** Match Score */
             match_score?: number | null;
-            member: components["schemas"]["UserRef"];
+            member?: components["schemas"]["UserRef"] | null;
             /**
              * Note Count
              * @default 0
@@ -1347,21 +1438,19 @@ export interface components {
             /** File */
             file: string;
         };
-        /** Body_upload_resume_api_resumes_upload_post */
-        Body_upload_resume_api_resumes_upload_post: {
+        /** Body_upload_candidate_resume_api_candidates__candidate_id__resume_post */
+        Body_upload_candidate_resume_api_candidates__candidate_id__resume_post: {
             /** File */
             file: string;
-            /** Member Id */
-            member_id?: string | null;
         };
         /** BulkAssign */
         BulkAssign: {
+            /** Candidate Ids */
+            candidate_ids?: string[];
             /** Items */
             items?: components["schemas"]["AssignItem"][];
             /** Job Ids */
             job_ids?: string[];
-            /** Member Ids */
-            member_ids?: string[];
             /** Queue Item Ids */
             queue_item_ids?: string[];
             /** Search Run Id */
@@ -1378,6 +1467,206 @@ export interface components {
             assignment_ids: string[];
             /** Created */
             created: number;
+        };
+        /**
+         * CandidateAnalytics
+         * @description One candidate's numbers, in the shape of the member dashboard.
+         */
+        CandidateAnalytics: {
+            /** Applications Over Time */
+            applications_over_time: components["schemas"]["SeriesPoint"][];
+            candidate: components["schemas"]["CandidateRef"];
+            /** Funnel */
+            funnel: components["schemas"]["NameValue"][];
+            /** Interview Outcomes */
+            interview_outcomes: components["schemas"]["NameValue"][];
+            member?: components["schemas"]["UserRef"] | null;
+            /** Pending Vs Applied */
+            pending_vs_applied: components["schemas"]["NameValue"][];
+            /** Range */
+            range: {
+                [key: string]: unknown;
+            };
+            stats: components["schemas"]["AssignmentStats"];
+            /** Status Distribution */
+            status_distribution: components["schemas"]["NameValue"][];
+            team?: components["schemas"]["TeamRef"] | null;
+            /** Weekly Activity */
+            weekly_activity: components["schemas"]["SeriesPoint"][];
+        };
+        /** CandidateCreate */
+        CandidateCreate: {
+            /** Assigned Member Id */
+            assigned_member_id?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Phone
+             * @default
+             */
+            phone: string;
+            /** Team Id */
+            team_id?: string | null;
+        };
+        /** CandidateOut */
+        CandidateOut: {
+            assigned_member?: components["schemas"]["UserRef"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by?: components["schemas"]["UserRef"] | null;
+            /**
+             * Email
+             * @default
+             */
+            email: string;
+            /**
+             * Has Resume
+             * @default false
+             */
+            has_resume: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Last Assigned At */
+            last_assigned_at?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Phone
+             * @default
+             */
+            phone: string;
+            /**
+             * Profile Completion
+             * @default 0
+             */
+            profile_completion: number;
+            /**
+             * @default {
+             *       "desired_titles": [],
+             *       "preferred_states": [],
+             *       "work_authorization": "Other / Prefer Not to Say"
+             *     }
+             */
+            profile_summary: components["schemas"]["CandidateProfileSummary"];
+            /**
+             * Resume Has File
+             * @default false
+             */
+            resume_has_file: boolean;
+            /**
+             * @default {
+             *       "applied": 0,
+             *       "assigned": 0,
+             *       "closed": 0,
+             *       "completion_rate": 0,
+             *       "interviews": 0,
+             *       "link_opens": 0,
+             *       "not_applied": 0,
+             *       "offers": 0,
+             *       "viewed": 0
+             *     }
+             */
+            stats: components["schemas"]["AssignmentStats"];
+            team?: components["schemas"]["TeamRef"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * CandidateProfileSummary
+         * @description The few profile values a candidate card shows; the full profile is at /api/candidates/{id}/profile.
+         */
+        CandidateProfileSummary: {
+            /**
+             * Desired Titles
+             * @default []
+             */
+            desired_titles: string[];
+            /**
+             * Preferred States
+             * @default []
+             */
+            preferred_states: string[];
+            /**
+             * Work Authorization
+             * @default Other / Prefer Not to Say
+             */
+            work_authorization: string;
+            /** Years Experience */
+            years_experience?: number | null;
+        };
+        /**
+         * CandidateRef
+         * @description A candidate as shown next to a job, a search or an event.
+         */
+        CandidateRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** CandidateRow */
+        CandidateRow: {
+            candidate: components["schemas"]["CandidateRef"];
+            /**
+             * Has Resume
+             * @default false
+             */
+            has_resume: boolean;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            member?: components["schemas"]["UserRef"] | null;
+            stats: components["schemas"]["AssignmentStats"];
+            team?: components["schemas"]["TeamRef"] | null;
+        };
+        /**
+         * CandidateUpdate
+         * @description Only the fields that are sent change. `assigned_member_id: null` takes the candidate away from its member;
+         *     `email: null` (or "") removes the address.
+         */
+        CandidateUpdate: {
+            /** Assigned Member Id */
+            assigned_member_id?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Name */
+            name?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Team Id */
+            team_id?: string | null;
         };
         /** ChangePasswordIn */
         ChangePasswordIn: {
@@ -1429,7 +1718,7 @@ export interface components {
         };
         /**
          * ExtraField
-         * @description An optional profile field the Admin added. Members fill it in; it is shown with the profile.
+         * @description An optional candidate-profile field the Admin added. It is shown with every candidate's profile.
          */
         ExtraField: {
             /** Key */
@@ -1649,7 +1938,8 @@ export interface components {
              * Format: uuid
              */
             assignment_id: string;
-            member: components["schemas"]["UserRef"];
+            candidate: components["schemas"]["CandidateRef"];
+            member?: components["schemas"]["UserRef"] | null;
             /**
              * Status
              * @enum {string}
@@ -2293,6 +2583,11 @@ export interface components {
         MemberAnalytics: {
             /** Applications Over Time */
             applications_over_time: components["schemas"]["SeriesPoint"][];
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["CandidateRow"][];
             /** Funnel */
             funnel: components["schemas"]["NameValue"][];
             /** Interview Outcomes */
@@ -2311,10 +2606,16 @@ export interface components {
             /** Weekly Activity */
             weekly_activity: components["schemas"]["SeriesPoint"][];
         };
-        /** MemberRow */
+        /**
+         * MemberRow
+         * @description A member as the person responsible for candidates: totals over the candidates assigned to them today.
+         */
         MemberRow: {
-            /** Has Resume */
-            has_resume: boolean;
+            /**
+             * Candidates
+             * @default 0
+             */
+            candidates: number;
             /** Last Activity At */
             last_activity_at?: string | null;
             member: components["schemas"]["UserRef"];
@@ -2410,6 +2711,17 @@ export interface components {
         Page_AuditOut_: {
             /** Items */
             items: components["schemas"]["AuditOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page[CandidateOut] */
+        Page_CandidateOut_: {
+            /** Items */
+            items: components["schemas"]["CandidateOut"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -2573,6 +2885,11 @@ export interface components {
         /** ProfileOut */
         ProfileOut: {
             /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /**
              * Completion
              * @default 0
              */
@@ -2638,11 +2955,6 @@ export interface components {
             sponsorship_needed: string;
             /** Updated At */
             updated_at?: string | null;
-            /**
-             * User Id
-             * Format: uuid
-             */
-            user_id: string;
             /**
              * Work Authorization
              * @default Other / Prefer Not to Say
@@ -2719,12 +3031,22 @@ export interface components {
         /** ResumeOut */
         ResumeOut: {
             /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /**
              * Created At
              * Format: date-time
              */
             created_at: string;
             /** Filename */
             filename: string;
+            /**
+             * Has File
+             * @default false
+             */
+            has_file: boolean;
             /**
              * Id
              * Format: uuid
@@ -2747,16 +3069,13 @@ export interface components {
              */
             truncated: boolean;
             uploaded_by?: components["schemas"]["UserRef"] | null;
-            /**
-             * User Id
-             * Format: uuid
-             */
-            user_id: string;
             /** Version */
             version: number;
         };
         /** SearchCreate */
         SearchCreate: {
+            /** Candidate Ids */
+            candidate_ids?: string[];
             /**
              * Deep Search
              * @default true
@@ -2764,8 +3083,6 @@ export interface components {
             deep_search: boolean;
             /** @default {} */
             filters: components["schemas"]["SearchFilters"];
-            /** Member Ids */
-            member_ids?: string[];
             /** Min Match Score */
             min_match_score?: number | null;
             /**
@@ -2793,7 +3110,7 @@ export interface components {
         };
         /**
          * SearchFilters
-         * @description Shared overrides for one run. A field left out (null) means: use each member's own saved value.
+         * @description Shared overrides for one run. A field left out (null) means: use each candidate's own saved value.
          */
         SearchFilters: {
             /** Exclude Citizenship Required */
@@ -2839,6 +3156,7 @@ export interface components {
             assignment_id?: string | null;
             /** Assignment Status */
             assignment_status?: ("ASSIGNED" | "VIEWED" | "APPLYING" | "APPLIED" | "INTERVIEWING" | "OFFER" | "REJECTED" | "WITHDRAWN" | "SKIPPED") | null;
+            candidate: components["schemas"]["CandidateRef"];
             /**
              * Id
              * Format: uuid
@@ -2848,7 +3166,6 @@ export interface components {
             match: components["schemas"]["MatchExplanation"];
             /** Match Score */
             match_score: number;
-            member: components["schemas"]["UserRef"];
             /** Rank */
             rank: number;
         };
@@ -2869,6 +3186,11 @@ export interface components {
              * @default false
              */
             cancel_requested: boolean;
+            /**
+             * Candidate Count
+             * @default 0
+             */
+            candidate_count: number;
             /** Completed At */
             completed_at?: string | null;
             /**
@@ -2911,11 +3233,6 @@ export interface components {
              * @default 0
              */
             matched_count: number;
-            /**
-             * Member Count
-             * @default 0
-             */
-            member_count: number;
             /** Min Match Score */
             min_match_score: number;
             /**
@@ -2963,7 +3280,7 @@ export interface components {
         };
         /** SearchSkipped */
         SearchSkipped: {
-            member: components["schemas"]["UserRef"];
+            candidate: components["schemas"]["CandidateRef"];
             /** Reason */
             reason: string;
         };
@@ -2974,6 +3291,7 @@ export interface components {
              * @default 0
              */
             assigned: number;
+            candidate: components["schemas"]["CandidateRef"];
             /**
              * Discovered
              * @default 0
@@ -2996,12 +3314,13 @@ export interface components {
              * @default 0
              */
             matched: number;
-            member: components["schemas"]["UserRef"];
             /**
              * Message
              * @default
              */
             message: string;
+            /** Resume Id */
+            resume_id?: string | null;
             /**
              * Stage
              * @default
@@ -3164,6 +3483,16 @@ export interface components {
             active_searches: number;
             /** Applications Over Time */
             applications_over_time: components["schemas"]["SeriesPoint"][];
+            /**
+             * Candidate Count
+             * @default 0
+             */
+            candidate_count: number;
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["CandidateRow"][];
             /** Funnel */
             funnel: components["schemas"]["NameValue"][];
             /** Member Count */
@@ -3183,6 +3512,11 @@ export interface components {
             status_distribution: components["schemas"]["NameValue"][];
             team: components["schemas"]["TeamRef"];
             team_lead?: components["schemas"]["UserRef"] | null;
+            /**
+             * Unassigned Candidates
+             * @default 0
+             */
+            unassigned_candidates: number;
             /** Weekly Activity */
             weekly_activity: components["schemas"]["SeriesPoint"][];
         };
@@ -3198,6 +3532,11 @@ export interface components {
         };
         /** TeamOut */
         TeamOut: {
+            /**
+             * Candidate Count
+             * @default 0
+             */
+            candidate_count: number;
             /**
              * Created At
              * Format: date-time
@@ -3241,6 +3580,11 @@ export interface components {
             team_lead?: components["schemas"]["UserRef"] | null;
             /** Team Lead Status */
             team_lead_status?: string | null;
+            /**
+             * Unassigned Candidates
+             * @default 0
+             */
+            unassigned_candidates: number;
         };
         /** TeamRef */
         TeamRef: {
@@ -3254,6 +3598,11 @@ export interface components {
         };
         /** TeamRow */
         TeamRow: {
+            /**
+             * Candidates
+             * @default 0
+             */
+            candidates: number;
             /**
              * Is Active
              * @default true
@@ -3335,6 +3684,11 @@ export interface components {
         /** UserOut */
         UserOut: {
             /**
+             * Candidate Count
+             * @default 0
+             */
+            candidate_count: number;
+            /**
              * Created At
              * Format: date-time
              */
@@ -3346,11 +3700,6 @@ export interface components {
             deactivated_by_admin: boolean;
             /** Email */
             email: string;
-            /**
-             * Has Resume
-             * @default false
-             */
-            has_resume: boolean;
             /**
              * Id
              * Format: uuid
@@ -3364,11 +3713,6 @@ export interface components {
             last_login_at?: string | null;
             /** Name */
             name: string;
-            /**
-             * Profile Completion
-             * @default 0
-             */
-            profile_completion: number;
             /**
              * Role
              * @enum {string}
@@ -3435,6 +3779,7 @@ export interface operations {
                 date_to?: string | null;
                 team_id?: string | null;
                 member_id?: string | null;
+                candidate_id?: string | null;
                 status?: string | null;
                 company?: string | null;
                 role?: string | null;
@@ -3536,6 +3881,7 @@ export interface operations {
     list_assignments_api_assignments_get: {
         parameters: {
             query?: {
+                candidate_id?: string | null;
                 member_id?: string | null;
                 team_id?: string | null;
                 status?: string | null;
@@ -3645,6 +3991,7 @@ export interface operations {
     export_assignments_api_assignments_export_csv_get: {
         parameters: {
             query?: {
+                candidate_id?: string | null;
                 member_id?: string | null;
                 team_id?: string | null;
                 status?: string | null;
@@ -4058,6 +4405,413 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Message"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_candidates_api_candidates_get: {
+        parameters: {
+            query?: {
+                team_id?: string | null;
+                assigned_member_id?: string | null;
+                unassigned?: boolean | null;
+                active?: boolean | null;
+                has_resume?: boolean | null;
+                q?: string | null;
+                sort?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CandidateOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_candidate_api_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_candidate_api_candidates__candidate_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_candidate_api_candidates__candidate_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    candidate_activity_api_candidates__candidate_id__activity_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ActivityItem_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    candidate_analytics_api_candidates__candidate_id__analytics_get: {
+        parameters: {
+            query?: {
+                date_from?: string | null;
+                date_to?: string | null;
+            };
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateAnalytics"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_candidate_profile_api_candidates__candidate_id__profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_candidate_profile_api_candidates__candidate_id__profile_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_candidate_resume_api_candidates__candidate_id__resume_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_candidate_resume_api_candidates__candidate_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_candidate_resume_api_candidates__candidate_id__resume_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_candidate_resume_api_candidates__candidate_id__resume_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_candidate_resume_api_candidates__candidate_id__resume_download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The uploaded resume file, as an attachment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description No candidate, no resume, or a resume uploaded before files were kept */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -4537,37 +5291,6 @@ export interface operations {
             };
         };
     };
-    member_resume_api_members__member_id__resume_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                member_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResumeOut"] | null;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_notifications_api_notifications_get: {
         parameters: {
             query?: {
@@ -4639,101 +5362,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    upload_resume_api_resumes_upload_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_upload_resume_api_resumes_upload_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResumeOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_resume_api_resumes__resume_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                resume_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResumeOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_resume_api_resumes__resume_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                resume_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Message"];
                 };
             };
             /** @description Validation Error */
@@ -4836,7 +5464,7 @@ export interface operations {
             query?: {
                 status?: string | null;
                 team_id?: string | null;
-                member_id?: string | null;
+                candidate_id?: string | null;
                 mine?: boolean;
                 page?: number;
                 page_size?: number;
@@ -5016,7 +5644,7 @@ export interface operations {
     search_results_api_searches__search_id__results_get: {
         parameters: {
             query?: {
-                member_id?: string | null;
+                candidate_id?: string | null;
                 min_score?: number;
                 unassigned_only?: boolean;
                 page?: number;
@@ -5594,72 +6222,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberAnalytics"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_profile_api_users__user_id__profile_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProfileOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_profile_api_users__user_id__profile_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProfileIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProfileOut"];
                 };
             };
             /** @description Validation Error */

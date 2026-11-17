@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
 from . import security
-from .models import JobAssignment, Session, User
+from .models import Candidate, JobAssignment, Session, User
 from .services.common import viewer
 
 SESSION_COOKIE = "jf_session"
@@ -171,7 +171,34 @@ def assignment_scope(principal: Principal) -> ColumnElement[bool]:
         return true()
     if principal.is_team_lead:
         return JobAssignment.team_id == user.team_id if user.team_id else false()
-    return JobAssignment.member_id == user.id
+    return JobAssignment.candidate_id.in_(own_candidates(user.id))       # the candidates this member is responsible for today
+
+
+def own_candidates(member_id: uuid.UUID):
+    """Subquery: ids of the candidates currently assigned to this member."""
+    return select(Candidate.id).where(Candidate.assigned_member_id == member_id)
+
+
+def candidate_scope(principal: Principal) -> ColumnElement[bool]:
+    """SQL filter restricting candidate rows: Admin all, Team Lead own team, Member those assigned to them today."""
+    user = principal.user
+    if principal.is_admin:
+        return true()
+    if principal.is_team_lead:
+        return Candidate.team_id == user.team_id if user.team_id else false()
+    return Candidate.assigned_member_id == user.id
+
+
+async def candidate_in_scope(db: AsyncSession, principal: Principal, candidate_id: uuid.UUID, *, write: bool = False) -> Candidate:
+    """Load a candidate the caller may see. A candidate outside the caller's scope answers exactly like one that
+    does not exist (404), for every role. `write=True` is for changes: only managers make them, so a member is
+    refused (403) for a candidate they can see."""
+    candidate = (await db.execute(select(Candidate).where(Candidate.id == candidate_id, candidate_scope(principal)))).scalar_one_or_none()
+    if candidate is None:
+        raise HTTPException(404, "Candidate not found")
+    if write and not principal.is_manager:
+        raise forbid()
+    return candidate
 
 
 def user_scope(principal: Principal) -> ColumnElement[bool]:

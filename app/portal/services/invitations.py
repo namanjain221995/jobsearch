@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from .. import security
 from ..deps import Principal
-from ..models import Invitation, MemberProfile, PasswordReset, Team, TeamLeadAssignment, User
+from ..models import Invitation, PasswordReset, Team, TeamLeadAssignment, User
 from ..schemas import InvitationCreate, InvitationOut
 from ..security import utcnow
 from .audit import audit, notify
@@ -115,10 +115,7 @@ async def create_invitation(db: AsyncSession, settings: Settings, emailer: Email
                     is_active=True, created_by=actor.id)
         db.add(user)
         await db.flush()
-        if data.role == "MEMBER":
-            db.add(MemberProfile(user_id=user.id, desired_titles=[], skills=[], preferred_states=[], preferred_cities=[],
-                                 excluded_companies=[], required_keywords=[], extra={}))
-        elif team is not None:
+        if data.role == "TEAM_LEAD" and team is not None:
             db.add(TeamLeadAssignment(team_id=team.id, user_id=user.id))
     invitation, url, sent = await _issue(db, settings, emailer, actor, user, team, hours)
     audit(db, actor, "invitation.created", "user", user.id, team.id if team else None,

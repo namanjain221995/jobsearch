@@ -29,8 +29,8 @@ from app import netguard
 from app.config import Settings
 from app.portal import security
 from app.portal.app import create_app
-from app.portal.models import (ApplicationEvent, AuditLog, JobAssignment, JobPosting, Notification, Resume, SearchResult,
-                               SearchRun, SearchTarget, TeamJobQueue, User)
+from app.portal.models import (ApplicationEvent, AuditLog, Candidate, CandidateProfile, JobAssignment, JobPosting, Notification, Resume,
+                               SearchResult, SearchRun, SearchTarget, TeamJobQueue, User)
 from app.portal.services import jobs as jobs_service
 from app.schemas import Job as EngineJob
 from tests.portal.conftest import PASSWORD, add_job, token_of
@@ -50,8 +50,8 @@ async def quiet_client(world, email: str) -> httpx.AsyncClient:
     return client
 
 
-async def assign(admin, job: str, member_id) -> str:
-    response = await admin.post("/api/assignments", json={"job_id": job, "member_id": str(member_id)})
+async def assign(admin, job: str, candidate_id) -> str:
+    response = await admin.post("/api/assignments", json={"job_id": job, "candidate_id": str(candidate_id)})
     assert response.status_code == 201, response.text
     return response.json()["assignment_ids"][0]
 
@@ -63,11 +63,11 @@ async def seed_run(world, *, initiated_by, team_id, results, status: str = "comp
                         deep_search=False, min_match_score=50, status=status, progress={})
         db.add(run)
         await db.flush()
-        for member_id in {m for m, _ in results}:
-            db.add(SearchTarget(search_run_id=run.id, member_id=member_id, member_specific_filters={}, assignment_mode="review",
+        for candidate_id in {c for c, _ in results}:
+            db.add(SearchTarget(search_run_id=run.id, candidate_id=candidate_id, candidate_specific_filters={}, assignment_mode="review",
                                 status="completed", stats={}))
-        for rank, (member_id, job_id) in enumerate(results, start=1):
-            db.add(SearchResult(search_run_id=run.id, member_id=member_id, job_id=uuid.UUID(str(job_id)), rank=rank, match_score=80,
+        for rank, (candidate_id, job_id) in enumerate(results, start=1):
+            db.add(SearchResult(search_run_id=run.id, candidate_id=candidate_id, job_id=uuid.UUID(str(job_id)), rank=rank, match_score=80,
                                 match_explanation={"reason": "Strong Python match", "matching_skills": ["Python"],
                                                    "authorization_status": "Eligible", "eligibility_note": "Green card holder: eligible"}))
         await db.commit()
@@ -207,7 +207,7 @@ async def test_finding_request_body_is_read_in_full_before_authentication(world)
     """MEDIUM - nothing caps the request size, and FastAPI parses the body before it resolves dependencies, so the
     10 MB check in routers/users.py:187 (and the 2 MB one in routers/jobs.py:71) runs only after the whole upload was
     spooled to disk, and only for signed-in callers. An anonymous client can stream any amount to
-    POST /api/resumes/upload (disk) or to a JSON route such as POST /api/auth/login (memory).
+    POST /api/candidates/{id}/resume (disk; was POST /api/resumes/upload) or to a JSON route such as POST /api/auth/login (memory).
     EXPECTED: reading stops at a fixed cap; an oversized or unauthenticated body is refused without being consumed."""
     anonymous = await world.client()
     megabyte, read = b"A" * MIB, {"upload": 0, "json": 0}
@@ -220,7 +220,7 @@ async def test_finding_request_body_is_read_in_full_before_authentication(world)
         return body()
 
     head = b'--b\r\nContent-Disposition: form-data; name="file"; filename="cv.txt"\r\nContent-Type: text/plain\r\n\r\n'
-    upload = await anonymous.post("/api/resumes/upload", content=counted("upload", head, b"\r\n--b--\r\n"),
+    upload = await anonymous.post(f"/api/candidates/{world.ids['cand_a1']}/resume", content=counted("upload", head, b"\r\n--b--\r\n"),
                                   headers={"content-type": "multipart/form-data; boundary=b"})
     login = await anonymous.post("/api/auth/login", content=counted("json", b'{"email": "admin@example.com", "password": "', b'"}'),
                                  headers={"content-type": "application/json"})
@@ -366,12 +366,19 @@ async def test_finding_tiny_pdf_resume_makes_the_parser_work_without_bound(world
     315 KB one 8 s and 1.6 GB (linear over four sizes), i.e. about 5 GB per megabyte uploaded; the limit is 10 MB. It
     runs inside the API process while the request holds a database connection.
     EXPECTED: content that inflates beyond the upload limit is refused (or parsed in a sandboxed, limited process).
-    This sample is about 46 KB on the wire and inflates to about 16 MB; today it is accepted with 201."""
-    member = await world.as_member("a1")
+    This sample is about 46 KB on the wire and inflates to about 16 MB; today it is accepted with 201.
+    Since the candidate model, resumes are uploaded by a manager to POST /api/candidates/{id}/resume (a MEMBER is
+    refused before anything is parsed), so the attacker is a Team Lead; the parser and its limits are the same."""
+    lead, member = await world.as_tl("alpha"), await world.as_member("a1")
+    url = f"/api/candidates/{world.ids['cand_a1']}/resume"
     data = pdf_with_one_huge_page(300_000)
     assert len(data) < 100_000
-    response = await member.post("/api/resumes/upload", files={"file": ("cv.pdf", data, "application/pdf")})
+    assert (await member.post(url, files={"file": ("cv.pdf", data, "application/pdf")})).status_code == 403
+    # The route, the session and the candidate are right: an ordinary file is stored. So a refusal below is about the content.
+    assert (await lead.post(url, files={"file": ("cv.txt", b"Python engineer with PyTorch experience. " * 10, "text/plain")})).status_code == 201
+    response = await lead.post(url, files={"file": ("cv.pdf", data, "application/pdf")})
     assert response.status_code in REFUSED, f"a {len(data) // 1024} KB PDF holding 16 MB of page content was parsed and stored ({response.status_code})"
+    assert (await lead.get(url)).json()["filename"] == "cv.txt"                            # nothing of it was stored
 
 
 async def test_finding_tiny_docx_resume_inflates_far_beyond_the_upload_limit(world):
@@ -379,12 +386,18 @@ async def test_finding_tiny_docx_resume_inflates_far_beyond_the_upload_limit(wor
     the 10 MB upload limit; python-docx then builds the whole tree. Measured: 60 KB uploaded -> 7 MB of XML -> 1.4 s CPU
     and 75 MB; extrapolated, the 60 MB ceiling is reached with about 0.5 MB uploaded (roughly 12 s CPU and 600 MB per
     request).
-    EXPECTED: a document that inflates beyond the upload limit is refused. This one is about 75 KB -> 12 MB."""
-    member = await world.as_member("a1")
+    EXPECTED: a document that inflates beyond the upload limit is refused. This one is about 75 KB -> 12 MB.
+    Since the candidate model the upload is a manager's POST /api/candidates/{id}/resume; a MEMBER is refused outright."""
+    lead, member = await world.as_tl("alpha"), await world.as_member("a1")
+    url = f"/api/candidates/{world.ids['cand_a1']}/resume"
     data, inflated = docx_with_many_paragraphs(170_000)
     assert len(data) < 200_000 and inflated > world.settings.max_upload_bytes
-    response = await member.post("/api/resumes/upload", files={"file": ("cv.docx", data)})
+    assert (await member.post(url, files={"file": ("cv.docx", data)})).status_code == 403
+    # The route, the session and the candidate are right: an ordinary file is stored. So a refusal below is about the content.
+    assert (await lead.post(url, files={"file": ("cv.txt", b"Python engineer with PyTorch experience. " * 10, "text/plain")})).status_code == 201
+    response = await lead.post(url, files={"file": ("cv.docx", data)})
     assert response.status_code in REFUSED, f"a {len(data) // 1024} KB DOCX inflating to {inflated // MIB} MB was parsed and stored ({response.status_code})"
+    assert (await lead.get(url)).json()["filename"] == "cv.txt"                            # nothing of it was stored
 
 
 async def test_finding_ssrf_guard_allows_shared_address_space(world):
@@ -402,7 +415,7 @@ async def test_finding_ssrf_guard_allows_shared_address_space(world):
             pass
     job = await add_job(world, canonical_url="http://100.100.100.200/latest/meta-data/", apply_url="")
     admin, member = await world.as_admin(), await world.as_member("a1")
-    assignment = await assign(admin, job, world.ids["member_a1"])
+    assignment = await assign(admin, job, world.ids["cand_a1"])
     redirect = await member.get(f"/api/assignments/{assignment}/open-job", follow_redirects=False)
     assert passed == [], f"the SSRF guard lets these through: {passed}"
     assert redirect.status_code == 409, f"Open Job redirects to {redirect.headers.get('location')}"
@@ -479,8 +492,8 @@ async def test_finding_reassigned_team_lead_keeps_access_to_former_teams_searche
     EXPECTED: a lead sees only runs of the team they lead now; one without a team sees none (403, empty list)."""
     job = await add_job(world)
     alpha, beta, lead_id = world.ids["team_alpha"], world.ids["team_beta"], world.ids["tl_alpha"]
-    finished = await seed_run(world, initiated_by=lead_id, team_id=alpha, results=[(world.ids["member_a1"], job)])
-    running = await seed_run(world, initiated_by=lead_id, team_id=alpha, results=[(world.ids["member_a1"], job)], status="running")
+    finished = await seed_run(world, initiated_by=lead_id, team_id=alpha, results=[(world.ids["cand_a1"], job)])
+    running = await seed_run(world, initiated_by=lead_id, team_id=alpha, results=[(world.ids["cand_a1"], job)], status="running")
     admin, lead = await world.as_admin(), await world.as_tl("alpha")
     assert (await lead.get(f"/api/searches/{finished}/results")).status_code == 200            # their team today
     seen = {}
@@ -503,18 +516,22 @@ async def test_finding_reassigned_team_lead_keeps_access_to_former_teams_searche
 
 async def test_finding_search_results_reveal_assignment_state_of_another_team(world):
     """LOW/MEDIUM - services/searches.py:162 results_out() looks up assignments by (job, member) with no scope and takes
-    the job counters from list_items(db, postings, []) (:164), also unscoped. The lead of the team a member left still
+    the job counters from list_items(db, postings, []) (:164), also unscoped. The lead of the team a member (today: a
+    candidate, whose jobs follow it) left still
     reads, through an old run's results, the id and current status of assignments that now belong to the new team, plus
     organisation-wide assigned / applied counts per job.
     EXPECTED: assignment_id / assignment_status are filled only for assignments the caller may open, and the counters
     cover the caller's team only (as GET /api/jobs already does)."""
     job = await add_job(world)
-    member_id = world.ids["member_a1"]
-    run = await seed_run(world, initiated_by=world.ids["tl_alpha"], team_id=world.ids["team_alpha"], results=[(member_id, job)])
+    candidate_id = world.ids["cand_a1"]
+    run = await seed_run(world, initiated_by=world.ids["tl_alpha"], team_id=world.ids["team_alpha"], results=[(candidate_id, job)])
     admin, old_lead = await world.as_admin(), await world.as_tl("alpha")
-    assert (await admin.patch(f"/api/users/{member_id}", json={"team_id": str(world.ids["team_beta"])})).status_code == 200
-    assignment = await assign(admin, job, member_id)                                      # now Team Beta's assignment
-    assert (await (await world.as_member("a1")).patch(f"/api/assignments/{assignment}/status", json={"status": "APPLIED"})).status_code == 200
+    # Since the candidate model it is the candidate that changes team (a member who moves leaves the candidates behind).
+    moved = await admin.patch(f"/api/candidates/{candidate_id}", json={"team_id": str(world.ids["team_beta"]),
+                                                                      "assigned_member_id": str(world.ids["member_b1"])})
+    assert moved.status_code == 200 and moved.json()["team"]["name"] == "Team Beta"
+    assignment = await assign(admin, job, candidate_id)                                   # now Team Beta's assignment
+    assert (await (await world.as_member("b1")).patch(f"/api/assignments/{assignment}/status", json={"status": "APPLIED"})).status_code == 200
     assert (await old_lead.get(f"/api/assignments/{assignment}")).status_code == 403      # the assignment itself is off limits
     row = (await old_lead.get(f"/api/searches/{run}/results")).json()["items"][0]
     exposed = {key: value for key, value in (("assignment_id", row["assignment_id"]), ("assignment_status", row["assignment_status"]),
@@ -530,7 +547,7 @@ async def test_finding_team_queue_reveals_other_teams_assignment_counts(world):
     EXPECTED: (0, 0) here: nobody in Team Alpha has the job."""
     job = await add_job(world)
     admin, lead_alpha = await world.as_admin(), await world.as_tl("alpha")
-    assignment = await assign(admin, job, world.ids["member_b1"])                          # Team Beta only
+    assignment = await assign(admin, job, world.ids["cand_b1"])                          # Team Beta only
     assert (await (await world.as_member("b1")).patch(f"/api/assignments/{assignment}/status", json={"status": "APPLIED"})).status_code == 200
     assert (await admin.post(f"/api/teams/{world.ids['team_alpha']}/queue", json={"job_ids": [job]})).status_code == 201
     item = (await lead_alpha.get(f"/api/teams/{world.ids['team_alpha']}/queue")).json()["items"][0]
@@ -554,7 +571,7 @@ async def test_finding_search_keeps_assigning_for_a_deactivated_team_lead(world)
         return await real_run(state, request, resume)
 
     world.engine.run = held
-    started = await lead.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"])], "target_count": 3, "deep_search": False})
+    started = await lead.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 3, "deep_search": False})
     assert started.status_code == 202
     run_id = started.json()["search"]["id"]
     for _ in range(100):
@@ -578,7 +595,7 @@ async def test_finding_event_stream_keeps_sending_after_the_account_is_deactivat
     EXPECTED: the stream ends once the session is no longer valid or the run is out of the caller's scope."""
     job = await add_job(world)
     run_id = await seed_run(world, initiated_by=world.ids["tl_alpha"], team_id=world.ids["team_alpha"],
-                            results=[(world.ids["member_a1"], job)], status="running")
+                            results=[(world.ids["cand_a1"], job)], status="running")
     lead, admin = await world.as_tl("alpha"), await world.as_admin()
     stream = asyncio.create_task(lead.get(f"/api/searches/{run_id}/events"))
     await asyncio.sleep(0.3)                                                                  # the first snapshot is out
@@ -605,7 +622,7 @@ async def test_finding_no_limit_on_queued_searches(world, monkeypatch):
         return True
     monkeypatch.setattr(world.queue, "enqueue", accepted)
     lead = await world.as_tl("alpha")
-    codes = [(await lead.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"])], "target_count": 50, "deep_search": True})).status_code
+    codes = [(await lead.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 50, "deep_search": True})).status_code
              for _ in range(12)]
     waiting = (await lead.get("/api/searches", params={"status": "active"})).json()["total"]
     assert any(code in (409, 429) for code in codes), f"{waiting} deep searches accepted from one Team Lead within a second, none refused"
@@ -621,17 +638,20 @@ async def test_finding_member_learns_about_private_notes_and_manager_only_events
     allow_job_links(monkeypatch)
     job = await add_job(world)
     admin, lead, member = await world.as_admin(), await world.as_tl("alpha"), await world.as_member("a1")
-    assignment = await assign(admin, job, world.ids["member_a1"])
+    assignment = await assign(admin, job, world.ids["cand_a1"])
     assert (await lead.post(f"/api/assignments/{assignment}/notes", json={"note": "weak candidate, do not push", "is_private": True})).status_code == 201
     assert (await lead.get(f"/api/assignments/{assignment}/open-job", follow_redirects=False)).status_code == 303
     detail = (await member.get(f"/api/assignments/{assignment}")).json()
     listed = (await member.get("/api/assignments")).json()["items"][0]
-    feed = [item["event_type"] for item in (await member.get(f"/api/users/{world.ids['member_a1']}/activity")).json()["items"]]
+    feeds = [await member.get(f"/api/users/{world.ids['member_a1']}/activity"), await member.get(f"/api/candidates/{world.ids['cand_a1']}/activity")]
+    assert [f.status_code for f in feeds] == [200, 200] and all(f.json()["total"] >= 1 for f in feeds)     # both feeds show this job
+    feed = [item["event_type"] for f in feeds for item in f.json()["items"]]
     assert detail["notes"] == []                                                           # the text itself is withheld
     told = {
         "note_count (detail)": detail["note_count"], "note_count (list)": listed["note_count"],
         "private note event in detail": [e["actor"]["name"] for e in detail["events"] if e["event_type"] == "note_added" and e["metadata"].get("private")],
         "note_added in activity feed": feed.count("note_added"),
+        "link_opened_by_manager in activity feed": feed.count("link_opened_by_manager"),
         "link_opened_by_manager in detail": sum(e["event_type"] == "link_opened_by_manager" for e in detail["events"]),
     }
     assert {key: value for key, value in told.items() if value} == {}, f"the member can tell: {told}"
@@ -646,7 +666,7 @@ async def test_finding_posting_url_in_description_reaches_the_member(world):
     link = "https://careers.northwind.example/apply/777"
     job = await add_job(world, apply_url=link, description=f"Build ML systems with Python.\n\nTo apply, go to {link} and upload your CV.")
     admin, member = await world.as_admin(), await world.as_member("a1")
-    assignment = await assign(admin, job, world.ids["member_a1"])
+    assignment = await assign(admin, job, world.ids["cand_a1"])
     detail = await member.get(f"/api/assignments/{assignment}")
     assert detail.status_code == 200 and detail.json()["job_urls"] is None
     found = re.findall(r"https?://[^ \"\\]+", detail.text)
@@ -660,10 +680,17 @@ async def test_finding_members_receive_manager_sign_in_emails(world):
     EXPECTED: a MEMBER sees the names of managers, not their sign-in addresses."""
     job = await add_job(world)
     admin, lead, member = await world.as_admin(), await world.as_tl("alpha"), await world.as_member("a1")
-    assignment = await assign(admin, job, world.ids["member_a1"])
+    assignment = await assign(admin, job, world.ids["cand_a1"])
     assert (await lead.post(f"/api/assignments/{assignment}/notes", json={"note": "Please apply this week"})).status_code == 201
     seen = "\n".join([(await member.get("/api/assignments")).text, (await member.get(f"/api/assignments/{assignment}")).text,
                       (await member.get(f"/api/users/{world.ids['member_a1']}/activity")).text])
+    candidate = f"/api/candidates/{world.ids['cand_a1']}"            # created and its resume uploaded by the Team Lead (fixture)
+    for path in ("/api/candidates", candidate, f"{candidate}/profile", f"{candidate}/resume", f"{candidate}/activity", f"{candidate}/analytics",
+                 "/api/notifications", f"/api/users/{world.ids['member_a1']}/dashboard"):
+        page = await member.get(path)
+        assert page.status_code == 200, path
+        seen += "\n" + page.text
+    assert "Lead Alpha" in seen and "Ada Admin" in seen                                    # the managers are named in what was read
     leaked = [address for address in ("admin@example.com", "tl.alpha@example.com") if address in seen]
     assert leaked == [], f"sign-in addresses of managers sent to a member: {leaked}"
 
@@ -677,8 +704,8 @@ async def test_finding_cross_site_get_changes_tracking_state(world, monkeypatch)
     EXPECTED: a request that says it is cross-site (Origin / Sec-Fetch-Site) is refused or served without recording."""
     allow_job_links(monkeypatch)
     admin, member = await world.as_admin(), await world.as_member("a1")
-    first = await assign(admin, await add_job(world), world.ids["member_a1"])
-    second = await assign(admin, await add_job(world, title="ML Engineer"), world.ids["member_a1"])
+    first = await assign(admin, await add_job(world), world.ids["cand_a1"])
+    second = await assign(admin, await add_job(world, title="ML Engineer"), world.ids["cand_a1"])
     del member.headers["x-csrf-token"]
     foreign = {"origin": "https://evil.example", "referer": "https://evil.example/", "sec-fetch-site": "cross-site",
                "sec-fetch-mode": "navigate", "sec-fetch-dest": "document"}
@@ -701,11 +728,11 @@ async def test_finding_assignment_accepts_foreign_or_unknown_search_run_id(world
     job = await add_job(world)
     admin = await world.as_admin()
     assert (await admin.post(f"/api/teams/{world.ids['team_alpha']}/queue", json={"job_ids": [job]})).status_code == 201
-    beta_run = await seed_run(world, initiated_by=world.ids["tl_beta"], team_id=world.ids["team_beta"], results=[(world.ids["member_b1"], job)])
+    beta_run = await seed_run(world, initiated_by=world.ids["tl_beta"], team_id=world.ids["team_beta"], results=[(world.ids["cand_b1"], job)])
     lead_alpha = await quiet_client(world, "tl.alpha@example.com")
     assert (await lead_alpha.get(f"/api/searches/{beta_run}")).status_code == 403
-    foreign = await lead_alpha.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a1"]), "search_run_id": beta_run})
-    unknown = await lead_alpha.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a2"]), "search_run_id": str(uuid.uuid4())})
+    foreign = await lead_alpha.post("/api/assignments", json={"job_id": job, "candidate_id": str(world.ids["cand_a1"]), "search_run_id": beta_run})
+    unknown = await lead_alpha.post("/api/assignments", json={"job_id": job, "candidate_id": str(world.ids["cand_a2"]), "search_run_id": str(uuid.uuid4())})
     async with world.sessions() as db:
         linked = (await db.execute(select(func.count()).select_from(JobAssignment).where(JobAssignment.search_run_id == uuid.UUID(beta_run)))).scalar_one()
     assert linked == 0, f"POST answered {foreign.status_code}: Team Alpha's assignment is now linked to Team Beta's search run"
@@ -718,7 +745,7 @@ async def test_finding_application_date_is_not_sanity_checked(world):
     without a time zone raises TypeError at :236: HTTP 500.
     EXPECTED: 422 for a date earlier than assigned_at; a zone-less timestamp is rejected or read as UTC, never a 500."""
     admin, member = await world.as_admin(), await quiet_client(world, "member.a1@example.com")
-    assignment = await assign(admin, await add_job(world), world.ids["member_a1"])
+    assignment = await assign(admin, await add_job(world), world.ids["cand_a1"])
     zoneless = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0).isoformat()
     naive = await member.patch(f"/api/assignments/{assignment}/status", json={"status": "APPLIED", "applied_at": zoneless})
     early = await member.patch(f"/api/assignments/{assignment}/status", json={"status": "APPLIED", "applied_at": "1999-01-01T00:00:00Z"})
@@ -736,8 +763,8 @@ async def test_finding_malformed_input_causes_internal_server_errors(world):
     admin = await quiet_client(world, "admin@example.com")
     lead = await quiet_client(world, "tl.alpha@example.com")
     member = await quiet_client(world, "member.a1@example.com")
-    assignment = await assign(admin, await add_job(world), world.ids["member_a1"])
-    own = world.ids["member_a1"]
+    assignment = await assign(admin, await add_job(world), world.ids["cand_a1"])
+    own, candidate = world.ids["member_a1"], world.ids["cand_a1"]
     answers = {
         "GET /api/assignments?page=2^63-1": await member.get("/api/assignments", params={"page": 2**63 - 1}),
         "GET /api/assignments?date_to=9999-12-31": await member.get("/api/assignments", params={"date_to": "9999-12-31"}),
@@ -746,6 +773,16 @@ async def test_finding_malformed_input_causes_internal_server_errors(world):
         "POST /api/assignments/{id}/notes with NUL": await member.post(f"/api/assignments/{assignment}/notes", json={"note": "a\u0000b"}),
         "PATCH /api/users/{id} name with NUL": await member.patch(f"/api/users/{own}", json={"name": "A\u0000B"}),
         "GET /api/users?q=<NUL>": await lead.get("/api/users", params={"q": "a\x00b"}),
+        "GET /api/candidates?page=2^63-1": await member.get("/api/candidates", params={"page": 2**63 - 1}),
+        "GET /api/candidates?q=<NUL>": await lead.get("/api/candidates", params={"q": "a\x00b"}),
+        "GET /api/candidates/{id}/activity?page=2^63-1": await member.get(f"/api/candidates/{candidate}/activity", params={"page": 2**63 - 1}),
+        "GET /api/candidates/{id}/analytics?date_to=9999-12-31": await member.get(f"/api/candidates/{candidate}/analytics", params={"date_to": "9999-12-31"}),
+        "PATCH /api/candidates/{id} name with NUL": await lead.patch(f"/api/candidates/{candidate}", json={"name": "A\u0000B"}),
+        "PATCH /api/candidates/{id} notes and phone with NUL": await lead.patch(f"/api/candidates/{candidate}", json={"notes": "a\u0000b", "phone": "1\u00002"}),
+        "POST /api/candidates e-mail with NUL": await lead.post("/api/candidates", json={"name": "New Candidate", "email": "a\u0000b@example.com"}),
+        "PATCH /api/candidates/{id}/profile with NUL": await lead.patch(f"/api/candidates/{candidate}/profile", json={"skills": ["Py\u0000thon"], "desired_titles": ["A\u0000I"]}),
+        "POST /api/candidates/{id}/resume file name with NUL": await lead.post(f"/api/candidates/{candidate}/resume", files={"file": ("c\x00v.txt", b"Python engineer with PyTorch experience. " * 10, "text/plain")}),
+        "POST /api/candidates/{id}/resume text with NUL": await lead.post(f"/api/candidates/{candidate}/resume", files={"file": ("cv.txt", b"Python engineer \x00 with PyTorch experience. " * 10, "text/plain")}),
         "POST /api/search-presets with target_count 0": await lead.post("/api/search-presets", json={"name": "bad", "filters": {"target_count": 0}}),
     }
     crashed = [name for name, response in answers.items() if response.status_code >= 500]
@@ -794,12 +831,15 @@ async def test_finding_description_cleaning_lets_markup_through(world):
 
 # ================================================================ areas that held
 def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_origin_check():
-    """Structural, over every operation (71 today): whatever is not one of the six public ones needs the session, which
+    """Structural, over every operation (71 when written; the candidate routes replaced the profile and resume ones): whatever is not one of the six public ones needs the session, which
     enforces the CSRF token and Origin on POST/PUT/PATCH/DELETE; the four public forms carry the same-origin check.
     A new route that forgets the dependency shows up here as an unexpected public operation."""
     from fastapi.routing import APIRoute
     from app.portal import deps
-    from app.portal.routers import admin, assignments, auth, invitations, jobs, searches, teams, users
+    import importlib
+    import pkgutil
+    from app.portal import routers
+    from app.portal.routers import admin, assignments, auth, candidates, invitations, jobs, searches, teams, users
 
     def reached(dependant, found):
         for inner in dependant.dependencies:
@@ -808,50 +848,104 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
         return found
 
     protection = {}
-    for module in (auth, invitations, teams, users, jobs, searches, assignments, admin):
+    modules = (auth, invitations, teams, users, candidates, jobs, searches, assignments, admin)
+    with_routes = {info.name for info in pkgutil.iter_modules(routers.__path__)
+                   if hasattr(importlib.import_module(f"{routers.__name__}.{info.name}"), "router")}
+    assert with_routes == {module.__name__.rsplit(".", 1)[1] for module in modules}       # a new router module cannot stay outside this test
+    for module in modules:
         for route in module.router.routes:
             assert isinstance(route, APIRoute)
             used = reached(route.dependant, set())
             level = "session" if deps.authenticated in used else ("origin" if deps.same_origin in used else "public")
             protection.update({(method, route.path): level for method in route.methods})
     assert len(protection) >= 71
+    # Every way to change a candidate, its profile or its resume needs the session (and with it the CSRF token and Origin).
+    changing = {key for key in protection if key[0] != "GET" and key[1].startswith("/api/candidates")}
+    assert changing == {("POST", "/api/candidates"), ("PATCH", "/api/candidates/{candidate_id}"), ("PATCH", "/api/candidates/{candidate_id}/profile"),
+                        ("POST", "/api/candidates/{candidate_id}/resume"), ("DELETE", "/api/candidates/{candidate_id}/resume")}
+    assert {protection[key] for key in protection if key[1].startswith("/api/candidates")} == {"session"}
+    assert not any(path.startswith(("/api/resumes", "/api/members")) or path.endswith("/profile") and path.startswith("/api/users")
+                   for _, path in protection)                                              # the routes the candidate ones replaced are gone
     assert {key for key, level in protection.items() if level == "public"} == {("GET", "/api/health"), ("GET", "/api/invitations/validate"), ("GET", "/api/auth/password-policy")}
     assert {key for key, level in protection.items() if level == "origin"} == {
         ("POST", "/api/auth/login"), ("POST", "/api/auth/forgot-password"), ("POST", "/api/auth/reset-password"), ("POST", "/api/invitations/accept")}
 
 
 async def test_sound_object_level_checks_hold_across_teams_and_members(world):
-    """Every id-taking route not covered by the older tests, tried with an id of another team or another member."""
+    """Every id-taking route not covered by the older tests, tried with an id of another team or another member.
+    Candidates (details, profile, resume, its file, numbers, activity) answer 404 outside the caller's scope, exactly
+    like an id that does not exist; a member who can see a candidate still changes nothing (403)."""
     job = await add_job(world)
     admin, lead_a, lead_b = await world.as_admin(), await world.as_tl("alpha"), await world.as_tl("beta")
     a1, a2 = await world.as_member("a1"), await world.as_member("a2")
     id_a1, id_a2, id_b1 = (str(world.ids[key]) for key in ("member_a1", "member_a2", "member_b1"))
-    made = await admin.post("/api/assignments/bulk", json={"job_ids": [job], "member_ids": [id_a1, id_a2, id_b1]})
+    c_a1, c_a2, c_b1 = (str(world.ids[key]) for key in ("cand_a1", "cand_a2", "cand_b1"))
+    made = await admin.post("/api/assignments/bulk", json={"job_ids": [job], "candidate_ids": [c_a1, c_a2, c_b1]})
     assert made.status_code == 201 and made.json()["created"] == 3
     async with world.sessions() as db:
-        of = {str(member): str(row) for row, member in (await db.execute(select(JobAssignment.id, JobAssignment.member_id))).all()}
-        resume = {str(owner): str(row) for row, owner in (await db.execute(select(Resume.id, Resume.user_id))).all()}
+        of = {str(candidate): str(row) for row, candidate in (await db.execute(select(JobAssignment.id, JobAssignment.candidate_id))).all()}
         notice = (await db.execute(select(Notification.id).where(Notification.user_id == uuid.UUID(id_a2)))).scalars().first()
+    cv = {"file": ("cv.txt", b"Python engineer " * 10)}
 
-    # A Team Lead against another team's assignment, resume and queue.
-    other = of[id_b1]
+    async def candidate_routes(client, candidate: str) -> dict:
+        """Status of every candidate route for this caller: the reads first, then every way to change something."""
+        base = f"/api/candidates/{candidate}"
+        return {
+            "GET": (await client.get(base)).status_code, "GET profile": (await client.get(f"{base}/profile")).status_code,
+            "GET resume": (await client.get(f"{base}/resume")).status_code, "GET download": (await client.get(f"{base}/resume/download")).status_code,
+            "GET analytics": (await client.get(f"{base}/analytics")).status_code, "GET activity": (await client.get(f"{base}/activity")).status_code,
+            "PATCH": (await client.patch(base, json={"name": "Renamed", "notes": "x", "is_active": False})).status_code,
+            "PATCH member": (await client.patch(base, json={"assigned_member_id": None})).status_code,
+            "PATCH profile": (await client.patch(f"{base}/profile", json={"skills": ["Go"]})).status_code,
+            "POST resume": (await client.post(f"{base}/resume", files=cv)).status_code,
+            "DELETE resume": (await client.delete(f"{base}/resume")).status_code,
+        }
+
+    reads = ("GET", "GET profile", "GET resume", "GET download", "GET analytics", "GET activity")
+    hidden = dict.fromkeys((*reads, "PATCH", "PATCH member", "PATCH profile", "POST resume", "DELETE resume"), 404)
+    read_only = {**dict.fromkeys(reads, 200), **dict.fromkeys(("PATCH", "PATCH member", "PATCH profile", "POST resume", "DELETE resume"), 403)}
+
+    async def stored() -> list:
+        """Everything the refused calls below tried to change."""
+        async with world.sessions() as db:
+            candidates = (await db.execute(select(Candidate.name, Candidate.notes, Candidate.is_active, Candidate.assigned_member_id).order_by(Candidate.name))).all()
+            resumes = (await db.execute(select(Resume.candidate_id, Resume.filename, Resume.version, Resume.is_current).order_by(Resume.candidate_id, Resume.version))).all()
+            skills = (await db.execute(select(CandidateProfile.candidate_id, CandidateProfile.skills).order_by(CandidateProfile.candidate_id))).all()
+        return [[tuple(row) for row in rows] for rows in (candidates, resumes, skills)]
+
+    before = await stored()
+    assert len(before[0]) == 4 and len(before[1]) == 4 and all(row[1] == ["Python", "PyTorch"] for row in before[2])
+
+    # A Team Lead against another team's assignment, candidate (with profile and resume) and queue.
+    other = of[c_b1]
     assert (await lead_a.get(f"/api/assignments/{other}")).status_code == 403
     assert (await lead_a.patch(f"/api/assignments/{other}/status", json={"status": "APPLIED"})).status_code == 403
     assert (await lead_a.post(f"/api/assignments/{other}/notes", json={"note": "x"})).status_code == 403
     assert (await lead_a.get(f"/api/assignments/{other}/open-job", follow_redirects=False)).status_code == 403
     assert (await lead_a.delete(f"/api/assignments/{other}")).status_code == 403
-    assert (await lead_a.get(f"/api/resumes/{resume[id_b1]}")).status_code == 403
-    assert (await lead_a.delete(f"/api/resumes/{resume[id_b1]}")).status_code == 403
+    assert await candidate_routes(lead_a, c_b1) == hidden
+    assert await candidate_routes(lead_a, str(uuid.uuid4())) == hidden                         # unknown and foreign look the same
     assert (await lead_a.get("/api/assignments", params={"team_id": str(world.ids["team_beta"])})).json()["total"] == 0
     assert (await lead_a.get("/api/assignments", params={"member_id": id_b1})).json()["total"] == 0
+    assert (await lead_a.get("/api/assignments", params={"candidate_id": c_b1})).json()["total"] == 0
     assert (await lead_a.get("/api/assignments/export.csv", params={"member_id": id_b1})).text.count("\n") == 1      # header only
+    assert (await lead_a.get("/api/assignments/export.csv", params={"candidate_id": c_b1})).text.count("\n") == 1    # header only
+    assert (await lead_a.get("/api/candidates", params={"team_id": str(world.ids["team_beta"])})).json()["total"] == 0
+    assert (await lead_a.get("/api/candidates", params={"assigned_member_id": id_b1})).json()["total"] == 0
+    assert (await lead_a.get("/api/candidates", params={"q": "candidate.b1@example.com"})).json()["total"] == 0
+    assert {c["name"] for c in (await lead_a.get("/api/candidates", params={"q": "%"})).json()["items"]} == {"Candidate A1", "Candidate A2"}
+    assert (await lead_a.get("/api/searches", params={"candidate_id": c_b1})).json()["total"] == 0
     assert (await lead_a.get("/api/invitations", params={"team_id": str(world.ids["team_beta"])})).json()["total"] == 0
     queued = (await admin.post(f"/api/teams/{world.ids['team_beta']}/queue", json={"job_ids": [job]})).json()[0]
     assert (await lead_a.patch(f"/api/team-queue/{queued['id']}", json={"status": "dismissed"})).status_code == 403
     assert (await lead_a.post(f"/api/teams/{world.ids['team_alpha']}/queue", json={"job_ids": [job]})).status_code == 403    # Admin only
-    assert (await lead_a.post("/api/assignments/bulk", json={"job_ids": [job], "member_ids": [id_a2], "queue_item_ids": [queued["id"]]})).status_code == 201
+    assert (await lead_a.post("/api/assignments/bulk", json={"job_ids": [job], "candidate_ids": [c_a2], "queue_item_ids": [queued["id"]]})).status_code == 201
     async with world.sessions() as db:
         assert (await db.get(TeamJobQueue, uuid.UUID(queued["id"]))).status == "pending"       # another team's queue entry is untouched
+    # Candidate ids of another team in a body: 403, and nothing is created for them.
+    assert (await lead_a.post("/api/assignments", json={"job_id": job, "candidate_id": c_b1})).status_code == 403
+    assert (await lead_a.post("/api/assignments/bulk", json={"job_ids": [job], "candidate_ids": [c_a2, c_b1]})).status_code == 403
+    assert (await lead_a.post("/api/searches", json={"candidate_ids": [c_b1], "target_count": 3, "deep_search": False})).status_code == 403
     preset = (await lead_b.post("/api/search-presets", json={"name": "Beta preset", "filters": {"target_count": 20}})).json()
     assert (await lead_a.delete(f"/api/search-presets/{preset['id']}")).status_code == 404
     assert (await lead_a.get("/api/search-presets")).json() == []
@@ -865,30 +959,67 @@ async def test_sound_object_level_checks_hold_across_teams_and_members(world):
     assert (await lead_a.patch(f"/api/users/{world.ids['tl_alpha']}", json={"is_active": False})).status_code == 409
     assert (await lead_a.get("/api/users", params={"role": "ADMIN"})).json()["total"] == 0
     assert {u["email"] for u in (await lead_a.get("/api/users", params={"q": "%"})).json()["items"]} == {"member.a1@example.com", "member.a2@example.com"}
-    assert (await lead_a.post("/api/resumes/upload", files={"file": ("cv.txt", b"Python engineer " * 10)})).status_code == 403   # leads have no resume
+    # A Team Lead and their own candidates: not into another team, not to a member of another team, a lead or an Admin.
+    assert (await lead_a.post("/api/candidates", json={"name": "Elsewhere", "team_id": str(world.ids["team_beta"])})).status_code == 403
+    assert (await lead_a.patch(f"/api/candidates/{c_a1}", json={"team_id": str(world.ids["team_beta"])})).status_code == 403
+    for holder in (id_b1, str(world.ids["tl_alpha"]), str(world.ids["admin"]), str(uuid.uuid4())):
+        assert (await lead_a.patch(f"/api/candidates/{c_a1}", json={"assigned_member_id": holder})).status_code == 422
+        assert (await lead_a.post("/api/candidates", json={"name": "Handed Out", "assigned_member_id": holder})).status_code == 422
+    # The routes that took a resume or a profile for a user account are gone, so nobody has one outside a candidate.
+    assert (await lead_a.post("/api/resumes/upload", files=cv)).status_code == 404
+    assert (await lead_a.get(f"/api/users/{id_a1}/profile")).status_code == 404
+    assert (await lead_a.get(f"/api/members/{id_a1}/resume")).status_code == 404
 
-    # A member against another member, manager routes and their own withdrawn assignment.
-    assert (await a1.post("/api/resumes/upload", data={"member_id": id_a2}, files={"file": ("cv.txt", b"Python engineer " * 10)})).status_code == 403
-    assert (await a1.get(f"/api/resumes/{resume[id_a2]}")).status_code == 403
-    assert (await a1.delete(f"/api/resumes/{resume[id_a2]}")).status_code == 403
-    assert (await a1.get(f"/api/resumes/{uuid.uuid4()}")).status_code == 403                  # unknown and foreign look the same
+    # A member against another member's candidate, their own candidate, manager routes and their own withdrawn assignment.
+    assert await candidate_routes(a1, c_a2) == hidden                                          # same team, another member's
+    assert await candidate_routes(a1, c_b1) == hidden
+    assert await candidate_routes(a1, str(uuid.uuid4())) == hidden                             # unknown and foreign look the same
+    assert await candidate_routes(a1, c_a1) == read_only                                       # their own: they read, managers write
+    assert (await a1.post("/api/candidates", json={"name": "Made By Member"})).status_code == 403
+    assert [c["id"] for c in (await a1.get("/api/candidates")).json()["items"]] == [c_a1]
+    for narrowing in ({"team_id": str(world.ids["team_beta"])}, {"assigned_member_id": id_a2}, {"unassigned": "true"}, {"q": "Candidate A2"}):
+        assert (await a1.get("/api/candidates", params=narrowing)).json()["total"] == 0
+    assert (await a1.get("/api/assignments", params={"candidate_id": c_a2})).json()["total"] == 0
+    assert (await a1.get("/api/assignments", params={"member_id": id_a2})).json()["total"] == 0
+    assert (await a1.post("/api/resumes/upload", data={"member_id": id_a2}, files=cv)).status_code == 404     # removed route
+    assert await stored() == before, "a refused call changed a candidate, a profile or a resume"
     assert (await a1.get(f"/api/users/{id_a2}/activity")).status_code == 403
     assert (await a1.get(f"/api/analytics/member/{id_a2}")).status_code == 403
     assert (await a1.post(f"/api/notifications/{notice}/read")).status_code == 404
     assert (await a1.post(f"/api/users/{id_a1}/reset-link")).status_code == 403
     assert (await a1.get(f"/api/jobs/{job}")).status_code == 403
-    assert (await a1.post("/api/assignments/bulk", json={"job_ids": [job], "member_ids": [id_a1]})).status_code == 403
-    assert (await a1.delete(f"/api/assignments/{of[id_a1]}")).status_code == 403
-    private = await a2.post(f"/api/assignments/{of[id_a2]}/notes", json={"note": "mine", "is_private": True})
+    assert (await a1.post("/api/assignments/bulk", json={"job_ids": [job], "candidate_ids": [c_a1]})).status_code == 403
+    assert (await a1.post("/api/assignments", json={"job_id": job, "candidate_id": c_a1})).status_code == 403
+    assert (await a1.delete(f"/api/assignments/{of[c_a1]}")).status_code == 403
+    private = await a2.post(f"/api/assignments/{of[c_a2]}/notes", json={"note": "mine", "is_private": True})
     assert private.status_code == 201 and private.json()["is_private"] is False               # only managers write private notes
-    assert (await admin.delete(f"/api/assignments/{of[id_a1]}")).status_code == 200            # withdrawn by a manager
-    # 410: the member is told their own job was taken back; someone else's assignment stays an anonymous 403.
-    assert (await a1.patch(f"/api/assignments/{of[id_a1]}/status", json={"status": "APPLIED"})).status_code == 410
-    assert (await a1.post(f"/api/assignments/{of[id_a1]}/notes", json={"note": "x"})).status_code == 410
-    assert (await a1.get(f"/api/assignments/{of[id_a1]}/open-job", follow_redirects=False)).status_code == 410
-    assert (await a2.get(f"/api/assignments/{of[id_a1]}")).status_code == 403
+    assert (await admin.delete(f"/api/assignments/{of[c_a1]}")).status_code == 200             # withdrawn by a manager
+    # 410: the member is told their candidate's job was taken back; someone else's assignment stays an anonymous 403.
+    assert (await a1.patch(f"/api/assignments/{of[c_a1]}/status", json={"status": "APPLIED"})).status_code == 410
+    assert (await a1.post(f"/api/assignments/{of[c_a1]}/notes", json={"note": "x"})).status_code == 410
+    assert (await a1.get(f"/api/assignments/{of[c_a1]}/open-job", follow_redirects=False)).status_code == 410
+    assert (await a2.get(f"/api/assignments/{of[c_a1]}")).status_code == 403
     assert (await a1.get("/api/assignments", params={"include_inactive": True})).json()["total"] == 0
-    assert (await lead_a.patch(f"/api/assignments/{of[id_a1]}/status", json={"status": "APPLIED"})).status_code == 409
+    assert (await lead_a.patch(f"/api/assignments/{of[c_a1]}/status", json={"status": "APPLIED"})).status_code == 409
+
+    # A candidate handed to another member: the old member loses it at once (candidate, file, jobs), the new one gains it.
+    assert (await a2.get(f"/api/assignments/{of[c_a2]}")).status_code == 200
+    assert (await lead_a.patch(f"/api/candidates/{c_a2}", json={"assigned_member_id": id_a1})).status_code == 200
+    assert await candidate_routes(a2, c_a2) == hidden
+    assert (await a2.get(f"/api/assignments/{of[c_a2]}")).status_code == 403
+    assert (await a2.patch(f"/api/assignments/{of[c_a2]}/status", json={"status": "APPLIED"})).status_code == 403
+    assert (await a2.get(f"/api/assignments/{of[c_a2]}/open-job", follow_redirects=False)).status_code == 403
+    assert (await a2.get("/api/assignments", params={"include_inactive": True})).json()["total"] == 0
+    assert (await a2.get("/api/candidates")).json()["total"] == 0
+    assert await candidate_routes(a1, c_a2) == read_only
+    assert (await a1.get(f"/api/assignments/{of[c_a2]}")).status_code == 200
+    # ... and the same when the member's account leaves the team: the candidate stays behind, unassigned.
+    assert (await admin.patch(f"/api/users/{id_a1}", json={"team_id": str(world.ids["team_beta"])})).status_code == 200
+    assert await candidate_routes(a1, c_a2) == hidden and await candidate_routes(a1, c_a1) == hidden
+    assert (await a1.get(f"/api/assignments/{of[c_a2]}")).status_code == 403
+    assert (await a1.get("/api/candidates")).json()["total"] == 0 and (await a1.get("/api/assignments")).json()["total"] == 0
+    assert (await lead_b.get(f"/api/candidates/{c_a2}")).status_code == 404 and (await lead_b.get(f"/api/assignments/{of[c_a2]}")).status_code == 403
+    assert (await lead_a.get(f"/api/candidates/{c_a2}")).json()["assigned_member"] is None
 
 
 async def test_sound_request_bodies_cannot_change_role_team_or_identity(world):
@@ -902,10 +1033,33 @@ async def test_sound_request_bodies_cannot_change_role_team_or_identity(world):
     promoted = await lead.patch(f"/api/users/{own}", json={"role": "TEAM_LEAD", "email": "evil@example.com"})
     assert (promoted.json()["role"], promoted.json()["email"]) == ("MEMBER", "member.a1@example.com")
     assert (await lead.patch(f"/api/users/{world.ids['tl_alpha']}", json={"role": "ADMIN", "name": "Lead Alpha"})).json()["role"] == "TEAM_LEAD"
-    profile = await member.patch(f"/api/users/{own}/profile", json={"user_id": str(world.ids["member_a2"]), "skills": ["Go"], "completion": 100})
-    assert profile.status_code == 200 and profile.json()["user_id"] == str(own)
-    untouched = await (await world.as_member("a2")).get(f"/api/users/{world.ids['member_a2']}/profile")
-    assert untouched.json()["skills"] == ["Python", "PyTorch"]
+    # The profile belongs to the candidate now and only a manager writes it: the member is refused, the lead's body cannot redirect it.
+    cand, other = world.ids["cand_a1"], world.ids["cand_a2"]
+    body = {"candidate_id": str(other), "user_id": str(world.ids["member_a2"]), "skills": ["Go"], "completion": 100}
+    assert (await member.patch(f"/api/candidates/{cand}/profile", json=body)).status_code == 403
+    assert (await member.get(f"/api/candidates/{cand}/profile")).json()["skills"] == ["Python", "PyTorch"]
+    profile = await lead.patch(f"/api/candidates/{cand}/profile", json=body)
+    assert profile.status_code == 200 and profile.json()["candidate_id"] == str(cand) and profile.json()["skills"] == ["Go"]
+    untouched = await (await world.as_member("a2")).get(f"/api/candidates/{other}/profile")
+    assert untouched.json()["skills"] == ["Python", "PyTorch"] and untouched.json()["candidate_id"] == str(other)
+    # The candidate record itself: identity, creator, team and derived fields are not the caller's to set.
+    forged = {"id": str(other), "created_by": str(world.ids["admin"]), "team": {"id": str(world.ids["team_beta"])}, "has_resume": False,
+              "profile_completion": 100, "stats": {"assigned": 99}}
+    assert (await member.patch(f"/api/candidates/{cand}", json={"name": "Renamed By Member", **forged})).status_code == 403
+    kept = await lead.patch(f"/api/candidates/{cand}", json={"name": "Candidate A1", **forged})
+    assert kept.status_code == 200
+    assert (kept.json()["id"], kept.json()["team"]["name"], kept.json()["created_by"]["name"], kept.json()["has_resume"]) == (
+        str(cand), "Team Alpha", "Lead Alpha", True)
+    assert (await lead.patch(f"/api/candidates/{cand}", json={"team_id": str(world.ids["team_beta"])})).status_code == 403    # Admin only
+    assert (await member.post("/api/candidates", json={"name": "Made By Member"})).status_code == 403
+    created = await lead.post("/api/candidates", json={"name": "New Candidate", **forged, "is_active": False})
+    assert created.status_code == 201 and created.json()["id"] != str(other)
+    assert (created.json()["team"]["name"], created.json()["created_by"]["name"], created.json()["is_active"], created.json()["has_resume"]) == (
+        "Team Alpha", "Lead Alpha", True, False)
+    assert (await lead.post("/api/candidates", json={"name": "Elsewhere", "team_id": str(world.ids["team_beta"])})).status_code == 403
+    async with world.sessions() as db:
+        names = sorted((await db.execute(select(Candidate.name))).scalars())
+    assert names == ["Candidate A1", "Candidate A2", "Candidate B1", "Candidate B2", "New Candidate"]
     invited = await lead.post("/api/invitations", json={"name": "New Person", "email": "new@example.com", "role": "MEMBER",
                                                         "invited_by": str(world.ids["admin"]), "is_active": False, "password": "x" * 12})
     assert invited.status_code == 201 and invited.json()["invited_by"]["name"] == "Lead Alpha" and invited.json()["team"]["name"] == "Team Alpha"
@@ -915,8 +1069,8 @@ async def test_sound_engine_job_urls_never_reach_a_member(world):
     """For postings the search engine stored (the older test uses a manual job): no URL and no ATS host in anything a
     member can read. Descriptions that spell out a link are the exception reported above."""
     lead = await world.as_tl("alpha")
-    own = str(world.ids["member_a1"])
-    started = await lead.post("/api/searches", json={"member_ids": [own], "target_count": 6, "deep_search": False})
+    own, candidate = str(world.ids["member_a1"]), f"/api/candidates/{world.ids['cand_a1']}"
+    started = await lead.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 6, "deep_search": False})
     assert started.status_code == 202
     await world.queue.drain()
     async with world.sessions() as db:
@@ -928,21 +1082,31 @@ async def test_sound_engine_job_urls_never_reach_a_member(world):
     pages = [listing.text, (await member.get(f"/api/users/{own}/activity")).text, (await member.get("/api/notifications")).text,
              (await member.get(f"/api/users/{own}/dashboard")).text, (await member.get("/api/auth/me")).text]
     pages += [(await member.get(f"/api/assignments/{item['id']}")).text for item in listing.json()["items"]]
+    for path in ("/api/candidates", candidate, f"{candidate}/activity", f"{candidate}/analytics", f"{candidate}/profile", f"{candidate}/resume"):
+        page = await member.get(path)
+        assert page.status_code == 200, path
+        pages.append(page.text)
+    assert (await member.get(f"{candidate}/activity")).json()["total"] >= 6 and (await member.get(candidate)).json()["stats"]["assigned"] == 6
     everything = "\n".join(pages)
     assert re.findall(r"https?://", everything) == []
     assert not any(marker in everything for marker in ("greenhouse.io", "lever.co", "ashbyhq.com", "canonical_url", "apply_url"))
 
 
 async def test_sound_csv_export_neutralises_formulas(world):
-    """Spreadsheet formulas in member names and in posting titles / companies are prefixed, and the file is an attachment."""
+    """Spreadsheet formulas in candidate and member names and in posting titles / companies are prefixed, and the file
+    is an attachment. Columns: candidate, responsible_member, team, company, title, ..."""
     job = await add_job(world, title='=HYPERLINK("http://evil.example","x")', company="@SUM(1+1)")
     admin = await world.as_admin()
     assert (await admin.patch(f"/api/users/{world.ids['member_a1']}", json={"name": "+cmd|' /C calc'!A0"})).status_code == 422   # refused at the door
+    assert (await admin.patch(f"/api/candidates/{world.ids['cand_a1']}", json={"name": "+cmd|' /C calc'!A0"})).status_code == 422
+    assert (await admin.post("/api/candidates", json={"name": "=cmd|' /C calc'!A0", "team_id": str(world.ids["team_alpha"])})).status_code == 422
     async with world.sessions() as db:                                                # a row written before that rule could still hold one
-        await db.execute(update(User).where(User.id == world.ids["member_a1"]).values(name="+cmd|' /C calc'!A0"))
+        await db.execute(update(Candidate).where(Candidate.id == world.ids["cand_a1"]).values(name="+cmd|' /C calc'!A0"))
+        await db.execute(update(User).where(User.id == world.ids["member_a1"]).values(name="-cmd|' /C calc'!B1"))
         await db.commit()
-    await assign(admin, job, world.ids["member_a1"])
+    await assign(admin, job, world.ids["cand_a1"])
     export = await admin.get("/api/assignments/export.csv")
+    assert export.text.splitlines()[0].startswith("candidate,responsible_member,team,company,title,")
     row = export.text.splitlines()[1]
-    assert row.startswith("'+cmd|") and ",'@SUM(1+1)," in row and "\"'=HYPERLINK(" in row
+    assert row.startswith("'+cmd|' /C calc'!A0,'-cmd|' /C calc'!B1,Team Alpha,") and ",'@SUM(1+1)," in row and "\"'=HYPERLINK(" in row
     assert export.headers["content-disposition"].startswith("attachment") and export.headers["x-content-type-options"] == "nosniff"

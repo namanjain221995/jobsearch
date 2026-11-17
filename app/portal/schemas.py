@@ -76,8 +76,14 @@ class UserRef(Model):
     email: str = ""
 
 
+class CandidateRef(Model):
+    """A candidate as shown next to a job, a search or an event."""
+    id: uuid.UUID
+    name: str
+
+
 class ExtraField(Model):
-    """An optional profile field the Admin added. Members fill it in; it is shown with the profile."""
+    """An optional candidate-profile field the Admin added. It is shown with every candidate's profile."""
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
     label: str = Field(min_length=1, max_length=60)
     type: Literal["text", "number", "yes_no", "choice"] = "text"
@@ -114,12 +120,12 @@ class PasswordPolicy(Model):
 class UiSettings(Model):
     watermark_enabled: bool = True
     default_target_count: int = 50
-    max_members_per_search: int = 10
+    max_members_per_search: int = 10               # candidates per search run (the setting keeps its name)
     max_results_per_search_run: int = 500
     default_min_match_score: int = 50
     deep_search_default: bool = True
     password_min_length: int = 10
-    profile_extra_fields: list[ExtraField] = []    # what the member profile form shows beyond the built-in fields
+    profile_extra_fields: list[ExtraField] = []    # what the candidate profile form shows beyond the built-in fields
     ai_providers: list[str] = []                   # outside AI services resume text is sent to when a search runs; empty = none
 
 
@@ -246,6 +252,8 @@ class TeamOut(Model):
     team_lead: UserRef | None = None
     team_lead_status: str | None = None            # invited | active | deactivated
     member_count: int = 0
+    candidate_count: int = 0                       # active candidates of the team
+    unassigned_candidates: int = 0                 # active candidates without a responsible member
     queue_pending: int = 0
     stats: AssignmentStats = AssignmentStats()
 
@@ -259,18 +267,17 @@ class UserOut(Model):
     status: Literal["invited", "active", "deactivated"]
     is_active: bool
     deactivated_by_admin: bool = False             # a Team Lead cannot reactivate such an account
-    has_resume: bool = False
-    profile_completion: int = 0                    # 0..100 (members only)
+    candidate_count: int = 0                       # members only: candidates currently assigned to them
     last_login_at: datetime | None = None
     last_activity_at: datetime | None = None
     created_at: datetime
-    stats: AssignmentStats | None = None           # members only
+    stats: AssignmentStats | None = None           # members only: totals over the candidates currently assigned to them
 
 
 class UserUpdate(Model):
     name: PersonName | None = None
     is_active: bool | None = None                  # Admin: anyone but themselves; Team Lead: own members
-    team_id: uuid.UUID | None = None               # Admin only: transfer a member to another team
+    team_id: uuid.UUID | None = None               # Admin only: transfer a member to another team (their candidates stay and become unassigned)
 
 
 class ResetLinkOut(Model):
@@ -305,7 +312,7 @@ class ProfileIn(Model):
 
 
 class ProfileOut(Model):
-    user_id: uuid.UUID
+    candidate_id: uuid.UUID
     desired_titles: list[str] = []
     years_experience: float | None = None
     skills: list[str] = []
@@ -327,15 +334,84 @@ class ProfileOut(Model):
 
 class ResumeOut(Model):
     id: uuid.UUID
-    user_id: uuid.UUID
+    candidate_id: uuid.UUID
     filename: str
     size_bytes: int
+    has_file: bool = False                         # false for resumes uploaded before files were kept: nothing to download
     version: int
     truncated: bool = False
     created_at: datetime
     uploaded_by: UserRef | None = None
     parsed_profile: dict = {}                      # skills, job_titles, education extracted from the text
     text: str | None = None                        # only on the single-resume endpoints
+
+
+# ---------------------------------------------------------------- candidates
+def _optional_email(value):
+    return None if isinstance(value, str) and not value.strip() else value
+
+
+def _phone(value):
+    if value is None:
+        return value
+    value = " ".join(str(value).split()) if isinstance(value, str) else value
+    if not isinstance(value, str) or not _PHONE.fullmatch(value):
+        raise ValueError("Enter a phone number of at most 40 characters: digits, spaces and + ( ) - . / # x only")
+    return value
+
+
+_PHONE = re.compile(r"[0-9+()\-./# xXeEtT]{0,40}")
+OptionalEmail = Annotated[EmailStr | None, BeforeValidator(_optional_email)]
+Phone = Annotated[str, BeforeValidator(_phone)]
+
+
+class CandidateCreate(Model):
+    name: PersonName
+    team_id: uuid.UUID | None = None               # required for an Admin; a Team Lead's own team is used (another team is refused)
+    email: OptionalEmail = None
+    phone: Phone = ""
+    notes: str = Field(default="", max_length=10000)
+    assigned_member_id: uuid.UUID | None = None    # an active MEMBER of the same team
+
+
+class CandidateUpdate(Model):
+    """Only the fields that are sent change. `assigned_member_id: null` takes the candidate away from its member;
+    `email: null` (or "") removes the address."""
+    name: PersonName | None = None
+    email: OptionalEmail = None
+    phone: Phone | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+    assigned_member_id: uuid.UUID | None = None
+    is_active: bool | None = None
+    team_id: uuid.UUID | None = None               # Admin only: move the candidate (jobs and history move along) to another team
+
+
+class CandidateProfileSummary(Model):
+    """The few profile values a candidate card shows; the full profile is at /api/candidates/{id}/profile."""
+    desired_titles: list[str] = []
+    years_experience: float | None = None
+    work_authorization: str = "Other / Prefer Not to Say"
+    preferred_states: list[str] = []
+
+
+class CandidateOut(Model):
+    id: uuid.UUID
+    name: str
+    email: str = ""                                # "" when none was entered
+    phone: str = ""
+    notes: str = ""
+    team: TeamRef | None = None
+    assigned_member: UserRef | None = None         # the responsible member; null = unassigned
+    is_active: bool
+    has_resume: bool = False
+    resume_has_file: bool = False                  # the current resume can be downloaded
+    profile_completion: int = 0                    # 0..100
+    profile_summary: CandidateProfileSummary = CandidateProfileSummary()
+    last_assigned_at: datetime | None = None       # when the newest active assignment was made; null when there is none
+    created_by: UserRef | None = None
+    created_at: datetime
+    updated_at: datetime
+    stats: AssignmentStats = AssignmentStats()
 
 
 # ---------------------------------------------------------------- jobs
@@ -431,7 +507,8 @@ class JobDetail(JobSummary):
 
 class JobAssignee(Model):
     assignment_id: uuid.UUID
-    member: UserRef
+    candidate: CandidateRef
+    member: UserRef | None = None                  # the member responsible for the candidate today; null = unassigned
     team: TeamRef | None = None
     status: AssignmentStatus
     assigned_at: datetime
@@ -496,7 +573,7 @@ class QueueUpdate(Model):
 
 # ---------------------------------------------------------------- searches
 class SearchFilters(Model):
-    """Shared overrides for one run. A field left out (null) means: use each member's own saved value."""
+    """Shared overrides for one run. A field left out (null) means: use each candidate's own saved value."""
     job_titles: list[str] | None = Field(default=None, max_length=8)
     years_experience: float | None = Field(default=None, ge=0, le=40)
     work_authorization: Authorization | None = None
@@ -509,17 +586,18 @@ class SearchFilters(Model):
 
 
 class SearchCreate(Model):
-    member_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
-    team_id: uuid.UUID | None = None               # Admin: every active member of this team
+    candidate_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+    team_id: uuid.UUID | None = None               # every active candidate of this team
     mode: SearchMode = "auto_assign"
-    target_count: int = Field(default=50, ge=1, le=500)      # per member
+    target_count: int = Field(default=50, ge=1, le=500)      # per candidate
     deep_search: bool = True
     min_match_score: int | None = Field(default=None, ge=0, le=100)
     filters: SearchFilters = SearchFilters()
 
 
 class SearchTargetOut(Model):
-    member: UserRef
+    candidate: CandidateRef
+    resume_id: uuid.UUID | None = None             # the resume version this search ran with (null: not started, no resume, or a search from before this was recorded)
     status: str                                    # queued | running | completed | failed | skipped | cancelled
     stage: str = ""
     message: str = ""
@@ -538,18 +616,18 @@ class SearchRunOut(Model):
     status: SearchStatus
     cancel_requested: bool = False
     attempts: int = 0                              # 2 means the run was resumed once after a worker restart
-    target_count: int                              # per member
+    target_count: int                              # per candidate
     deep_search: bool
     min_match_score: int
     filters: dict = {}
     initiated_by: UserRef | None = None
     team: TeamRef | None = None
-    member_count: int = 0
-    discovered_count: int = 0                      # postings examined (largest value over the members)
-    verified_count: int = 0                        # verified, US-eligible, deduplicated candidates (largest over members)
+    candidate_count: int = 0
+    discovered_count: int = 0                      # postings examined (largest value over the candidates)
+    verified_count: int = 0                        # verified, US-eligible, deduplicated postings (largest over the candidates)
     duplicate_count: int = 0
-    matched_count: int = 0                         # results kept, summed over members
-    assigned_count: int = 0                        # assignments created, summed over members
+    matched_count: int = 0                         # results kept, summed over the candidates
+    assigned_count: int = 0                        # assignments created, summed over the candidates
     stage: str = ""
     sources: dict = {}                             # per source: boards_ok / boards_failed / pending / postings
     warnings: list[str] = []
@@ -561,13 +639,13 @@ class SearchRunOut(Model):
 
 
 class SearchSkipped(Model):
-    member: UserRef
+    candidate: CandidateRef
     reason: str
 
 
 class SearchCreated(Model):
     search: SearchRunOut
-    skipped: list[SearchSkipped] = []              # selected members that cannot be searched (no resume / titles)
+    skipped: list[SearchSkipped] = []              # selected candidates that cannot be searched (no resume / titles)
 
 
 class MatchExplanation(Model):
@@ -583,12 +661,12 @@ class MatchExplanation(Model):
 
 class SearchResultOut(Model):
     id: uuid.UUID
-    member: UserRef
+    candidate: CandidateRef
     job: JobListItem
     rank: int
     match_score: int
     match: MatchExplanation
-    assignment_id: uuid.UUID | None = None         # set when this member already has the job
+    assignment_id: uuid.UUID | None = None         # set when this candidate already has the job
     assignment_status: AssignmentStatus | None = None
 
 
@@ -608,7 +686,7 @@ class PresetIn(Model):
     @field_validator("filters")
     @classmethod
     def _filters_fit_a_search(cls, value: dict) -> dict:
-        SearchCreate.model_validate({**value, "member_ids": [], "team_id": None})      # same limits as starting a search
+        SearchCreate.model_validate({**value, "candidate_ids": [], "team_id": None})      # same limits as starting a search
         return value
 
 
@@ -622,7 +700,7 @@ class PresetOut(Model):
 # ---------------------------------------------------------------- assignments
 class AssignItem(Model):
     job_id: uuid.UUID
-    member_id: uuid.UUID
+    candidate_id: uuid.UUID
     search_run_id: uuid.UUID | None = None
 
 
@@ -632,9 +710,9 @@ class AssignCreate(AssignItem):
 
 class BulkAssign(Model):
     items: list[AssignItem] = Field(default_factory=list, max_length=1000)
-    # Convenience: every job x every member (used by "assign selected jobs to selected members").
+    # Convenience: every job x every candidate (used by "assign selected jobs to selected candidates").
     job_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
-    member_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+    candidate_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
     search_run_id: uuid.UUID | None = None
     queue_item_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)   # queue entries to mark as distributed
 
@@ -648,7 +726,8 @@ class BulkAssignResult(Model):
 class AssignmentOut(Model):
     id: uuid.UUID
     job: JobSummary
-    member: UserRef
+    candidate: CandidateRef
+    member: UserRef | None = None                  # the member responsible for the candidate today; null = unassigned
     team: TeamRef | None = None
     status: AssignmentStatus
     is_active: bool = True
@@ -683,7 +762,7 @@ class NoteOut(Model):
 
 class NoteIn(Model):
     note: str = Field(min_length=1, max_length=4000)
-    is_private: bool = False                       # managers only; hidden from the member
+    is_private: bool = False                       # managers only; hidden from the responsible member
 
 
 class StatusUpdate(Model):
@@ -716,7 +795,8 @@ class ActivityItem(Model):
     assignment_id: uuid.UUID
     job_title: str
     company: str
-    member: UserRef
+    candidate: CandidateRef
+    member: UserRef | None = None                  # the member responsible for the candidate today
     actor: UserRef | None = None
 
 
@@ -736,11 +816,21 @@ class NameValue(Model):
 
 
 class MemberRow(Model):
+    """A member as the person responsible for candidates: totals over the candidates assigned to them today."""
     member: UserRef
     team: TeamRef | None = None
     status: str
-    has_resume: bool
+    candidates: int = 0
     last_activity_at: datetime | None = None
+    stats: AssignmentStats
+
+
+class CandidateRow(Model):
+    candidate: CandidateRef
+    member: UserRef | None = None                  # responsible member; null = unassigned
+    team: TeamRef | None = None
+    is_active: bool = True
+    has_resume: bool = False
     stats: AssignmentStats
 
 
@@ -749,6 +839,7 @@ class TeamRow(Model):
     team_lead: UserRef | None = None
     is_active: bool = True
     members: int = 0
+    candidates: int = 0
     stats: AssignmentStats
 
 
@@ -770,6 +861,22 @@ class MemberAnalytics(Model):
     weekly_activity: list[SeriesPoint]
     pending_vs_applied: list[NameValue]
     interview_outcomes: list[NameValue]
+    candidates: list[CandidateRow] = []            # the candidates assigned to this member today; their stats add up to `stats`
+
+
+class CandidateAnalytics(Model):
+    """One candidate's numbers, in the shape of the member dashboard."""
+    candidate: CandidateRef
+    member: UserRef | None = None
+    team: TeamRef | None = None
+    range: dict
+    stats: AssignmentStats
+    funnel: list[NameValue]
+    status_distribution: list[NameValue]
+    applications_over_time: list[SeriesPoint]
+    weekly_activity: list[SeriesPoint]
+    pending_vs_applied: list[NameValue]
+    interview_outcomes: list[NameValue]
 
 
 class TeamAnalytics(Model):
@@ -777,6 +884,8 @@ class TeamAnalytics(Model):
     team_lead: UserRef | None = None
     range: dict
     member_count: int
+    candidate_count: int = 0                       # active candidates
+    unassigned_candidates: int = 0                 # active candidates without a responsible member
     active_searches: int
     queue_pending: int
     stats: AssignmentStats
@@ -785,12 +894,13 @@ class TeamAnalytics(Model):
     applications_over_time: list[SeriesPoint]
     weekly_activity: list[SeriesPoint]
     pending_vs_applied: list[NameValue]
-    members: list[MemberRow]
+    members: list[MemberRow]                       # per responsible member
+    candidates: list[CandidateRow] = []            # per candidate (all of the team's, unassigned ones included)
 
 
 class AdminAnalytics(Model):
     range: dict
-    totals: dict                                   # teams, team_leads, members, indexed_jobs, job_postings, active_searches
+    totals: dict                                   # teams, team_leads, members, candidates, unassigned_candidates, indexed_jobs, job_postings, active_searches
     stats: AssignmentStats
     funnel: list[NameValue]
     status_distribution: list[NameValue]
@@ -798,7 +908,8 @@ class AdminAnalytics(Model):
     weekly_activity: list[SeriesPoint]
     teams: list[TeamRow]
     search_usage: list[SearchUsagePoint]
-    member_distribution: list[NameValue]           # members per completion-rate band
+    member_distribution: list[NameValue]           # responsible members per completion-rate band
+    candidate_distribution: list[NameValue] = []   # candidates per completion-rate band
 
 
 # ---------------------------------------------------------------- notifications / admin
@@ -830,7 +941,7 @@ class SettingsOut(Model):
     max_results_per_search_run: int = 500
     deep_search_default: bool = True
     disabled_sources: list[str] = []
-    profile_extra_fields: list[ExtraField] = []    # optional extra profile fields defined by the Admin
+    profile_extra_fields: list[ExtraField] = []    # optional extra candidate-profile fields defined by the Admin
     invitation_hours: int = 48
     password_min_length: int = 10                  # from the environment (PASSWORD_MIN_LENGTH); shown, not editable here
 

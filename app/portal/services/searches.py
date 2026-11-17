@@ -8,18 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ..deps import Principal, assignment_scope, forbid
-from ..models import JobAssignment, JobPosting, MemberProfile, Resume, SearchResult, SearchRun, SearchTarget, Team, User
+from ..models import Candidate, CandidateProfile, JobAssignment, JobPosting, Resume, SearchResult, SearchRun, SearchTarget
 from ..schemas import (SearchCreate, SearchResultOut, SearchRunOut, SearchSkipped, SearchTargetOut, SettingsOut)
 from . import jobs as jobs_service
 from .assignments import match_from
 from .audit import audit
-from .common import team_ref, teams_by_id, user_ref, users_by_id
+from .common import candidate_ref, candidates_by_id, team_ref, teams_by_id, user_ref, users_by_id
 
 ACTIVE = ("queued", "running")
 
 
-def effective_filters(profile: MemberProfile | None, data: SearchCreate) -> dict:
-    """What will be searched for one member: the member's saved preferences, overridden by whatever the
+def effective_filters(profile: CandidateProfile | None, data: SearchCreate) -> dict:
+    """What will be searched for one candidate: the candidate's saved preferences, overridden by whatever the
     person launching the search set explicitly."""
     f = data.filters
     def pick(override, saved, default):
@@ -45,15 +45,15 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
                         data: SearchCreate, ip: str) -> tuple[SearchRun, list[SearchSkipped]]:
     if not principal.is_manager:
         raise forbid()
-    wanted: list[uuid.UUID] = list(dict.fromkeys(data.member_ids))
+    wanted: list[uuid.UUID] = list(dict.fromkeys(data.candidate_ids))
     if data.team_id:
         if principal.is_team_lead and data.team_id != principal.user.team_id:
             raise forbid()
-        team_members = (await db.execute(select(User.id).where(
-            User.team_id == data.team_id, User.role == "MEMBER", User.is_active).order_by(User.name))).scalars()
-        wanted = list(dict.fromkeys([*wanted, *team_members]))
+        team_candidates = (await db.execute(select(Candidate.id).where(
+            Candidate.team_id == data.team_id, Candidate.is_active).order_by(Candidate.name))).scalars()
+        wanted = list(dict.fromkeys([*wanted, *team_candidates]))
     if not wanted:
-        raise HTTPException(422, "Select at least one member")
+        raise HTTPException(422, "Select at least one candidate")
     # Searches cost provider calls and worker time: one person cannot fill the queue, and the queue has an end.
     mine, everyone = (await db.execute(select(
         func.count().filter(SearchRun.initiated_by == principal.user.id), func.count()).where(SearchRun.status.in_(ACTIVE)))).one()
@@ -61,38 +61,38 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
         raise HTTPException(429, f"You already have {mine} searches queued or running. Wait for one to finish or cancel it.")
     if everyone >= settings.max_active_searches:
         raise HTTPException(429, "The search queue is full. Try again when a running search has finished.")
-    members = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(wanted)))).scalars()}
-    for member_id in wanted:
-        member = members.get(member_id)
-        if member is None or member.role != "MEMBER":
-            raise HTTPException(404, "Member not found") if principal.is_admin else forbid()
-        if principal.is_team_lead and (not principal.user.team_id or member.team_id != principal.user.team_id):
+    candidates = await candidates_by_id(db, set(wanted))
+    for candidate_id in wanted:
+        candidate = candidates.get(candidate_id)
+        if candidate is None:
+            raise HTTPException(404, "Candidate not found") if principal.is_admin else forbid()
+        if principal.is_team_lead and (not principal.user.team_id or candidate.team_id != principal.user.team_id):
             raise forbid()                              # never trust client-supplied ids: other teams are off limits
-        if not member.is_active:
-            raise HTTPException(409, f"{member.name} is deactivated")
+        if not candidate.is_active:
+            raise HTTPException(409, f"{candidate.name} is deactivated")
     if len(wanted) > portal.max_members_per_search:
-        raise HTTPException(422, f"At most {portal.max_members_per_search} members can be searched in one run")
+        raise HTTPException(422, f"At most {portal.max_members_per_search} candidates can be searched in one run")
     if len(wanted) * data.target_count > portal.max_results_per_search_run:
-        raise HTTPException(422, f"{len(wanted)} members x {data.target_count} jobs exceeds the limit of "
-                                 f"{portal.max_results_per_search_run} results per run. Lower the number of jobs or members.")
+        raise HTTPException(422, f"{len(wanted)} candidates x {data.target_count} jobs exceeds the limit of "
+                                 f"{portal.max_results_per_search_run} results per run. Lower the number of jobs or candidates.")
 
-    profiles = {p.user_id: p for p in (await db.execute(select(MemberProfile).where(MemberProfile.user_id.in_(wanted)))).scalars()}
-    with_resume = set((await db.execute(select(Resume.user_id).where(Resume.user_id.in_(wanted), Resume.is_current))).scalars())
-    targets: list[tuple[User, dict]] = []
+    profiles = {p.candidate_id: p for p in (await db.execute(select(CandidateProfile).where(CandidateProfile.candidate_id.in_(wanted)))).scalars()}
+    with_resume = set((await db.execute(select(Resume.candidate_id).where(Resume.candidate_id.in_(wanted), Resume.is_current))).scalars())
+    targets: list[tuple[Candidate, dict]] = []
     skipped: list[SearchSkipped] = []
-    for member_id in wanted:
-        member = members[member_id]
-        filters = effective_filters(profiles.get(member_id), data)
+    for candidate_id in wanted:
+        candidate = candidates[candidate_id]
+        filters = effective_filters(profiles.get(candidate_id), data)
         if not filters["job_titles"]:
-            skipped.append(SearchSkipped(member=user_ref(member), reason="No desired job title saved; add one to the profile or set titles for this search"))
-        elif member_id not in with_resume and not filters["skills"]:
-            skipped.append(SearchSkipped(member=user_ref(member), reason="No resume uploaded and no skills in the profile"))
+            skipped.append(SearchSkipped(candidate=candidate_ref(candidate), reason="No desired job title saved; add one to the profile or set titles for this search"))
+        elif candidate_id not in with_resume and not filters["skills"]:
+            skipped.append(SearchSkipped(candidate=candidate_ref(candidate), reason="No resume uploaded and no skills in the profile"))
         else:
-            targets.append((member, filters))
+            targets.append((candidate, filters))
     if not targets:
-        raise HTTPException(422, "None of the selected members can be searched: " + "; ".join(f"{s.member.name}: {s.reason}" for s in skipped))
+        raise HTTPException(422, "None of the selected candidates can be searched: " + "; ".join(f"{s.candidate.name}: {s.reason}" for s in skipped))
 
-    team_ids = {m.team_id for m, _ in targets}
+    team_ids = {c.team_id for c, _ in targets}
     run = SearchRun(
         initiated_by=principal.user.id, team_id=next(iter(team_ids)) if len(team_ids) == 1 else None, mode=data.mode,
         search_filters=data.filters.model_dump(exclude_none=True), target_count=data.target_count, deep_search=data.deep_search,
@@ -100,12 +100,23 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
         status="queued", progress={})
     db.add(run)
     await db.flush()
-    for member, filters in targets:
-        db.add(SearchTarget(search_run_id=run.id, member_id=member.id, member_specific_filters=filters,
+    for candidate, filters in targets:
+        db.add(SearchTarget(search_run_id=run.id, candidate_id=candidate.id, candidate_specific_filters=filters,
                             assignment_mode=data.mode, status="queued", stats={}))
     audit(db, principal.user, "search.created", "search", run.id, run.team_id,
-          {"members": len(targets), "target_count": data.target_count, "mode": data.mode, "deep_search": data.deep_search}, ip)
+          {"candidates": len(targets), "target_count": data.target_count, "mode": data.mode, "deep_search": data.deep_search}, ip)
     return run, skipped
+
+
+def progress_entries(progress: dict | None) -> list[dict]:
+    """The per-candidate entries of a run's live progress. Runs written before candidates existed call the list
+    "members" and the id "member_id"; the ids are the same (each such member became the candidate with that id)."""
+    progress = progress or {}
+    return progress.get("candidates") or progress.get("members") or []
+
+
+def entry_id(entry: dict) -> str | None:
+    return entry.get("candidate_id") or entry.get("member_id")
 
 
 def can_see_run(principal: Principal, run: SearchRun) -> bool:
@@ -130,7 +141,8 @@ async def runs_out(db: AsyncSession, runs: list[SearchRun], with_targets: bool =
         return []
     run_ids = [r.id for r in runs]
     targets = list((await db.execute(select(SearchTarget).where(SearchTarget.search_run_id.in_(run_ids)))).scalars())
-    users = await users_by_id(db, {r.initiated_by for r in runs} | {t.member_id for t in targets})
+    users = await users_by_id(db, {r.initiated_by for r in runs})
+    candidates = await candidates_by_id(db, {t.candidate_id for t in targets})
     teams = await teams_by_id(db, {r.team_id for r in runs})
     by_run: dict[uuid.UUID, list[SearchTarget]] = {}
     for t in targets:
@@ -138,23 +150,24 @@ async def runs_out(db: AsyncSession, runs: list[SearchRun], with_targets: bool =
     out = []
     for run in runs:
         progress = run.progress or {}
-        live = {m.get("member_id"): m for m in progress.get("members", [])}
+        live = {entry_id(m): m for m in progress_entries(progress)}
         target_out = []
-        for t in sorted(by_run.get(run.id, []), key=lambda t: users[t.member_id].name if t.member_id in users else ""):
-            if t.member_id not in users:
+        for t in sorted(by_run.get(run.id, []), key=lambda t: candidates[t.candidate_id].name if t.candidate_id in candidates else ""):
+            if t.candidate_id not in candidates:
                 continue
-            m = {**(t.stats or {}), **live.get(str(t.member_id), {})}
+            m = {**(t.stats or {}), **live.get(str(t.candidate_id), {})}
             target_out.append(SearchTargetOut(
-                member=user_ref(users[t.member_id]), status=m.get("status") or t.status, stage=m.get("stage", ""),
+                candidate=candidate_ref(candidates[t.candidate_id]), resume_id=t.resume_id, status=m.get("status") or t.status,
+                stage=m.get("stage", ""),
                 message=m.get("message", ""), discovered=m.get("discovered", 0), verified=m.get("verified", 0),
                 duplicates=m.get("duplicates", 0), matched=m.get("matched", 0), assigned=m.get("assigned", 0),
-                filters={k: v for k, v in (t.member_specific_filters or {}).items() if k != "skills"},
+                filters={k: v for k, v in (t.candidate_specific_filters or {}).items() if k != "skills"},
                 warnings=m.get("warnings", [])))
         out.append(SearchRunOut(
             id=run.id, mode=run.mode, status=run.status, cancel_requested=run.cancel_requested, attempts=run.attempts or 0, target_count=run.target_count,
             deep_search=run.deep_search, min_match_score=run.min_match_score, filters=run.search_filters or {},
             initiated_by=user_ref(users.get(run.initiated_by)), team=team_ref(teams.get(run.team_id)),
-            member_count=len(by_run.get(run.id, [])), discovered_count=run.discovered_count, verified_count=run.verified_count,
+            candidate_count=len(by_run.get(run.id, [])), discovered_count=run.discovered_count, verified_count=run.verified_count,
             duplicate_count=run.duplicate_count, matched_count=run.matched_count, assigned_count=run.assigned_count,
             stage=progress.get("stage", ""), sources=progress.get("sources", {}), warnings=progress.get("warnings", []),
             error_summary=run.error_summary, created_at=run.created_at, started_at=run.started_at, completed_at=run.completed_at,
@@ -166,19 +179,19 @@ async def results_out(db: AsyncSession, principal: Principal, rows: list[SearchR
     if not rows:
         return []
     postings = {p.id: p for p in (await db.execute(select(JobPosting).where(JobPosting.id.in_({r.job_id for r in rows})))).scalars()}
-    users = await users_by_id(db, {r.member_id for r in rows})
-    # Assignment state and counters only as far as the caller may see assignments: a member who moved to another
+    candidates = await candidates_by_id(db, {r.candidate_id for r in rows})
+    # Assignment state and counters only as far as the caller may see assignments: a candidate who moved to another
     # team took their assignments along, and the old team's results say nothing about them any more.
     visible = assignment_scope(principal)
-    existing = {(a.job_id, a.member_id): a for a in (await db.execute(select(JobAssignment).where(
-        JobAssignment.job_id.in_(list(postings)), JobAssignment.member_id.in_(list(users)), JobAssignment.is_active, visible))).scalars()}
+    existing = {(a.job_id, a.candidate_id): a for a in (await db.execute(select(JobAssignment).where(
+        JobAssignment.job_id.in_(list(postings)), JobAssignment.candidate_id.in_(list(candidates)), JobAssignment.is_active, visible))).scalars()}
     items = {i.id: i for i in await jobs_service.list_items(db, list(postings.values()), [visible])}
     out = []
     for r in rows:
-        if r.job_id not in items or r.member_id not in users:
+        if r.job_id not in items or r.candidate_id not in candidates:
             continue
-        assignment = existing.get((r.job_id, r.member_id))
-        out.append(SearchResultOut(id=r.id, member=user_ref(users[r.member_id]), job=items[r.job_id], rank=r.rank,
+        assignment = existing.get((r.job_id, r.candidate_id))
+        out.append(SearchResultOut(id=r.id, candidate=candidate_ref(candidates[r.candidate_id]), job=items[r.job_id], rank=r.rank,
                                    match_score=r.match_score, match=match_from(r.match_explanation),
                                    assignment_id=assignment.id if assignment else None,
                                    assignment_status=assignment.status if assignment else None))

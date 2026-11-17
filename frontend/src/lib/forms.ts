@@ -66,7 +66,7 @@ export function splitList(value: string): string[] {
   return out;
 }
 
-/* ------------------------------------------------------------------ extra profile fields: what an Admin defines */
+/* ------------------------------------------------------------------ extra candidate-profile fields: what an Admin defines */
 
 export const EXTRA_FIELDS_MAX = 20;
 export const EXTRA_OPTIONS_MIN = 2;
@@ -143,7 +143,7 @@ export function extraFieldKey(label: string, taken: ReadonlySet<string>): string
   return key;
 }
 
-/* ------------------------------------------------------------------ extra profile fields: what a member answers */
+/* ------------------------------------------------------------------ extra candidate-profile fields: what is answered for a candidate */
 
 /** The longest text answer the API keeps (it cuts off the rest). */
 export const EXTRA_ANSWER_MAX = 500;

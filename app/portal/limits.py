@@ -8,12 +8,14 @@ then be told 401. Here:
 - a body larger than the route allows is refused, by its declared length or as soon as it grows past the limit;
 - a NUL character in the query string is refused (PostgreSQL cannot store it; it would end as a server error)."""
 import json
+import re
 
 from fastapi import HTTPException
 
 from ..config import Settings
 from .deps import SESSION_COOKIE
 
+_RESUME_UPLOAD = re.compile(r"/api/candidates/[0-9a-fA-F-]{36}/resume")
 PUBLIC_FORMS = {"/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/invitations/accept"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 MULTIPART_OVERHEAD = 64 * 1024
@@ -27,7 +29,7 @@ class RequestGuardMiddleware:
         self.settings = settings
 
     def limit_for(self, path: str) -> int:
-        if path == "/api/resumes/upload":
+        if _RESUME_UPLOAD.fullmatch(path):
             return self.settings.max_upload_bytes + MULTIPART_OVERHEAD
         if path == "/api/jobs/import-csv":
             return self.settings.max_csv_bytes + MULTIPART_OVERHEAD

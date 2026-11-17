@@ -25,7 +25,7 @@ const schema = z.object({
 });
 type Values = z.infer<typeof schema>;
 
-/** Notes on one assignment. Managers can keep a note private; members never receive private notes. */
+/** Notes on one assignment. Managers can keep a note private; the responsible member never receives private notes. */
 export function AssignmentNotes({ assignment, canWritePrivate }: { assignment: AssignmentDetail; canWritePrivate: boolean }) {
   const privateId = useId();
   const add = useAddNote(assignment.id);
@@ -78,7 +78,7 @@ export function AssignmentNotes({ assignment, canWritePrivate }: { assignment: A
         <TextareaField
           label="Add a note"
           rows={2}
-          placeholder="Recruiter name, next step, anything worth remembering"
+          placeholder="Employer contact, next step, anything worth remembering"
           error={form.formState.errors.note?.message}
           {...form.register("note")}
         />
@@ -98,7 +98,7 @@ export function AssignmentNotes({ assignment, canWritePrivate }: { assignment: A
                 )}
               />
               <Label htmlFor={privateId} className="font-normal">
-                Private (hidden from the member)
+                Private (hidden from the responsible member)
               </Label>
             </div>
           ) : (

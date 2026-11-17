@@ -5,8 +5,8 @@ from contextvars import ContextVar
 from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import ApplicationEvent, JobAssignment, Team, User
-from ..schemas import AssignmentStats, TeamRef, UserRef
+from ..models import ApplicationEvent, Candidate, JobAssignment, Team, User
+from ..schemas import AssignmentStats, CandidateRef, TeamRef, UserRef
 
 A = JobAssignment
 PRE_APPLICATION = ("ASSIGNED", "VIEWED", "APPLYING")
@@ -25,6 +25,10 @@ def user_ref(user: User | None) -> UserRef | None:
     seen_by = viewer.get()
     hidden = seen_by is not None and seen_by[0] == "MEMBER" and seen_by[1] != user.id
     return UserRef(id=user.id, name=user.name, email="" if hidden else user.email)
+
+
+def candidate_ref(candidate: Candidate | None) -> CandidateRef | None:
+    return CandidateRef(id=candidate.id, name=candidate.name) if candidate else None
 
 
 def team_ref(team: Team | None) -> TeamRef | None:
@@ -57,13 +61,25 @@ def to_stats(row, link_opens: int = 0) -> AssignmentStats:
 
 
 async def stats_by(db: AsyncSession, group_column, where: list) -> dict:
-    """{group value: AssignmentStats} for assignments matching `where`, including link-open counts."""
-    rows = (await db.execute(select(group_column.label("g"), *stat_columns()).where(*where).group_by(group_column))).all()
+    """{group value: AssignmentStats} for assignments matching `where`, including link-open counts.
+    Grouping by a column of `candidates` joins each assignment to its candidate."""
+    by_candidate_column = group_column.table.name == Candidate.__tablename__
+    stmt = select(group_column.label("g"), *stat_columns()).select_from(A)
+    opens_stmt = (select(group_column, func.count()).select_from(ApplicationEvent)
+                  .join(A, A.id == ApplicationEvent.assignment_id))
+    if by_candidate_column:
+        stmt = stmt.join(Candidate, Candidate.id == A.candidate_id)
+        opens_stmt = opens_stmt.join(Candidate, Candidate.id == A.candidate_id)
+    rows = (await db.execute(stmt.where(*where).group_by(group_column))).all()
     opens = dict((await db.execute(
-        select(group_column, func.count()).select_from(ApplicationEvent)
-        .join(A, A.id == ApplicationEvent.assignment_id)
-        .where(ApplicationEvent.event_type == "link_opened", A.is_active, *where).group_by(group_column))).all())
+        opens_stmt.where(ApplicationEvent.event_type == "link_opened", A.is_active, *where).group_by(group_column))).all())
     return {row.g: to_stats(row, opens.get(row.g, 0)) for row in rows}
+
+
+async def stats_by_member(db: AsyncSession, where: list) -> dict:
+    """{member id: AssignmentStats} per responsible member (the candidate's current member). Assignments of
+    unassigned candidates are under the key None."""
+    return await stats_by(db, Candidate.assigned_member_id, where)
 
 
 async def stats_total(db: AsyncSession, where: list) -> AssignmentStats:
@@ -93,3 +109,16 @@ async def teams_by_id(db: AsyncSession, ids: set[uuid.UUID | None]) -> dict[uuid
     if not wanted:
         return {}
     return {t.id: t for t in (await db.execute(select(Team).where(Team.id.in_(wanted)))).scalars()}
+
+
+async def candidates_by_id(db: AsyncSession, ids: set[uuid.UUID | None]) -> dict[uuid.UUID, Candidate]:
+    wanted = {i for i in ids if i}
+    if not wanted:
+        return {}
+    return {c.id: c for c in (await db.execute(select(Candidate).where(Candidate.id.in_(wanted)))).scalars()}
+
+
+async def candidates_with_members(db: AsyncSession, ids: set[uuid.UUID | None]) -> tuple[dict[uuid.UUID, Candidate], dict[uuid.UUID, User]]:
+    """Candidates by id, and their responsible members by user id."""
+    candidates = await candidates_by_id(db, ids)
+    return candidates, await users_by_id(db, {c.assigned_member_id for c in candidates.values()})

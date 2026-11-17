@@ -1,6 +1,6 @@
-"""Users, teams, member profiles and resumes."""
-import asyncio
+"""Users, teams, candidate profiles and resumes."""
 import hashlib
+import re
 import uuid
 
 from fastapi import HTTPException
@@ -8,21 +8,22 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...resume_parser import ResumeError, extract_text_safely, heuristic_profile
-from ..models import (AuditLog, Invitation, JobAssignment, MemberProfile, PasswordReset, Resume, Team, TeamJobQueue, TeamLeadAssignment, User)
+from ...resume_parser import ALLOWED_EXTENSIONS, ResumeError, extract_text_safely, heuristic_profile
+from ..models import (AuditLog, Candidate, CandidateProfile, Invitation, JobAssignment, PasswordReset, Resume, Team, TeamJobQueue,
+                      TeamLeadAssignment, User)
 from ..schemas import ProfileIn, ProfileOut, ResumeOut, TeamOut, UserOut
 from ..security import utcnow
 from .audit import audit
-from .common import stats_by, team_ref, user_ref, users_by_id
+from .common import stats_by, stats_by_member, team_ref, user_ref, users_by_id
 
 
 # ---------------------------------------------------------------- profiles
-def profile_completion(profile: MemberProfile | None, has_resume: bool) -> tuple[int, list[str]]:
+def profile_completion(profile: CandidateProfile | None, has_resume: bool) -> tuple[int, list[str]]:
     checks = [
         ("Upload a resume", has_resume),
         ("Add at least one desired job title", bool(profile and profile.desired_titles)),
         ("Enter years of experience", bool(profile and profile.years_experience is not None)),
-        ("List your skills", bool(profile and profile.skills)),
+        ("List the candidate's skills", bool(profile and profile.skills)),
         ("Choose a preferred US location or remote work", bool(profile and (profile.preferred_states or profile.preferred_cities
                                                                               or profile.work_mode == "Remote"))),
     ]
@@ -30,20 +31,20 @@ def profile_completion(profile: MemberProfile | None, has_resume: bool) -> tuple
     return round(100 * (len(checks) - len(missing)) / len(checks)), missing
 
 
-async def get_profile(db: AsyncSession, user_id: uuid.UUID) -> MemberProfile:
-    profile = (await db.execute(select(MemberProfile).where(MemberProfile.user_id == user_id))).scalar_one_or_none()
+async def get_profile(db: AsyncSession, candidate_id: uuid.UUID) -> CandidateProfile:
+    profile = (await db.execute(select(CandidateProfile).where(CandidateProfile.candidate_id == candidate_id))).scalar_one_or_none()
     if profile is None:
-        profile = MemberProfile(user_id=user_id, desired_titles=[], skills=[], preferred_states=[], preferred_cities=[],
+        profile = CandidateProfile(candidate_id=candidate_id, desired_titles=[], skills=[], preferred_states=[], preferred_cities=[],
                                 excluded_companies=[], required_keywords=[], extra={})
         db.add(profile)
         await db.flush()
     return profile
 
 
-def profile_out(profile: MemberProfile, has_resume: bool) -> ProfileOut:
+def profile_out(profile: CandidateProfile, has_resume: bool) -> ProfileOut:
     completion, missing = profile_completion(profile, has_resume)
     return ProfileOut(
-        user_id=profile.user_id, desired_titles=profile.desired_titles or [],
+        candidate_id=profile.candidate_id, desired_titles=profile.desired_titles or [],
         years_experience=float(profile.years_experience) if profile.years_experience is not None else None,
         skills=profile.skills or [], preferred_states=profile.preferred_states or [], preferred_cities=profile.preferred_cities or [],
         work_mode=profile.work_mode, work_authorization=profile.work_authorization, sponsorship_needed=profile.sponsorship_needed,
@@ -125,7 +126,7 @@ async def drop_unfitting_extra(db: AsyncSession, definitions: list) -> int:
     answer that no longer fits its field (another type, an option that is gone). Returns how many answers went.
     Stored answers therefore always match the fields that exist; a field added again later starts empty."""
     dropped = 0
-    profiles = (await db.execute(select(MemberProfile).where(MemberProfile.extra != {}))).scalars().all()
+    profiles = (await db.execute(select(CandidateProfile).where(CandidateProfile.extra != {}))).scalars().all()
     for profile in profiles:
         kept = fitting_extra(profile.extra, definitions)
         if kept != profile.extra:
@@ -134,7 +135,7 @@ async def drop_unfitting_extra(db: AsyncSession, definitions: list) -> int:
     return dropped
 
 
-async def update_profile(db: AsyncSession, profile: MemberProfile, data: ProfileIn, definitions: list | None = None) -> None:
+async def update_profile(db: AsyncSession, profile: CandidateProfile, data: ProfileIn, definitions: list | None = None) -> None:
     for field, value in data.model_dump(exclude_unset=True).items():
         if field == "extra":
             if value is not None:
@@ -147,71 +148,98 @@ async def update_profile(db: AsyncSession, profile: MemberProfile, data: Profile
 
 
 # ---------------------------------------------------------------- resumes
-async def current_resume(db: AsyncSession, user_id: uuid.UUID) -> Resume | None:
-    return (await db.execute(select(Resume).where(Resume.user_id == user_id, Resume.is_current))).scalar_one_or_none()
+# What a stored resume file is served as. Fixed per extension: the type the uploader's browser claimed is never used.
+DOWNLOAD_TYPES = {"pdf": "application/pdf", "txt": "text/plain; charset=utf-8",
+                  "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+_UNSAFE_NAME = re.compile(r"[^A-Za-z0-9 ._()-]+")
+
+
+def resume_extension(filename: str) -> str | None:
+    """The extension of a stored resume when it is one of the kinds the upload accepts, else None."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return ext if ext in DOWNLOAD_TYPES and ext in ALLOWED_EXTENSIONS else None
+
+
+def download_name(filename: str, ext: str) -> str:
+    """A file name that is safe inside a Content-Disposition header and on any file system: ASCII letters, digits,
+    spaces and . _ ( ) - only, no path, never empty, and always ending in the checked extension."""
+    stem = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = stem.rsplit(".", 1)[0] if "." in stem else stem
+    stem = _UNSAFE_NAME.sub("_", stem).strip(" ._")[:80]
+    return f"{stem or 'resume'}.{ext}"
+
+
+async def current_resume(db: AsyncSession, candidate_id: uuid.UUID) -> Resume | None:
+    return (await db.execute(select(Resume).where(Resume.candidate_id == candidate_id, Resume.is_current))).scalar_one_or_none()
+
+
+async def has_file(db: AsyncSession, resume_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Of these resumes, those whose uploaded file is stored (asked of the database: the bytes are not loaded)."""
+    if not resume_ids:
+        return set()
+    return set((await db.execute(select(Resume.id).where(Resume.id.in_(resume_ids), Resume.file_data.is_not(None)))).scalars())
 
 
 async def resume_out(db: AsyncSession, resume: Resume, include_text: bool) -> ResumeOut:
     uploader = (await users_by_id(db, {resume.uploaded_by})).get(resume.uploaded_by)
-    return ResumeOut(id=resume.id, user_id=resume.user_id, filename=resume.filename, size_bytes=resume.size_bytes,
+    return ResumeOut(id=resume.id, candidate_id=resume.candidate_id, filename=resume.filename, size_bytes=resume.size_bytes,
+                     has_file=bool(await has_file(db, [resume.id])) and resume_extension(resume.filename) is not None,
                      version=resume.version, truncated=resume.truncated, created_at=resume.created_at,
                      uploaded_by=user_ref(uploader), parsed_profile=resume.parsed_profile or {},
                      text=resume.text if include_text else None)
 
 
-async def save_resume(db: AsyncSession, settings: Settings, member: User, uploader: User, filename: str, data: bytes,
-                      content_type: str) -> Resume:
-    """Extract text in memory, store text + structured profile, and make it the member's current resume.
-    The uploaded file is not kept. Text of the replaced version is erased (its metadata stays as history)."""
+async def save_resume(db: AsyncSession, settings: Settings, candidate: Candidate, uploader: User, filename: str, data: bytes,
+                      content_type: str, ip: str = "") -> Resume:
+    """Extract the text, store text + structured profile + the uploaded file, and make it the candidate's current
+    resume. Text and file of the replaced version are erased (its metadata stays as history)."""
     try:
         text, truncated = await extract_text_safely(filename, data, settings.max_upload_bytes)      # limited child process
     except ResumeError as exc:
         raise HTTPException(413 if "too large" in str(exc).lower() else 400, str(exc)) from None
     parsed = heuristic_profile(text)
-    previous = await current_resume(db, member.id)
+    previous = await current_resume(db, candidate.id)
     version = 1
     if previous:
         version = previous.version + 1
         previous.is_current = False
         previous.text = ""
+        previous.file_data = None
         await db.flush()
-    resume = Resume(user_id=member.id, filename=filename[:200], content_type=(content_type or "")[:100], size_bytes=len(data),
-                    sha256=hashlib.sha256(data).hexdigest(), text=text, truncated=truncated, version=version, is_current=True,
-                    uploaded_by=uploader.id,
+    resume = Resume(candidate_id=candidate.id, filename=filename[:200], content_type=(content_type or "")[:100], size_bytes=len(data),
+                    sha256=hashlib.sha256(data).hexdigest(), text=text, file_data=data, truncated=truncated, version=version,
+                    is_current=True, uploaded_by=uploader.id,
                     parsed_profile={"skills": parsed.skills, "job_titles": parsed.job_titles, "education": parsed.education})
     db.add(resume)
-    profile = await get_profile(db, member.id)
+    profile = await get_profile(db, candidate.id)
     if not profile.skills and parsed.skills:
-        profile.skills = parsed.skills[:60]           # a starting point the member can correct
-    audit(db, uploader, "resume.uploaded", "user", member.id, member.team_id, {"version": version, "size_bytes": len(data)})
+        profile.skills = parsed.skills[:60]           # a starting point the Team Lead can correct
+    audit(db, uploader, "resume.uploaded", "candidate", candidate.id, candidate.team_id, {"version": version, "size_bytes": len(data)}, ip)
     return resume
 
 
-async def delete_resume(db: AsyncSession, actor: User, resume: Resume) -> None:
+async def delete_resume(db: AsyncSession, actor: User, candidate: Candidate, resume: Resume, ip: str = "") -> None:
     await db.delete(resume)
-    audit(db, actor, "resume.deleted", "user", resume.user_id, None, {"version": resume.version})
+    audit(db, actor, "resume.deleted", "candidate", candidate.id, candidate.team_id, {"version": resume.version}, ip)
 
 
 # ---------------------------------------------------------------- users
 async def users_out(db: AsyncSession, users: list[User]) -> list[UserOut]:
-    ids = [u.id for u in users]
+    """A member's numbers are the totals over the candidates assigned to them today. Members have no profile or
+    resume of their own: those belong to candidates."""
     member_ids = [u.id for u in users if u.role == "MEMBER"]
-    with_resume: set[uuid.UUID] = set()
-    profiles: dict[uuid.UUID, MemberProfile] = {}
-    stats = {}
+    stats, counts = {}, {}
     if member_ids:
-        with_resume = set((await db.execute(select(Resume.user_id).where(Resume.user_id.in_(member_ids), Resume.is_current))).scalars())
-        profiles = {p.user_id: p for p in (await db.execute(select(MemberProfile).where(MemberProfile.user_id.in_(member_ids)))).scalars()}
-        stats = await stats_by(db, JobAssignment.member_id, [JobAssignment.member_id.in_(member_ids)])
+        stats = await stats_by_member(db, [Candidate.assigned_member_id.in_(member_ids)])
+        counts = dict((await db.execute(select(Candidate.assigned_member_id, func.count()).where(
+            Candidate.assigned_member_id.in_(member_ids)).group_by(Candidate.assigned_member_id))).all())
     from ..schemas import AssignmentStats
     out = []
     by_admin = await deactivated_by_admin(db, [u.id for u in users if not u.is_active])
     for u in users:
         is_member = u.role == "MEMBER"
-        completion = profile_completion(profiles.get(u.id), u.id in with_resume)[0] if is_member else 0
         out.append(UserOut(id=u.id, name=u.name, email=u.email, role=u.role, team=team_ref(u.team), status=u.status,
-                           is_active=u.is_active, deactivated_by_admin=u.id in by_admin,
-                           has_resume=u.id in with_resume, profile_completion=completion,
+                           is_active=u.is_active, deactivated_by_admin=u.id in by_admin, candidate_count=counts.get(u.id, 0),
                            last_login_at=u.last_login_at, last_activity_at=u.last_activity_at, created_at=u.created_at,
                            stats=(stats.get(u.id) or AssignmentStats()) if is_member else None))
     return out
@@ -231,8 +259,8 @@ async def deactivated_by_admin(db: AsyncSession, user_ids: list[uuid.UUID]) -> s
 
 
 async def transfer_member(db: AsyncSession, actor: User, member: User, team: Team) -> None:
-    """Move a member to another team. Their assignments move with them, so the new Team Lead manages the
-    member's whole pipeline and the previous Team Lead no longer sees it. Application history is untouched."""
+    """Move a member (a recruiter) to another team. Candidates belong to their team and stay in it with all their
+    jobs and history: the ones this member was responsible for become unassigned, for the Team Lead to hand on."""
     if member.role != "MEMBER":
         raise HTTPException(400, "Only members can be transferred between teams")
     if not team.is_active:
@@ -240,8 +268,9 @@ async def transfer_member(db: AsyncSession, actor: User, member: User, team: Tea
     old_team_id = member.team_id
     if old_team_id == team.id:
         return
+    from . import candidates as candidates_service        # imported here: candidates builds on this module
+    await candidates_service.release_candidates(db, actor, member, "member_moved_to_another_team")
     member.team_id = team.id
-    await db.execute(update(JobAssignment).where(JobAssignment.member_id == member.id).values(team_id=team.id))
     # One-time links made under the old team stop working; the invitation history follows the member, so the
     # new team's lead (not the old one) can see it and send a fresh link.
     await db.execute(update(Invitation).where(Invitation.user_id == member.id, Invitation.accepted_at.is_(None),
@@ -266,13 +295,17 @@ async def teams_out(db: AsyncSession, teams: list[Team]) -> list[TeamOut]:
         .where(TeamLeadAssignment.team_id.in_(ids)))).all()}
     members = dict((await db.execute(select(User.team_id, func.count()).where(
         User.team_id.in_(ids), User.role == "MEMBER", User.is_active).group_by(User.team_id))).all())
+    candidates = {row[0]: (row[1], row[2]) for row in (await db.execute(select(
+        Candidate.team_id, func.count(), func.count().filter(Candidate.assigned_member_id.is_(None))).where(
+        Candidate.team_id.in_(ids), Candidate.is_active).group_by(Candidate.team_id))).all()}
     queue = dict((await db.execute(select(TeamJobQueue.team_id, func.count()).where(
         TeamJobQueue.team_id.in_(ids), TeamJobQueue.status == "pending").group_by(TeamJobQueue.team_id))).all())
     stats = await stats_by(db, JobAssignment.team_id, [JobAssignment.team_id.in_(ids)])
     from ..schemas import AssignmentStats
     return [TeamOut(id=t.id, name=t.name, description=t.description, is_active=t.is_active, created_at=t.created_at,
                     team_lead=user_ref(leads.get(t.id)), team_lead_status=leads[t.id].status if t.id in leads else None,
-                    member_count=members.get(t.id, 0), queue_pending=queue.get(t.id, 0),
+                    member_count=members.get(t.id, 0), candidate_count=candidates.get(t.id, (0, 0))[0],
+                    unassigned_candidates=candidates.get(t.id, (0, 0))[1], queue_pending=queue.get(t.id, 0),
                     stats=stats.get(t.id) or AssignmentStats()) for t in teams]
 
 

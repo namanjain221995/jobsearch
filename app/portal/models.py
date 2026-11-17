@@ -7,11 +7,11 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text,
+from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text,
                         UniqueConstraint, func)
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, deferred, mapped_column, relationship
 
 ROLES = ("ADMIN", "TEAM_LEAD", "MEMBER")
 ASSIGNMENT_STATUSES = ("ASSIGNED", "VIEWED", "APPLYING", "APPLIED", "INTERVIEWING", "OFFER", "REJECTED", "WITHDRAWN", "SKIPPED")
@@ -137,9 +137,30 @@ class PasswordReset(Base):
     __table_args__ = (Index("ix_password_resets_user_id", "user_id"),)
 
 
-class MemberProfile(Base):
-    __tablename__ = "member_profiles"
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+class Candidate(Base):
+    """The person who needs a job. A record, never an account: a candidate cannot sign in. Belongs to one team and
+    has at most one responsible member (a recruiter of that team) at a time; jobs and history stay with the candidate."""
+    __tablename__ = "candidates"
+    id: Mapped[uuid.UUID] = pk()
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))     # the API requires one on create
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), default="", server_default="", nullable=False)     # optional, lower-cased, not unique
+    phone: Mapped[str] = mapped_column(String(40), default="", server_default="", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    assigned_member_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))   # the responsible member
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_text("true"), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = created()
+    updated_at: Mapped[datetime] = updated()
+    __table_args__ = (
+        Index("ix_candidates_team_id", "team_id"),
+        Index("ix_candidates_assigned_member_id", "assigned_member_id"),
+    )
+
+
+class CandidateProfile(Base):
+    __tablename__ = "candidate_profiles"
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id", ondelete="CASCADE"), primary_key=True)
     desired_titles: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
     years_experience: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
     skills: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
@@ -159,15 +180,17 @@ class MemberProfile(Base):
 
 
 class Resume(Base):
-    """Extracted resume text and structured profile. The uploaded file itself is not kept."""
+    """A candidate's resume: extracted text, structured profile and the uploaded file itself (so the responsible
+    member can download it to apply). Resumes uploaded before the file was kept have file_data NULL."""
     __tablename__ = "resumes"
     id: Mapped[uuid.UUID] = pk()
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
     filename: Mapped[str] = mapped_column(String(200), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), default="", server_default="", nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    file_data: Mapped[bytes | None] = deferred(mapped_column(LargeBinary))      # loaded only by the download; erased when replaced
     truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_text("false"), nullable=False)
     parsed_profile: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
@@ -175,13 +198,13 @@ class Resume(Base):
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = created()
     __table_args__ = (
-        Index("ix_resumes_user_id", "user_id"),
-        Index("uq_resumes_current", "user_id", unique=True, postgresql_where=sa_text("is_current")),
+        Index("ix_resumes_candidate_id", "candidate_id"),
+        Index("uq_resumes_current", "candidate_id", unique=True, postgresql_where=sa_text("is_current")),
     )
 
 
 class JobPosting(Base):
-    """One row per distinct vacancy, shared by every team. Member-specific data lives on the assignment."""
+    """One row per distinct vacancy, shared by every team. Candidate-specific data lives on the assignment."""
     __tablename__ = "job_postings"
     id: Mapped[uuid.UUID] = pk()
     identity_key: Mapped[str] = mapped_column(String(200), nullable=False)       # "ats:<source>:<id>" | "url:<sha1>" | "manual:<uuid>"
@@ -236,10 +259,10 @@ class SearchRun(Base):
     __tablename__ = "search_runs"
     id: Mapped[uuid.UUID] = pk()
     initiated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))     # NULL = members of several teams (Admin)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))     # NULL = candidates of several teams (Admin)
     mode: Mapped[str] = mapped_column(String(20), default="auto_assign", server_default="auto_assign", nullable=False)   # auto_assign | review
     search_filters: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
-    target_count: Mapped[int] = mapped_column(Integer, nullable=False)          # per member
+    target_count: Mapped[int] = mapped_column(Integer, nullable=False)          # per candidate
     deep_search: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_text("true"), nullable=False)
     min_match_score: Mapped[int] = mapped_column(Integer, default=50, server_default="50", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="queued", server_default="queued", nullable=False)
@@ -269,33 +292,34 @@ class SearchRun(Base):
 class SearchTarget(Base):
     __tablename__ = "search_targets"
     search_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("search_runs.id", ondelete="CASCADE"), primary_key=True)
-    member_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    member_specific_filters: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id", ondelete="CASCADE"), primary_key=True)
+    resume_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("resumes.id", ondelete="SET NULL"))     # the resume version this search ran with
+    candidate_specific_filters: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
     assignment_mode: Mapped[str] = mapped_column(String(20), default="auto_assign", server_default="auto_assign", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="queued", server_default="queued", nullable=False)   # queued|running|completed|failed|skipped|cancelled
     stats: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
-    __table_args__ = (Index("ix_search_targets_member_id", "member_id"),)
+    __table_args__ = (Index("ix_search_targets_candidate_id", "candidate_id"),)
 
 
 class SearchResult(Base):
     __tablename__ = "search_results"
     id: Mapped[uuid.UUID] = pk()
     search_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("search_runs.id", ondelete="CASCADE"), nullable=False)
-    member_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job_postings.id", ondelete="CASCADE"), nullable=False)
     rank: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     match_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     match_explanation: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
     created_at: Mapped[datetime] = created()
     __table_args__ = (
-        UniqueConstraint("search_run_id", "member_id", "job_id", name="uq_search_results_run_member_job"),
+        UniqueConstraint("search_run_id", "candidate_id", "job_id", name="uq_search_results_run_candidate_job"),
         Index("ix_search_results_run", "search_run_id"),
         Index("ix_search_results_job", "job_id"),
     )
 
 
 class TeamJobQueue(Base):
-    """Jobs an Admin delegated to a team; the Team Lead distributes them to members."""
+    """Jobs an Admin delegated to a team; the Team Lead distributes them to the team's candidates."""
     __tablename__ = "team_job_queue"
     id: Mapped[uuid.UUID] = pk()
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
@@ -313,11 +337,13 @@ class TeamJobQueue(Base):
 
 
 class JobAssignment(Base):
+    """A job given to a candidate. The responsible member is not stored here: it is always the candidate's current
+    assigned_member_id, so moving a candidate to another member moves every job and its history along."""
     __tablename__ = "job_assignments"
     id: Mapped[uuid.UUID] = pk()
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job_postings.id", ondelete="RESTRICT"), nullable=False)
-    member_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
-    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))     # member's team when assigned
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id", ondelete="RESTRICT"), nullable=False)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))     # the candidate's team
     assigned_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     search_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("search_runs.id", ondelete="SET NULL"))
     source: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual", nullable=False)       # search | manual | queue
@@ -334,9 +360,9 @@ class JobAssignment(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = updated()
     __table_args__ = (
-        UniqueConstraint("job_id", "member_id", name="uq_job_assignments_job_member"),
+        UniqueConstraint("job_id", "candidate_id", name="uq_job_assignments_job_candidate"),
         CheckConstraint(_in("status", ASSIGNMENT_STATUSES), name="ck_job_assignments_status"),
-        Index("ix_job_assignments_member_id", "member_id"),
+        Index("ix_job_assignments_candidate_id", "candidate_id"),
         Index("ix_job_assignments_team_id", "team_id"),
         Index("ix_job_assignments_status", "status"),
         Index("ix_job_assignments_assigned_at", "assigned_at"),
@@ -367,7 +393,7 @@ class AssignmentNote(Base):
     assignment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job_assignments.id", ondelete="CASCADE"), nullable=False)
     author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     note: Mapped[str] = mapped_column(Text, nullable=False)
-    is_private: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_text("false"), nullable=False)   # manager-only note
+    is_private: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_text("false"), nullable=False)   # manager-only note (hidden from the member)
     created_at: Mapped[datetime] = created()
     __table_args__ = (Index("ix_assignment_notes_assignment", "assignment_id", "created_at"),)
 

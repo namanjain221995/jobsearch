@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -30,15 +31,24 @@ function useViewedRefresh(assignmentId: string | null | undefined, status: strin
   }, [assignmentId, status, me.role, client]);
 }
 
-/** One assigned job as a full page (the member's job detail). */
-export function AssignmentDetailPage({ assignmentId, back }: { assignmentId: string; back: { href: string; label: string } }) {
+const CANDIDATES = { href: "/member/candidates", label: "My Candidates" };
+
+/**
+ * One assigned job as a full page (the member's job detail). The way back leads to the candidate
+ * the job belongs to: known from the assignment once it has loaded, and from `?candidate=<id>`
+ * (set by links on a candidate's page) while it loads or when it cannot be shown at all.
+ */
+export function AssignmentDetailPage({ assignmentId, back }: { assignmentId: string; back?: { href: string; label: string } }) {
   const assignment = useAssignment(assignmentId);
   useViewedRefresh(assignment.data?.id, assignment.data?.status);
+  const hinted = useSearchParams().get("candidate");
+  const hintedBack = hinted && /^[0-9a-f-]{36}$/i.test(hinted) ? { href: `/member/candidates/${hinted}`, label: "Back to the candidate" } : null;
+  const fallback = back ?? hintedBack ?? CANDIDATES;
 
   if (assignment.isPending) {
     return (
       <>
-        <PageHeader title="Job" back={back} />
+        <PageHeader title="Job" back={fallback} />
         <LoadingSkeleton variant="detail" count={6} />
       </>
     );
@@ -46,25 +56,32 @@ export function AssignmentDetailPage({ assignmentId, back }: { assignmentId: str
   if (assignment.isError) {
     return (
       <>
-        <PageHeader title="Job" back={back} />
+        <PageHeader title="Job" back={fallback} />
         <div className="rounded-lg border bg-card">
           {/*
-            Two different answers end here, both with the way back to the list:
-            410, a job of this member's that a manager took back: the API's own sentence is shown as it is;
-            403 (or 404), a job that is not theirs or does not exist: the words below.
+            Two different answers end here, both with the way back to the candidate (or to the list of candidates):
+            410, a job of this member's candidate that a manager took back: the API's own sentence is shown as it is;
+            403 (or 404), a job of a candidate who is not theirs (any more), or one that does not exist: the words below.
           */}
           <ErrorState
             error={assignment.error}
             onRetry={() => assignment.refetch()}
             unavailable={{
-              title: "This job is not on your list",
+              title: "This job is not on your candidates' lists",
               description:
-                "The link may belong to a job that was never assigned to you. Everything assigned to you is under My Jobs.",
+                "It belongs to a candidate you are not responsible for, or the candidate was moved to another member. The jobs of your candidates are under My Candidates.",
             }}
             action={
-              <Button asChild variant="outline" size="sm">
-                <Link href={back.href}>Go to {back.label}</Link>
-              </Button>
+              <>
+                {hintedBack && (
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={hintedBack.href}>{hintedBack.label}</Link>
+                  </Button>
+                )}
+                <Button asChild variant="outline" size="sm">
+                  <Link href={(back ?? CANDIDATES).href}>Go to {(back ?? CANDIDATES).label}</Link>
+                </Button>
+              </>
             }
           />
         </div>
@@ -75,9 +92,17 @@ export function AssignmentDetailPage({ assignmentId, back }: { assignmentId: str
   return (
     <Watermarked>
       <PageHeader
-        back={back}
+        back={back ?? { href: `/member/candidates/${data.candidate.id}`, label: data.candidate.name }}
         title={data.job.title}
-        description={<span className="text-foreground">{data.job.company}</span>}
+        description={
+          <>
+            <span className="text-foreground">{data.job.company}</span>. For{" "}
+            <Link href={`/member/candidates/${data.candidate.id}`} className="rounded-sm text-foreground underline-offset-4 hover:underline">
+              {data.candidate.name}
+            </Link>
+            .
+          </>
+        }
         className="mb-5"
       />
       <JobFactLine job={data.job} className="-mt-2 mb-6 text-sm" />
@@ -112,7 +137,7 @@ export function AssignmentDrawer({
                 </div>
               </SheetTitle>
               <SheetDescription className="sr-only">
-                Assignment of {data.job.title} at {data.job.company} to {data.member.name}
+                Assignment of {data.job.title} at {data.job.company} to {data.candidate.name}
               </SheetDescription>
               <JobFactLine job={data.job} className="pt-2" />
             </>

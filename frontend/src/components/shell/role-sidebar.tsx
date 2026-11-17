@@ -26,7 +26,7 @@ import { activeNavItem, NAVIGATION, type NavItem } from "@/lib/nav";
 import { useMemberDashboard, useTeam } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
-/** Live counts beside a few entries: jobs waiting in the team queue, jobs a member has not applied to yet. */
+/** Live counts beside a few entries: jobs waiting in the team queue, jobs of a member's candidates that have not been applied to yet. */
 function useNavBadges(): Record<NonNullable<NavItem["badge"]>, number | undefined> {
   const me = useMe();
   const team = useTeam(me.role === "TEAM_LEAD" ? me.team?.id : undefined, { refetchInterval: 25_000 });

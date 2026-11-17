@@ -8,7 +8,8 @@ import { Bookmark, Play, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "@/lib/zod";
 
-import { MemberPicker, toPicked, type PickedMember } from "@/components/search/member-picker";
+import { AddCandidateDialog } from "@/components/candidates/candidate-dialog";
+import { CandidatePicker, SelectedCandidates, toPicked, type PickedCandidate } from "@/components/candidates/candidate-picker";
 import { useSearchProgress } from "@/components/search/search-progress";
 import { MODE_LABELS } from "@/components/search/search-run";
 import { FormField, FormMessage, TextField } from "@/components/shared/form-fields";
@@ -35,15 +36,15 @@ import {
   useDeletePreset,
   usePresets,
   useSearchOptions,
+  useCandidate,
   useTeams,
-  useUser,
 } from "@/lib/queries";
 import type { Preset, SearchCreate, SearchOptions } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Value of a select that means "do not override: use what each member saved". */
+/** Value of a select that means "do not override: use what is saved in each candidate's profile". */
 const SAVED = "__saved__";
-const SAVED_LABEL = "Use each member's saved value";
+const SAVED_LABEL = "Use each candidate's saved value";
 
 function buildSchema(limits: SearchOptions["limits"]) {
   const numberText = (min: number, max: number, message: string, integer: boolean) =>
@@ -57,7 +58,7 @@ function buildSchema(limits: SearchOptions["limits"]) {
       }, message);
   return z.object({
     mode: z.enum(["auto_assign", "review"]),
-    target_count: numberText(1, 500, "Enter a whole number between 1 and 500.", true).refine((value) => value !== "", "Enter how many jobs to look for per member."),
+    target_count: numberText(1, 500, "Enter a whole number between 1 and 500.", true).refine((value) => value !== "", "Enter how many jobs to look for per candidate."),
     min_match_score: numberText(0, 100, "Enter a whole number between 0 and 100.", true),
     deep_search: z.boolean(),
     job_titles: z.array(z.string()).max(8, "Keep it to 8 job titles."),
@@ -69,7 +70,7 @@ function buildSchema(limits: SearchOptions["limits"]) {
     preferred_states: z.array(z.string()).max(30, "Keep it to 30 states."),
     excluded_companies: z.array(z.string()).max(100, "Keep it to 100 companies."),
   }).superRefine((values, context) => {
-    // Kept here so the message sits on the field; the totals check lives beside the member list.
+    // Kept here so the message sits on the field; the totals check lives beside the candidate list.
     if (values.target_count !== "" && Number(values.target_count) > limits.max_results_per_search_run) {
       context.addIssue({
         code: "custom",
@@ -99,7 +100,7 @@ const defaultsFor = (limits: SearchOptions["limits"], deepSearch: boolean): Valu
 
 type Filters = SearchCreate["filters"];
 
-function toRequest(values: Values, memberIds: string[], teamId: string): SearchCreate {
+function toRequest(values: Values, candidateIds: string[], teamId: string): SearchCreate {
   const picked = <T extends string>(value: string) => (value === SAVED ? null : (value as T));
   const filters: Filters = {
     job_titles: values.job_titles.length ? values.job_titles : null,
@@ -112,7 +113,7 @@ function toRequest(values: Values, memberIds: string[], teamId: string): SearchC
     excluded_companies: values.excluded_companies.length ? values.excluded_companies : null,
   };
   return {
-    member_ids: memberIds,
+    candidate_ids: candidateIds,
     team_id: teamId || null,
     mode: values.mode,
     target_count: Number(values.target_count),
@@ -122,7 +123,7 @@ function toRequest(values: Values, memberIds: string[], teamId: string): SearchC
   };
 }
 
-/** A saved preset is the request without its members. Unknown or missing parts fall back to the current values. */
+/** A saved preset is the request without its candidates. Unknown or missing parts fall back to the current values. */
 function fromPreset(preset: Preset, current: Values): Values {
   const data = preset.filters as Record<string, unknown>;
   const filters = (data.filters ?? {}) as Record<string, unknown>;
@@ -187,7 +188,7 @@ function Presets({ getValues, onApply }: { getValues: () => Values; onApply: (pr
   const [open, setOpen] = useState(false);
 
   const save = () => {
-    // A preset is the search request without its members.
+    // A preset is the search request without its candidates.
     const { mode, target_count, deep_search, min_match_score, filters } = toRequest(getValues(), [], "");
     create.mutate(
       { name: name.trim(), filters: { mode, target_count, deep_search, min_match_score, filters } },
@@ -276,7 +277,7 @@ function Presets({ getValues, onApply }: { getValues: () => Values; onApply: (pr
               Save
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">Members are not part of a preset.</p>
+          <p className="text-xs text-muted-foreground">Candidates are not part of a preset.</p>
         </div>
       </PopoverContent>
     </Popover>
@@ -293,17 +294,18 @@ function Form({ options }: { options: SearchOptions }) {
   const deepId = useId();
   const teamSelectId = useId();
 
-  const [selected, setSelected] = useState<ReadonlyMap<string, PickedMember>>(() => new Map());
+  const [selected, setSelected] = useState<ReadonlyMap<string, PickedCandidate>>(() => new Map());
   const [teamId, setTeamId] = useState("");
-  const [membersError, setMembersError] = useState<string | null>(null);
+  const [candidatesError, setCandidatesError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
-  // "Find jobs for this member" links arrive with ?member=<id>: start with that member ticked.
-  const presetMemberId = useSearchParams().get("member") ?? undefined;
-  const presetMember = useUser(presetMemberId);
+  // "Find Jobs for <candidate>" links arrive with ?candidate=<id>: start with that candidate ticked.
+  const presetCandidateId = useSearchParams().get("candidate") ?? undefined;
+  const presetCandidate = useCandidate(presetCandidateId);
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
-  if (presetMember.data && presetMember.data.role === "MEMBER" && appliedPreset !== presetMember.data.id) {
-    setAppliedPreset(presetMember.data.id);
-    setSelected(new Map([[presetMember.data.id, toPicked(presetMember.data)]]));
+  if (presetCandidate.data && presetCandidate.data.is_active && appliedPreset !== presetCandidate.data.id) {
+    setAppliedPreset(presetCandidate.data.id);
+    setSelected(new Map([[presetCandidate.data.id, toPicked(presetCandidate.data)]]));
   }
 
   const deepSearchDefault = me.settings.deep_search_default;
@@ -324,22 +326,32 @@ function Form({ options }: { options: SearchOptions }) {
   const targetText = useWatch({ control: form.control, name: "target_count" });
 
   const team = (teams.data ?? []).find((item) => item.id === teamId);
-  const memberCount = selected.size + (team?.member_count ?? 0);
-  const perMember = Number(targetText) || 0;
-  const totalRequested = memberCount * perMember;
-  const tooManyMembers = memberCount > limits.max_members_per_search;
+  // Candidates ticked below may also belong to the whole team that was chosen, so with both this is an upper bound.
+  const candidateCount = selected.size + (team?.candidate_count ?? 0);
+  const perCandidate = Number(targetText) || 0;
+  const totalRequested = candidateCount * perCandidate;
+  // The setting keeps its old name in the API; it limits the candidates of one search.
+  const maxCandidates = limits.max_members_per_search;
+  const tooManyCandidates = candidateCount > maxCandidates;
   const tooManyResults = totalRequested > limits.max_results_per_search_run;
-  const withoutResume = [...selected.values()].filter((member) => !member.hasResume);
+  const withoutResume = [...selected.values()].filter((candidate) => !candidate.hasResume);
+  const withoutMember = [...selected.values()].filter((candidate) => !candidate.member);
 
   const aiConfigured = Object.values(options.ai_providers as Record<string, { configured?: boolean }>).some((provider) => provider.configured);
   const sources = (options.sources as Array<{ name: string; label: string; enabled?: boolean }>).filter((source) => source.enabled !== false);
 
   const onSubmit = form.handleSubmit((values) => {
-    if (memberCount === 0) {
-      setMembersError(isAdmin ? "Choose at least one member, or a whole team." : "Choose at least one member.");
+    if (candidateCount === 0) {
+      setCandidatesError(
+        isAdmin
+          ? team
+            ? `${team.name} has no active candidates. Choose candidates below, or another team.`
+            : "Choose at least one candidate, or a whole team."
+          : "Choose at least one candidate.",
+      );
       return;
     }
-    setMembersError(null);
+    setCandidatesError(null);
     create.mutate(toRequest(values, [...selected.keys()], teamId), {
       onSuccess: (created) => progress.start(created),
       onError: (error) => {
@@ -353,7 +365,7 @@ function Form({ options }: { options: SearchOptions }) {
     <form onSubmit={onSubmit} noValidate>
       <PageHeader
         title="Find Jobs"
-        description="Search live job postings for one or more members and match them against each member's resume and profile."
+        description="Search live job postings for one or more candidates and match them against each candidate's resume and profile."
         actions={
           <Presets
             getValues={form.getValues}
@@ -371,8 +383,8 @@ function Form({ options }: { options: SearchOptions }) {
             title="Who to search for"
             description={
               isAdmin
-                ? "Choose a whole team, individual members, or both."
-                : `Members of ${me.team?.name ?? "your team"}. Each one is searched with their own resume and profile.`
+                ? "Choose a whole team's candidates, individual candidates, or both."
+                : `Candidates of ${me.team?.name ?? "your team"}. Each one is searched with their own resume and profile.`
             }
           >
             <div className="flex flex-col gap-4">
@@ -387,43 +399,52 @@ function Form({ options }: { options: SearchOptions }) {
                       <SelectItem value={SAVED}>No whole team</SelectItem>
                       {(teams.data ?? []).map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          {item.name} ({plural(item.member_count, "active member")})
+                          {item.name} ({plural(item.candidate_count, "active candidate")})
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   {team && (
                     <p className="text-2sm text-muted-foreground">
-                      Every active member of {team.name} is included. You can add members of other teams below.
+                      Every active candidate of {team.name} is included. You can add candidates of other teams below.
                     </p>
                   )}
                 </div>
               )}
-              <MemberPicker
+              <CandidatePicker
                 selected={selected}
                 onChange={(next) => {
                   setSelected(next);
-                  setMembersError(null);
+                  setCandidatesError(null);
                 }}
                 showTeam={isAdmin}
-                max={limits.max_members_per_search}
+                max={maxCandidates}
+                onAdd={() => setAdding(true)}
               />
-              {membersError && <FormMessage>{membersError}</FormMessage>}
-              {tooManyMembers && (
+              {candidatesError && <FormMessage>{candidatesError}</FormMessage>}
+              {tooManyCandidates && (
                 <FormMessage>
-                  {memberCount} members are selected. One search covers at most {limits.max_members_per_search}.
+                  {candidateCount} candidates are selected. One search covers at most {maxCandidates}.
                 </FormMessage>
               )}
+              <SelectedCandidates selected={selected} onChange={setSelected} />
               {withoutResume.length > 0 && (
                 <FormMessage tone="info">
                   <span className="flex items-start gap-2">
                     <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
                     <span>
-                      {withoutResume.map((member) => member.name).join(", ")} {withoutResume.length === 1 ? "has" : "have"} no
-                      resume. The search then relies on the skills in the profile, and leaves the member out if there
-                      are none.
+                      {withoutResume.map((candidate) => candidate.name).join(", ")} {withoutResume.length === 1 ? "has" : "have"} no
+                      resume. The search then relies on the skills in the profile, and leaves the candidate out if
+                      there are none. Upload the resume above to use it for this search.
                     </span>
                   </span>
+                </FormMessage>
+              )}
+              {withoutMember.length > 0 && (
+                <FormMessage tone="info">
+                  {withoutMember.map((candidate) => candidate.name).join(", ")} {withoutMember.length === 1 ? "has" : "have"} no
+                  responsible member. The search still runs and the jobs found are assigned to the candidate; choose a
+                  member above so that somebody handles them.
                 </FormMessage>
               )}
             </div>
@@ -431,7 +452,7 @@ function Form({ options }: { options: SearchOptions }) {
 
           <Panel
             title="What to search for"
-            description="These settings apply to every selected member. Leave a field empty to use each member's own saved value."
+            description="These settings apply to every selected candidate. Leave a field empty to use what is saved in each candidate's profile."
           >
             <div className="flex flex-col gap-5">
               <Controller
@@ -443,7 +464,7 @@ function Form({ options }: { options: SearchOptions }) {
                     optional
                     value={field.value}
                     onChange={field.onChange}
-                    placeholder="Empty: each member's saved titles"
+                    placeholder="Empty: each candidate's saved titles"
                     description="Press Enter or type a comma after each title."
                     max={8}
                     error={errors.job_titles?.message}
@@ -456,7 +477,7 @@ function Form({ options }: { options: SearchOptions }) {
                   optional
                   inputMode="decimal"
                   autoComplete="off"
-                  placeholder="Empty: each member's saved value"
+                  placeholder="Empty: each candidate's saved value"
                   error={errors.years_experience?.message}
                   {...form.register("years_experience")}
                 />
@@ -524,7 +545,7 @@ function Form({ options }: { options: SearchOptions }) {
                     optional
                     value={field.value}
                     onChange={field.onChange}
-                    placeholder="Empty: each member's saved states"
+                    placeholder="Empty: each candidate's saved states"
                     description="Two-letter codes or full names. Remote jobs are always kept."
                     max={30}
                     transform={normalizeState}
@@ -541,7 +562,7 @@ function Form({ options }: { options: SearchOptions }) {
                     optional
                     value={field.value}
                     onChange={field.onChange}
-                    placeholder="Empty: each member's saved list"
+                    placeholder="Empty: each candidate's saved list"
                     max={100}
                     error={errors.excluded_companies?.message}
                   />
@@ -554,10 +575,10 @@ function Form({ options }: { options: SearchOptions }) {
             <div className="flex flex-col gap-5">
               <div className="grid gap-5 sm:grid-cols-2">
                 <TextField
-                  label="Results per member"
+                  label="Results per candidate"
                   inputMode="numeric"
                   autoComplete="off"
-                  description={`The number of jobs to look for, for each member separately. At most ${limits.max_results_per_search_run} in total per search.`}
+                  description={`The number of jobs to look for, for each candidate separately. At most ${limits.max_results_per_search_run} in total per search.`}
                   error={errors.target_count?.message}
                   {...form.register("target_count")}
                 />
@@ -615,11 +636,11 @@ function Form({ options }: { options: SearchOptions }) {
                     [
                       {
                         value: "auto_assign",
-                        text: "Jobs at or above the minimum match score are assigned to each member as soon as they are found.",
+                        text: "Jobs at or above the minimum match score are assigned to each candidate as soon as they are found. The responsible member is notified.",
                       },
                       {
                         value: "review",
-                        text: "Nothing is assigned yet. You look through the results for each member and assign the ones you choose.",
+                        text: "Nothing is assigned yet. You look through the results for each candidate and assign the ones you choose.",
                       },
                     ] as const
                   ).map((option) => {
@@ -651,25 +672,25 @@ function Form({ options }: { options: SearchOptions }) {
           <Panel title="This search" className="xl:sticky xl:top-18">
             <div className="flex flex-col gap-4">
               <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
-                <dt className="text-muted-foreground">Members</dt>
+                <dt className="text-muted-foreground">Candidates</dt>
                 <dd className="text-right tabular-nums">
                   {team && selected.size > 0 ? "up to " : ""}
-                  {memberCount}
+                  {candidateCount}
                 </dd>
-                <dt className="text-muted-foreground">Results per member</dt>
-                <dd className="text-right tabular-nums">{perMember || "—"}</dd>
+                <dt className="text-muted-foreground">Results per candidate</dt>
+                <dd className="text-right tabular-nums">{perCandidate || "—"}</dd>
                 <dt className="text-muted-foreground">Requested in total</dt>
                 <dd className="text-right font-semibold tabular-nums">up to {totalRequested.toLocaleString()}</dd>
               </dl>
               <p className="text-2sm text-muted-foreground">
-                The count is per member: {memberCount || "no"} {memberCount === 1 ? "member" : "members"} times {perMember || 0} jobs. Only real,
+                The count is per candidate: {candidateCount || "no"} {candidateCount === 1 ? "candidate" : "candidates"} times {perCandidate || 0} jobs. Only real,
                 currently listed postings are returned, so a search may find fewer.
               </p>
               {tooManyResults && (
                 <FormMessage>
                   {totalRequested.toLocaleString()} results is over this portal&apos;s limit of{" "}
-                  {limits.max_results_per_search_run.toLocaleString()} per search. Lower the number per member, or select
-                  fewer members.
+                  {limits.max_results_per_search_run.toLocaleString()} per search. Lower the number per candidate, or select
+                  fewer candidates.
                 </FormMessage>
               )}
               <div className="flex flex-col gap-1.5 border-t pt-3">
@@ -696,7 +717,7 @@ function Form({ options }: { options: SearchOptions }) {
               <Button
                 type="submit"
                 size="lg"
-                disabled={create.isPending || tooManyMembers || tooManyResults || !options.queue_available}
+                disabled={create.isPending || tooManyCandidates || tooManyResults || !options.queue_available}
               >
                 {create.isPending ? <Spinner data-icon="inline-start" /> : <Play data-icon="inline-start" />}
                 {create.isPending ? "Starting search" : "Start Search"}
@@ -708,13 +729,23 @@ function Form({ options }: { options: SearchOptions }) {
           </Panel>
         </aside>
       </div>
+      {/* Outside the search <form> in the DOM (a portal), so saving a candidate never submits the search. */}
+      <AddCandidateDialog
+        open={adding}
+        onOpenChange={setAdding}
+        teamId={teamId || undefined}
+        onCreated={(candidate) => {
+          if (selected.size < maxCandidates) setSelected(new Map(selected).set(candidate.id, toPicked(candidate)));
+          setCandidatesError(null);
+        }}
+      />
     </form>
   );
 }
 
 /**
- * Start an AI job search for chosen members: who, with which overrides, how
- * many results per member, and whether matches are assigned at once or reviewed
+ * Start an AI job search for chosen candidates: who, with which overrides, how
+ * many results per candidate, and whether matches are assigned at once or reviewed
  * first. Limits and choices come from GET /api/searches/options.
  */
 export function SearchForm() {

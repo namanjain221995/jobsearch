@@ -47,7 +47,7 @@ function SkillList({ title, skills, matched }: { title: string; skills: string[]
 }
 
 /**
- * Why a job was matched to a member: the score, what it is made of, the skills
+ * Why a job was matched to a candidate: the score, what it is made of, the skills
  * that line up and the ones that do not, and what the posting says about work
  * authorization. Where the posting says nothing, the panel says so.
  */
@@ -64,7 +64,7 @@ export function MatchPanel({ match, score }: { match: MatchExplanation; score: n
   if (!hasScore && !hasDetail) {
     return (
       <p className="text-sm text-muted-foreground">
-        This job was assigned by hand, so no match was calculated. Run a search for the member to get a score and
+        This job was assigned by hand, so no match was calculated. Run a search for the candidate to get a score and
         a skills comparison.
       </p>
     );

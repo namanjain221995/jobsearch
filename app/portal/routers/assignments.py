@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...netguard import UnsafeURL, assert_public_url
 from ...config import Settings
-from ..deps import Principal, any_user, assignment_scope, client_ip, from_this_site, get_db, get_settings, managers
-from ..models import JobAssignment, JobPosting, User
+from ..deps import Principal, any_user, assignment_scope, from_this_site, get_db, get_settings, managers, own_candidates
+from ..models import JobAssignment, JobPosting
 from ..schemas import (Day, AssignCreate, AssignmentDetail, AssignmentOut, BulkAssign, BulkAssignResult, Message, NoteIn, NoteOut, Page,
                        StatusUpdate)
 from ..services import assignments as service
@@ -22,12 +22,14 @@ router = APIRouter(prefix="/api/assignments", tags=["assignments"])
 A = JobAssignment
 
 
-def filtered(principal: Principal, *, member_id, team_id, status, applied, q, company, date_from, date_to, search_run_id, include_inactive):
+def filtered(principal: Principal, *, candidate_id, member_id, team_id, status, applied, q, company, date_from, date_to, search_run_id, include_inactive):
     stmt = select(A).where(assignment_scope(principal))
     if not include_inactive or principal.is_member:
         stmt = stmt.where(A.is_active)
-    if member_id:
-        stmt = stmt.where(A.member_id == member_id)
+    if candidate_id:
+        stmt = stmt.where(A.candidate_id == candidate_id)
+    if member_id:                                        # the responsible member: the candidates they hold today
+        stmt = stmt.where(A.candidate_id.in_(own_candidates(member_id)))
     if team_id:
         stmt = stmt.where(A.team_id == team_id)
     if status:
@@ -59,12 +61,14 @@ SORTS = {"recent": A.assigned_at.desc(), "oldest": A.assigned_at.asc(), "score":
 
 @router.get("", response_model=Page[AssignmentOut])
 async def list_assignments(principal: Principal = Depends(any_user), db: AsyncSession = Depends(get_db),
-                           member_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None,
+                           candidate_id: uuid.UUID | None = None, member_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None,
                            status: str | None = Query(default=None, max_length=120), applied: bool | None = None,
                            q: str | None = Query(default=None, max_length=120), company: str | None = Query(default=None, max_length=120),
                            date_from: Day | None = None, date_to: Day | None = None, search_run_id: uuid.UUID | None = None,
                            include_inactive: bool = False, sort: str = "recent", page: int = 1, page_size: int = 25):
-    stmt = filtered(principal, member_id=member_id, team_id=team_id, status=status, applied=applied, q=q, company=company,
+    """Jobs assigned to candidates, within the caller's scope (a member: the candidates assigned to them today).
+    `candidate_id` narrows to one candidate, `member_id` to the candidates of one responsible member."""
+    stmt = filtered(principal, candidate_id=candidate_id, member_id=member_id, team_id=team_id, status=status, applied=applied, q=q, company=company,
                     date_from=date_from, date_to=date_to, search_run_id=search_run_id, include_inactive=include_inactive)
     # Jobs assigned in one batch share a timestamp: best match first keeps the order stable and useful.
     rows, total = await paginate(db, stmt.order_by(SORTS.get(sort, SORTS["recent"]), A.match_score.desc().nulls_last(), A.id), page, page_size)
@@ -74,17 +78,17 @@ async def list_assignments(principal: Principal = Depends(any_user), db: AsyncSe
 
 @router.get("/export.csv")
 async def export_assignments(principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db),
-                             member_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None,
+                             candidate_id: uuid.UUID | None = None, member_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None,
                              status: str | None = Query(default=None, max_length=120), applied: bool | None = None,
                              date_from: Day | None = None, date_to: Day | None = None):
     """Report of the caller's scope (Admin: organization, Team Lead: own team). Posting URLs are included for managers only."""
-    stmt = filtered(principal, member_id=member_id, team_id=team_id, status=status, applied=applied, q=None, company=None,
+    stmt = filtered(principal, candidate_id=candidate_id, member_id=member_id, team_id=team_id, status=status, applied=applied, q=None, company=None,
                     date_from=date_from, date_to=date_to, search_run_id=None, include_inactive=False)
     rows = list((await db.execute(stmt.order_by(A.assigned_at.desc()).limit(5000))).scalars())
     outs = await service.assignments_out(db, rows)
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["member", "email", "team", "company", "title", "location", "status", "match_score", "assigned_at", "applied_at",
+    writer.writerow(["candidate", "responsible_member", "team", "company", "title", "location", "status", "match_score", "assigned_at", "applied_at",
                      "link_opens", "assigned_by", "source"])
 
     def cell(value) -> str:
@@ -92,7 +96,7 @@ async def export_assignments(principal: Principal = Depends(managers), db: Async
         return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text       # no spreadsheet formulas
 
     for o in outs:
-        writer.writerow([cell(v) for v in (o.member.name, o.member.email, o.team.name if o.team else "", o.job.company, o.job.title,
+        writer.writerow([cell(v) for v in (o.candidate.name, o.member.name if o.member else "", o.team.name if o.team else "", o.job.company, o.job.title,
                                            o.job.location_text, o.status, o.match_score, o.assigned_at.isoformat(),
                                            o.applied_at.isoformat() if o.applied_at else "", o.link_opens,
                                            o.assigned_by.name if o.assigned_by else "", o.source)])
@@ -102,7 +106,7 @@ async def export_assignments(principal: Principal = Depends(managers), db: Async
 
 @router.post("", response_model=BulkAssignResult, status_code=201)
 async def create_assignment(data: AssignCreate, principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db)):
-    created, already = await service.create_assignments(db, principal, [(data.job_id, data.member_id)],
+    created, already = await service.create_assignments(db, principal, [(data.job_id, data.candidate_id)],
                                                         search_run_id=data.search_run_id, source="manual")
     await db.commit()
     return BulkAssignResult(created=len(created), already_assigned=already, assignment_ids=created)
@@ -110,9 +114,9 @@ async def create_assignment(data: AssignCreate, principal: Principal = Depends(m
 
 @router.post("/bulk", response_model=BulkAssignResult, status_code=201)
 async def bulk_assign(data: BulkAssign, principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db)):
-    pairs = [(i.job_id, i.member_id) for i in data.items] + [(j, m) for j in data.job_ids for m in data.member_ids]
+    pairs = [(i.job_id, i.candidate_id) for i in data.items] + [(j, c) for j in data.job_ids for c in data.candidate_ids]
     if not pairs:
-        raise HTTPException(422, "Select at least one job and one member")
+        raise HTTPException(422, "Select at least one job and one candidate")
     if len(pairs) > 2000:
         raise HTTPException(422, "Too many assignments in one request (2000 maximum)")
     run_id = data.search_run_id or next((i.search_run_id for i in data.items if i.search_run_id), None)

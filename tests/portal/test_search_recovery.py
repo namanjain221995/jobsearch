@@ -22,21 +22,21 @@ async def until_running(client, run_id) -> None:
 
 async def test_run_left_by_a_dead_worker_resumes_once_and_keeps_finished_members(world):
     tl = await world.as_tl("alpha")
-    a1, a2 = world.ids["member_a1"], world.ids["member_a2"]
-    started = await tl.post("/api/searches", json={"member_ids": [str(a1), str(a2)], "target_count": 4, "deep_search": False})
+    a1, a2 = world.ids["cand_a1"], world.ids["cand_a2"]
+    started = await tl.post("/api/searches", json={"candidate_ids": [str(a1), str(a2)], "target_count": 4, "deep_search": False})
     run_id = uuid.UUID(started.json()["search"]["id"])
     run = await wait_done(world, tl, run_id)
     assert run["status"] == "completed" and run["attempts"] == 1 and run["assigned_count"] == 8
     async with world.sessions() as db:
-        kept = set((await db.execute(select(JobAssignment.id).where(JobAssignment.member_id == a1))).scalars())
+        kept = set((await db.execute(select(JobAssignment.id).where(JobAssignment.candidate_id ==a1))).scalars())
         # The state a crash leaves behind: A1 was saved, A2 was still being searched, nobody closed the run.
-        lost = select(JobAssignment.id).where(JobAssignment.member_id == a2)
+        lost = select(JobAssignment.id).where(JobAssignment.candidate_id ==a2)
         await db.execute(delete(ApplicationEvent).where(ApplicationEvent.assignment_id.in_(lost)))
-        await db.execute(delete(JobAssignment).where(JobAssignment.member_id == a2))
-        await db.execute(delete(SearchResult).where(SearchResult.member_id == a2))
-        await db.execute(update(SearchTarget).where(SearchTarget.search_run_id == run_id, SearchTarget.member_id == a2).values(status="running", stats={}))
+        await db.execute(delete(JobAssignment).where(JobAssignment.candidate_id ==a2))
+        await db.execute(delete(SearchResult).where(SearchResult.candidate_id ==a2))
+        await db.execute(update(SearchTarget).where(SearchTarget.search_run_id == run_id, SearchTarget.candidate_id ==a2).values(status="running", stats={}))
         progress = (await db.execute(select(SearchRun.progress).where(SearchRun.id == run_id))).scalar_one()
-        progress["members"] = [{**m, "status": "running", "stage": "Ranking matches"} if m["member_id"] == str(a2) else m for m in progress["members"]]
+        progress["candidates"] = [{**m, "status": "running", "stage": "Ranking matches"} if m["candidate_id"] == str(a2) else m for m in progress["candidates"]]
         await db.execute(update(SearchRun).where(SearchRun.id == run_id).values(
             status="running", completed_at=None, heartbeat_at=utcnow() - timedelta(minutes=10), progress=progress))
         await db.commit()
@@ -55,33 +55,33 @@ async def test_run_left_by_a_dead_worker_resumes_once_and_keeps_finished_members
     assert await recover_interrupted(world.sessions) == ([run_id], 0)
     waiting = (await tl.get(f"/api/searches/{run_id}")).json()
     assert waiting["status"] == "queued" and waiting["stage"] == WAITING and waiting["completed_at"] is None
-    assert {t["member"]["name"]: t["status"] for t in waiting["targets"]} == {"Member A1": "completed", "Member A2": "queued"}
+    assert {t["candidate"]["name"]: t["status"] for t in waiting["targets"]} == {"Candidate A1": "completed", "Candidate A2": "queued"}
 
     await world.queue.runner(run_id)                                                                 # the next worker picks it up
     done = (await tl.get(f"/api/searches/{run_id}")).json()
     assert done["status"] == "completed" and done["attempts"] == 2 and done["matched_count"] == 8 and done["assigned_count"] == 8
     assert searched == [f"{run_id}:{a2}"]                                                            # only the unfinished member
     assert any("resumed automatically" in w for w in done["warnings"])
-    assert {t["member"]["name"]: (t["status"], t["assigned"]) for t in done["targets"]} == {"Member A1": ("completed", 4), "Member A2": ("completed", 4)}
+    assert {t["candidate"]["name"]: (t["status"], t["assigned"]) for t in done["targets"]} == {"Candidate A1": ("completed", 4), "Candidate A2": ("completed", 4)}
     async with world.sessions() as db:
-        assert set((await db.execute(select(JobAssignment.id).where(JobAssignment.member_id == a1))).scalars()) == kept    # untouched, no duplicates
-        assert (await db.execute(select(func.count()).select_from(JobAssignment).where(JobAssignment.member_id == a2))).scalar_one() == 4
+        assert set((await db.execute(select(JobAssignment.id).where(JobAssignment.candidate_id ==a1))).scalars()) == kept    # untouched, no duplicates
+        assert (await db.execute(select(func.count()).select_from(JobAssignment).where(JobAssignment.candidate_id ==a2))).scalar_one() == 4
         # The same thing happens again: a run is resumed once only.
         progress = (await db.execute(select(SearchRun.progress).where(SearchRun.id == run_id))).scalar_one()
-        progress["members"] = [{**m, "status": "running"} if m["member_id"] == str(a2) else m for m in progress["members"]]
-        await db.execute(update(SearchTarget).where(SearchTarget.search_run_id == run_id, SearchTarget.member_id == a2).values(status="running"))
+        progress["candidates"] = [{**m, "status": "running"} if m["candidate_id"] == str(a2) else m for m in progress["candidates"]]
+        await db.execute(update(SearchTarget).where(SearchTarget.search_run_id == run_id, SearchTarget.candidate_id ==a2).values(status="running"))
         await db.execute(update(SearchRun).where(SearchRun.id == run_id).values(status="running", completed_at=None, heartbeat_at=None, progress=progress))
         await db.commit()
     assert await recover_interrupted(world.sessions) == ([], 1)
     closed = (await tl.get(f"/api/searches/{run_id}")).json()
     assert closed["status"] == "partial" and "twice" in closed["error_summary"] and closed["completed_at"]
-    assert {t["member"]["name"]: t["status"] for t in closed["targets"]} == {"Member A1": "completed", "Member A2": "failed"}
+    assert {t["candidate"]["name"]: t["status"] for t in closed["targets"]} == {"Candidate A1": "completed", "Candidate A2": "failed"}
     assert (await (await world.as_member("a1")).get("/api/assignments")).json()["total"] == 4
 
 
 async def test_worker_shutdown_puts_the_run_back_in_the_queue_then_gives_up_the_second_time(world):
     tl = await world.as_tl("alpha")
-    a1 = world.ids["member_a1"]
+    a1 = world.ids["cand_a1"]
     gate = asyncio.Event()
     original = world.engine.run
 
@@ -90,7 +90,7 @@ async def test_worker_shutdown_puts_the_run_back_in_the_queue_then_gives_up_the_
         return await original(state, request, resume)
 
     world.engine.run = slow
-    started = await tl.post("/api/searches", json={"member_ids": [str(a1)], "target_count": 3, "deep_search": False})
+    started = await tl.post("/api/searches", json={"candidate_ids": [str(a1)], "target_count": 3, "deep_search": False})
     run_id = uuid.UUID(started.json()["search"]["id"])
     await until_running(tl, run_id)
     for task in list(world.queue.tasks):                     # the worker process is told to stop: its jobs are cancelled
@@ -120,7 +120,7 @@ async def test_worker_shutdown_puts_the_run_back_in_the_queue_then_gives_up_the_
 
 async def test_resumed_run_finishes_normally_after_one_shutdown(world):
     tl = await world.as_tl("alpha")
-    a1 = world.ids["member_a1"]
+    a1 = world.ids["cand_a1"]
     gate = asyncio.Event()
     original = world.engine.run
 
@@ -129,7 +129,7 @@ async def test_resumed_run_finishes_normally_after_one_shutdown(world):
         return await original(state, request, resume)
 
     world.engine.run = slow
-    started = await tl.post("/api/searches", json={"member_ids": [str(a1)], "target_count": 3, "deep_search": False})
+    started = await tl.post("/api/searches", json={"candidate_ids": [str(a1)], "target_count": 3, "deep_search": False})
     run_id = uuid.UUID(started.json()["search"]["id"])
     await until_running(tl, run_id)
     for task in list(world.queue.tasks):

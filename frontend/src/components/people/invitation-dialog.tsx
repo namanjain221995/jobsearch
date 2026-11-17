@@ -194,7 +194,7 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="MEMBER">Member</SelectItem>
+                    <SelectItem value="MEMBER">Member (recruiter)</SelectItem>
                     <SelectItem value="TEAM_LEAD">Team Lead</SelectItem>
                   </SelectContent>
                 </Select>
@@ -277,7 +277,9 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
 
       {!isAdmin && (
         <p className="text-sm text-muted-foreground">
-          {me.team ? `They will join ${me.team.name} as a Member.` : "They will join your team as a Member."}
+          {me.team
+            ? `They will join ${me.team.name} as a Member: a recruiter who applies to jobs for the candidates you assign to them.`
+            : "They will join your team as a Member: a recruiter who applies to jobs for the candidates you assign to them."}
         </p>
       )}
 
@@ -296,6 +298,7 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
 
 /**
  * Invite a person. Accounts only ever come into being this way.
+ * Members and Team Leads are employees; candidates are never invited (they have no account).
  * A Team Lead invites members into their own team; an Admin can invite a member
  * into any team or create a Team Lead, optionally together with a new team.
  */
@@ -332,7 +335,9 @@ export function InvitationDialog({
               ? created.email_sent
                 ? `${created.name} chooses a password with the link in the e-mail. The account works from then on.`
                 : `The account works once ${created.name} has opened the link and chosen a password.`
-              : "They get a link to choose their password. No account works until they do."}
+              : preset.role === "TEAM_LEAD"
+                ? "They get a link to choose their password. No account works until they do."
+                : "For an employee who will work as a recruiter. They get a link to choose their password; no account works until they do. Candidates are added under Candidates and need no invitation."}
           </DialogDescription>
         </DialogHeader>
         {created ? (

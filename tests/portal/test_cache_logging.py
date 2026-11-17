@@ -11,7 +11,7 @@ from app.portal import cache as cache_module
 from app.portal.cache import AnalyticsCache
 from app.portal.db import keep_analytics_cache, make_sessionmaker
 from app.portal.logs import JsonFormatter
-from app.portal.models import JobAssignment, SearchRun, Session
+from app.portal.models import Candidate, CandidateProfile, JobAssignment, SearchRun, Session
 from app.portal.schemas import Message
 from tests.portal.conftest import add_job
 
@@ -36,10 +36,11 @@ async def cached(world):
     await client.aclose()
 
 
-async def assign(world, member: str, title: str = "AI Engineer") -> str:
+async def assign(world, candidate: str, title: str = "AI Engineer") -> str:
+    """Assign a new job to the candidate with that code ("a1" = Candidate A1, whose responsible member is Member A1)."""
     admin = await world.as_admin()
     job_id = await add_job(world, title=title)
-    response = await admin.post("/api/assignments", json={"job_id": job_id, "member_id": str(world.ids[f"member_{member}"])})
+    response = await admin.post("/api/assignments", json={"job_id": job_id, "candidate_id": str(world.ids[f"cand_{candidate}"])})
     assert response.status_code == 201, response.text
     return response.json()["assignment_ids"][0]
 
@@ -67,6 +68,9 @@ async def test_a_status_change_is_visible_on_the_very_next_dashboard_read(world,
     before_admin = (await admin.get("/api/analytics/admin")).json()["stats"]
     before_team = (await lead.get(f"/api/teams/{team}/analytics")).json()["stats"]
     assert before_admin["assigned"] == before_team["assigned"] == 1 and before_admin["applied"] == 0
+    own = f"/api/users/{world.ids['member_a1']}/dashboard"                                # totals over the member's candidates
+    before_member = (await member.get(own)).json()["stats"]
+    assert before_member["assigned"] == 1 and before_member["applied"] == 0
     await admin.get("/api/analytics/admin")                                               # both answers are now stored
     hits = cached.hits
     assert hits >= 1
@@ -74,6 +78,7 @@ async def test_a_status_change_is_visible_on_the_very_next_dashboard_read(world,
     after_admin = (await admin.get("/api/analytics/admin")).json()["stats"]
     after_team = (await lead.get(f"/api/teams/{team}/analytics")).json()["stats"]
     assert after_admin["applied"] == after_team["applied"] == 1                           # no stale answer
+    assert (await member.get(own)).json()["stats"]["applied"] == 1
     assert cached.hits == hits                                                            # both were recomputed
     # A member only opening the assignment (viewed_at is set by a GET) also retires the stored answers.
     second = await assign(world, "a1", title="ML Engineer")
@@ -124,6 +129,15 @@ async def test_only_commits_that_touch_dashboard_tables_retire_entries(world, ca
         row.status = "APPLIED"
         await db.commit()
     assert cached.bumps == bumps + 2
+    candidate = world.ids["cand_b1"]                                                      # candidates and their profiles feed the dashboards too
+    async with sessions() as db:
+        await db.execute(update(Candidate).where(Candidate.id == candidate).values(assigned_member_id=None))
+        await db.commit()
+    assert cached.bumps == bumps + 3
+    async with sessions() as db:
+        await db.execute(update(CandidateProfile).where(CandidateProfile.candidate_id == candidate).values(years_experience=4))
+        await db.commit()
+    assert cached.bumps == bumps + 4
 
 
 async def test_redis_failure_falls_back_to_live_numbers(world, cached):

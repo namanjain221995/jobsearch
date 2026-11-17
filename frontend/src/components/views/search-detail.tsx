@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ClipboardCheck, ListChecks, SearchX } from "lucide-react";
 import { toast } from "sonner";
@@ -36,19 +37,19 @@ const SCORE_OPTIONS = [50, 60, 70, 80, 90].map((score) => ({ value: String(score
 interface Picked {
   resultId: string;
   jobId: string;
-  memberId: string;
-  memberName: string;
+  candidateId: string;
+  candidateName: string;
   title: string;
   company: string;
 }
 
 /**
- * The jobs a search found, per member, with their match. Jobs a member does not
+ * The jobs a search found, per candidate, with their match. Jobs a candidate does not
  * have yet can be ticked and assigned in one step, after a confirmation.
  * In review mode this is where every assignment of the run is made.
  */
 function SearchResults({ run }: { run: SearchRun }) {
-  const [memberId, setMemberId] = useState(run.targets.length === 1 ? run.targets[0].member.id : "");
+  const [candidateId, setCandidateId] = useState(run.targets.length === 1 ? run.targets[0].candidate.id : "");
   const [minScore, setMinScore] = useState("");
   const [show, setShow] = useState(run.mode === "review" ? "unassigned" : "all");
   const [page, setPage] = useState(1);
@@ -62,7 +63,7 @@ function SearchResults({ run }: { run: SearchRun }) {
   const results = useSearchResults(
     run.id,
     {
-      member_id: memberId || undefined,
+      candidate_id: candidateId || undefined,
       min_score: minScore ? Number(minScore) : undefined,
       unassigned_only: show === "unassigned" ? true : undefined,
       page,
@@ -70,7 +71,7 @@ function SearchResults({ run }: { run: SearchRun }) {
     },
     active,
   );
-  const showMember = !memberId && run.targets.length > 1;
+  const showCandidate = !candidateId && run.targets.length > 1;
 
   const changeFilter = (apply: () => void) => {
     apply();
@@ -95,7 +96,7 @@ function SearchResults({ run }: { run: SearchRun }) {
         </div>
       ),
     },
-    ...(showMember ? [{ id: "member", header: "For", cell: (row: SearchResult) => row.member.name }] : []),
+    ...(showCandidate ? [{ id: "candidate", header: "For", cell: (row: SearchResult) => row.candidate.name }] : []),
     { id: "score", header: "Match", cell: (row) => <MatchScore score={row.match_score} /> },
     {
       id: "skills",
@@ -118,7 +119,7 @@ function SearchResults({ run }: { run: SearchRun }) {
   const selection = {
     selected: new Set(picked.keys()),
     isSelectable: (row: SearchResult) => !row.assignment_id,
-    label: (row: SearchResult) => `Select ${row.job.title} at ${row.job.company} for ${row.member.name}`,
+    label: (row: SearchResult) => `Select ${row.job.title} at ${row.job.company} for ${row.candidate.name}`,
     onChange: (next: Set<string>) => {
       const byId = new Map((results.data?.items ?? []).map((row) => [row.id, row]));
       const updated = new Map<string, Picked>();
@@ -130,8 +131,8 @@ function SearchResults({ run }: { run: SearchRun }) {
           updated.set(id, {
             resultId: row.id,
             jobId: row.job.id,
-            memberId: row.member.id,
-            memberName: row.member.name,
+            candidateId: row.candidate.id,
+            candidateName: row.candidate.name,
             title: row.job.title,
             company: row.job.company,
           });
@@ -142,17 +143,17 @@ function SearchResults({ run }: { run: SearchRun }) {
   };
 
   const pickedList = [...picked.values()];
-  const perMember = new Map<string, { name: string; count: number }>();
+  const perCandidate = new Map<string, { name: string; count: number }>();
   for (const item of pickedList) {
-    const entry = perMember.get(item.memberId) ?? { name: item.memberName, count: 0 };
+    const entry = perCandidate.get(item.candidateId) ?? { name: item.candidateName, count: 0 };
     entry.count += 1;
-    perMember.set(item.memberId, entry);
+    perCandidate.set(item.candidateId, entry);
   }
 
   const submit = () =>
     assign.mutate(
       {
-        items: pickedList.map((item) => ({ job_id: item.jobId, member_id: item.memberId, search_run_id: run.id })),
+        items: pickedList.map((item) => ({ job_id: item.jobId, candidate_id: item.candidateId, search_run_id: run.id })),
         search_run_id: run.id,
       },
       {
@@ -179,13 +180,13 @@ function SearchResults({ run }: { run: SearchRun }) {
         <FilterBar className="mb-0">
           {run.targets.length > 1 && (
             <FilterSelect
-              label="Member"
-              allLabel="All members"
-              value={memberId}
-              onChange={(value) => changeFilter(() => setMemberId(value))}
+              label="Candidate"
+              allLabel="All candidates"
+              value={candidateId}
+              onChange={(value) => changeFilter(() => setCandidateId(value))}
               options={run.targets.map((target) => ({
-                value: target.member.id,
-                label: `${target.member.name} (${target.matched})`,
+                value: target.candidate.id,
+                label: `${target.candidate.name} (${target.matched})`,
               }))}
             />
           )}
@@ -229,7 +230,7 @@ function SearchResults({ run }: { run: SearchRun }) {
           selection={selection}
           empty={
             active ? (
-              <EmptyState icon={ListChecks} title="No results yet" description="Results are saved as each member's search finishes. This list fills in on its own." />
+              <EmptyState icon={ListChecks} title="No results yet" description="Results are saved as each candidate's search finishes. This list fills in on its own." />
             ) : show === "unassigned" || minScore ? (
               <EmptyState
                 icon={SearchX}
@@ -241,7 +242,7 @@ function SearchResults({ run }: { run: SearchRun }) {
                 }
               />
             ) : (
-              <EmptyState icon={SearchX} title="This search found no matching jobs" description="Try different job titles, more results per member, or deep search." />
+              <EmptyState icon={SearchX} title="This search found no matching jobs" description="Try different job titles, more results per candidate, or deep search." />
             )
           }
           mobileCard={(row, select) => (
@@ -257,7 +258,7 @@ function SearchResults({ run }: { run: SearchRun }) {
                 <JobFactLine job={row.job} company />
                 <div className="flex flex-wrap items-center justify-between gap-2 text-2sm">
                   <span className="text-muted-foreground">
-                    {showMember ? `${row.member.name}. ` : ""}Rank {row.rank}
+                    {showCandidate ? `${row.candidate.name}. ` : ""}Rank {row.rank}
                   </span>
                   {row.assignment_status ? <ApplicationStatusBadge status={row.assignment_status} /> : <Tag>Not assigned</Tag>}
                 </div>
@@ -293,8 +294,8 @@ function SearchResults({ run }: { run: SearchRun }) {
         title={`Assign ${plural(pickedList.length, "job")}?`}
         description={
           <>
-            Each selected job is assigned to the member it was matched for. They are notified, and the jobs appear in
-            their list right away.
+            Each selected job is assigned to the candidate it was matched for. The candidate&apos;s responsible member
+            is notified, and the jobs appear in the candidate&apos;s list right away.
           </>
         }
         confirmLabel={`Assign ${plural(pickedList.length, "Job")}`}
@@ -302,7 +303,7 @@ function SearchResults({ run }: { run: SearchRun }) {
         onConfirm={submit}
       >
         <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-md border bg-muted/40 px-3 py-2 text-sm">
-          {[...perMember.entries()].map(([id, entry]) => (
+          {[...perCandidate.entries()].map(([id, entry]) => (
             <li key={id} className="flex justify-between gap-3">
               <span className="font-medium">{entry.name}</span>
               <span className="text-muted-foreground tabular-nums">{plural(entry.count, "job")}</span>
@@ -314,7 +315,7 @@ function SearchResults({ run }: { run: SearchRun }) {
       <JobDrawer
         jobId={opened?.job.id ?? null}
         onOpenChange={(open) => !open && setOpened(null)}
-        match={opened ? { explanation: opened.match, score: opened.match_score, memberName: opened.member.name } : undefined}
+        match={opened ? { explanation: opened.match, score: opened.match_score, candidateName: opened.candidate.name } : undefined}
       />
     </Panel>
   );
@@ -390,8 +391,15 @@ export function SearchDetailView({ searchId }: { searchId: string }) {
         <RunWarnings run={run} />
         <RunCounters run={run} />
         <div className="grid gap-5 lg:grid-cols-2">
-          <Panel title="Members" description="Each member is searched separately, with their own resume and profile.">
-            <RunTargets targets={run.targets} />
+          <Panel title="Candidates" description="Each candidate is searched separately, with their own resume and profile.">
+            <RunTargets
+              targets={run.targets}
+              renderAction={(target) => (
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`${area}/candidates/${target.candidate.id}`}>Open</Link>
+                </Button>
+              )}
+            />
           </Panel>
           <div className="flex min-w-0 flex-col gap-5">
             <Panel title="Settings used">

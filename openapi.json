@@ -18,6 +18,9 @@
       "title": "Assignment Id",
       "type": "string"
      },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
      "company": {
       "title": "Company",
       "type": "string"
@@ -41,7 +44,14 @@
       "type": "string"
      },
      "member": {
-      "$ref": "#/components/schemas/UserRef"
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "new_status": {
       "anyOf": [
@@ -73,7 +83,7 @@
      "assignment_id",
      "job_title",
      "company",
-     "member"
+     "candidate"
     ],
     "title": "ActivityItem",
     "type": "object"
@@ -85,6 +95,14 @@
        "$ref": "#/components/schemas/SeriesPoint"
       },
       "title": "Applications Over Time",
+      "type": "array"
+     },
+     "candidate_distribution": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Candidate Distribution",
       "type": "array"
      },
      "funnel": {
@@ -160,14 +178,14 @@
    },
    "AssignCreate": {
     "properties": {
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     },
      "job_id": {
       "format": "uuid",
       "title": "Job Id",
-      "type": "string"
-     },
-     "member_id": {
-      "format": "uuid",
-      "title": "Member Id",
       "type": "string"
      },
      "search_run_id": {
@@ -185,21 +203,21 @@
     },
     "required": [
      "job_id",
-     "member_id"
+     "candidate_id"
     ],
     "title": "AssignCreate",
     "type": "object"
    },
    "AssignItem": {
     "properties": {
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     },
      "job_id": {
       "format": "uuid",
       "title": "Job Id",
-      "type": "string"
-     },
-     "member_id": {
-      "format": "uuid",
-      "title": "Member Id",
       "type": "string"
      },
      "search_run_id": {
@@ -217,7 +235,7 @@
     },
     "required": [
      "job_id",
-     "member_id"
+     "candidate_id"
     ],
     "title": "AssignItem",
     "type": "object"
@@ -274,6 +292,9 @@
         "type": "null"
        }
       ]
+     },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
      },
      "closed_at": {
       "anyOf": [
@@ -374,7 +395,14 @@
       "title": "Match Score"
      },
      "member": {
-      "$ref": "#/components/schemas/UserRef"
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "note_count": {
       "default": 0,
@@ -454,7 +482,7 @@
     "required": [
      "id",
      "job",
-     "member",
+     "candidate",
      "status",
      "source",
      "assigned_at"
@@ -490,6 +518,9 @@
         "type": "null"
        }
       ]
+     },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
      },
      "id": {
       "format": "uuid",
@@ -533,7 +564,14 @@
       "title": "Match Score"
      },
      "member": {
-      "$ref": "#/components/schemas/UserRef"
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "note_count": {
       "default": 0,
@@ -585,7 +623,7 @@
     "required": [
      "id",
      "job",
-     "member",
+     "candidate",
      "status",
      "source",
      "assigned_at"
@@ -725,34 +763,31 @@
     "title": "Body_import_csv_api_jobs_import_csv_post",
     "type": "object"
    },
-   "Body_upload_resume_api_resumes_upload_post": {
+   "Body_upload_candidate_resume_api_candidates__candidate_id__resume_post": {
     "properties": {
      "file": {
       "contentMediaType": "application/octet-stream",
       "title": "File",
       "type": "string"
-     },
-     "member_id": {
-      "anyOf": [
-       {
-        "format": "uuid",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Member Id"
      }
     },
     "required": [
      "file"
     ],
-    "title": "Body_upload_resume_api_resumes_upload_post",
+    "title": "Body_upload_candidate_resume_api_candidates__candidate_id__resume_post",
     "type": "object"
    },
    "BulkAssign": {
     "properties": {
+     "candidate_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Candidate Ids",
+      "type": "array"
+     },
      "items": {
       "items": {
        "$ref": "#/components/schemas/AssignItem"
@@ -768,15 +803,6 @@
       },
       "maxItems": 500,
       "title": "Job Ids",
-      "type": "array"
-     },
-     "member_ids": {
-      "items": {
-       "format": "uuid",
-       "type": "string"
-      },
-      "maxItems": 50,
-      "title": "Member Ids",
       "type": "array"
      },
      "queue_item_ids": {
@@ -829,6 +855,480 @@
      "already_assigned"
     ],
     "title": "BulkAssignResult",
+    "type": "object"
+   },
+   "CandidateAnalytics": {
+    "description": "One candidate's numbers, in the shape of the member dashboard.",
+    "properties": {
+     "applications_over_time": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Applications Over Time",
+      "type": "array"
+     },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
+     "funnel": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Funnel",
+      "type": "array"
+     },
+     "interview_outcomes": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Interview Outcomes",
+      "type": "array"
+     },
+     "member": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pending_vs_applied": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Pending Vs Applied",
+      "type": "array"
+     },
+     "range": {
+      "additionalProperties": true,
+      "title": "Range",
+      "type": "object"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats"
+     },
+     "status_distribution": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Status Distribution",
+      "type": "array"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "weekly_activity": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Weekly Activity",
+      "type": "array"
+     }
+    },
+    "required": [
+     "candidate",
+     "range",
+     "stats",
+     "funnel",
+     "status_distribution",
+     "applications_over_time",
+     "weekly_activity",
+     "pending_vs_applied",
+     "interview_outcomes"
+    ],
+    "title": "CandidateAnalytics",
+    "type": "object"
+   },
+   "CandidateCreate": {
+    "properties": {
+     "assigned_member_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assigned Member Id"
+     },
+     "email": {
+      "anyOf": [
+       {
+        "format": "email",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "notes": {
+      "default": "",
+      "maxLength": 10000,
+      "title": "Notes",
+      "type": "string"
+     },
+     "phone": {
+      "default": "",
+      "title": "Phone",
+      "type": "string"
+     },
+     "team_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Id"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "CandidateCreate",
+    "type": "object"
+   },
+   "CandidateOut": {
+    "properties": {
+     "assigned_member": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "email": {
+      "default": "",
+      "title": "Email",
+      "type": "string"
+     },
+     "has_resume": {
+      "default": false,
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "is_active": {
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "last_assigned_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Assigned At"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "notes": {
+      "default": "",
+      "title": "Notes",
+      "type": "string"
+     },
+     "phone": {
+      "default": "",
+      "title": "Phone",
+      "type": "string"
+     },
+     "profile_completion": {
+      "default": 0,
+      "title": "Profile Completion",
+      "type": "integer"
+     },
+     "profile_summary": {
+      "$ref": "#/components/schemas/CandidateProfileSummary",
+      "default": {
+       "desired_titles": [],
+       "preferred_states": [],
+       "work_authorization": "Other / Prefer Not to Say"
+      }
+     },
+     "resume_has_file": {
+      "default": false,
+      "title": "Resume Has File",
+      "type": "boolean"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats",
+      "default": {
+       "applied": 0,
+       "assigned": 0,
+       "closed": 0,
+       "completion_rate": 0.0,
+       "interviews": 0,
+       "link_opens": 0,
+       "not_applied": 0,
+       "offers": 0,
+       "viewed": 0
+      }
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "is_active",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "CandidateOut",
+    "type": "object"
+   },
+   "CandidateProfileSummary": {
+    "description": "The few profile values a candidate card shows; the full profile is at /api/candidates/{id}/profile.",
+    "properties": {
+     "desired_titles": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Desired Titles",
+      "type": "array"
+     },
+     "preferred_states": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Preferred States",
+      "type": "array"
+     },
+     "work_authorization": {
+      "default": "Other / Prefer Not to Say",
+      "title": "Work Authorization",
+      "type": "string"
+     },
+     "years_experience": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Years Experience"
+     }
+    },
+    "title": "CandidateProfileSummary",
+    "type": "object"
+   },
+   "CandidateRef": {
+    "description": "A candidate as shown next to a job, a search or an event.",
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "CandidateRef",
+    "type": "object"
+   },
+   "CandidateRow": {
+    "properties": {
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
+     "has_resume": {
+      "default": false,
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "is_active": {
+      "default": true,
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "member": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "candidate",
+     "stats"
+    ],
+    "title": "CandidateRow",
+    "type": "object"
+   },
+   "CandidateUpdate": {
+    "description": "Only the fields that are sent change. `assigned_member_id: null` takes the candidate away from its member;\n`email: null` (or \"\") removes the address.",
+    "properties": {
+     "assigned_member_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assigned Member Id"
+     },
+     "email": {
+      "anyOf": [
+       {
+        "format": "email",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email"
+     },
+     "is_active": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Active"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "notes": {
+      "anyOf": [
+       {
+        "maxLength": 10000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notes"
+     },
+     "phone": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Phone"
+     },
+     "team_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Id"
+     }
+    },
+    "title": "CandidateUpdate",
     "type": "object"
    },
    "ChangePasswordIn": {
@@ -948,7 +1448,7 @@
     "type": "object"
    },
    "ExtraField": {
-    "description": "An optional profile field the Admin added. Members fill it in; it is shown with the profile.",
+    "description": "An optional candidate-profile field the Admin added. It is shown with every candidate's profile.",
     "properties": {
      "key": {
       "pattern": "^[a-z][a-z0-9_]{0,39}$",
@@ -1449,8 +1949,18 @@
       "title": "Assignment Id",
       "type": "string"
      },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
      "member": {
-      "$ref": "#/components/schemas/UserRef"
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "status": {
       "enum": [
@@ -1480,7 +1990,7 @@
     },
     "required": [
      "assignment_id",
-     "member",
+     "candidate",
      "status",
      "assigned_at"
     ],
@@ -2902,6 +3412,14 @@
       "title": "Applications Over Time",
       "type": "array"
      },
+     "candidates": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CandidateRow"
+      },
+      "title": "Candidates",
+      "type": "array"
+     },
      "funnel": {
       "items": {
        "$ref": "#/components/schemas/NameValue"
@@ -2974,10 +3492,12 @@
     "type": "object"
    },
    "MemberRow": {
+    "description": "A member as the person responsible for candidates: totals over the candidates assigned to them today.",
     "properties": {
-     "has_resume": {
-      "title": "Has Resume",
-      "type": "boolean"
+     "candidates": {
+      "default": 0,
+      "title": "Candidates",
+      "type": "integer"
      },
      "last_activity_at": {
       "anyOf": [
@@ -3015,7 +3535,6 @@
     "required": [
      "member",
      "status",
-     "has_resume",
      "stats"
     ],
     "title": "MemberRow",
@@ -3246,6 +3765,37 @@
      "page_size"
     ],
     "title": "Page[AuditOut]",
+    "type": "object"
+   },
+   "Page_CandidateOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/CandidateOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[CandidateOut]",
     "type": "object"
    },
    "Page_InvitationOut_": {
@@ -3751,6 +4301,11 @@
    },
    "ProfileOut": {
     "properties": {
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     },
      "completion": {
       "default": 0,
       "title": "Completion",
@@ -3856,11 +4411,6 @@
       ],
       "title": "Updated At"
      },
-     "user_id": {
-      "format": "uuid",
-      "title": "User Id",
-      "type": "string"
-     },
      "work_authorization": {
       "default": "Other / Prefer Not to Say",
       "title": "Work Authorization",
@@ -3884,7 +4434,7 @@
      }
     },
     "required": [
-     "user_id"
+     "candidate_id"
     ],
     "title": "ProfileOut",
     "type": "object"
@@ -4032,6 +4582,11 @@
    },
    "ResumeOut": {
     "properties": {
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     },
      "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -4040,6 +4595,11 @@
      "filename": {
       "title": "Filename",
       "type": "string"
+     },
+     "has_file": {
+      "default": false,
+      "title": "Has File",
+      "type": "boolean"
      },
      "id": {
       "format": "uuid",
@@ -4082,11 +4642,6 @@
        }
       ]
      },
-     "user_id": {
-      "format": "uuid",
-      "title": "User Id",
-      "type": "string"
-     },
      "version": {
       "title": "Version",
       "type": "integer"
@@ -4094,7 +4649,7 @@
     },
     "required": [
      "id",
-     "user_id",
+     "candidate_id",
      "filename",
      "size_bytes",
      "version",
@@ -4105,6 +4660,15 @@
    },
    "SearchCreate": {
     "properties": {
+     "candidate_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Candidate Ids",
+      "type": "array"
+     },
      "deep_search": {
       "default": true,
       "title": "Deep Search",
@@ -4113,15 +4677,6 @@
      "filters": {
       "$ref": "#/components/schemas/SearchFilters",
       "default": {}
-     },
-     "member_ids": {
-      "items": {
-       "format": "uuid",
-       "type": "string"
-      },
-      "maxItems": 50,
-      "title": "Member Ids",
-      "type": "array"
      },
      "min_match_score": {
       "anyOf": [
@@ -4189,7 +4744,7 @@
     "type": "object"
    },
    "SearchFilters": {
-    "description": "Shared overrides for one run. A field left out (null) means: use each member's own saved value.",
+    "description": "Shared overrides for one run. A field left out (null) means: use each candidate's own saved value.",
     "properties": {
      "exclude_citizenship_required": {
       "anyOf": [
@@ -4411,6 +4966,9 @@
       ],
       "title": "Assignment Status"
      },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
      "id": {
       "format": "uuid",
       "title": "Id",
@@ -4426,9 +4984,6 @@
       "title": "Match Score",
       "type": "integer"
      },
-     "member": {
-      "$ref": "#/components/schemas/UserRef"
-     },
      "rank": {
       "title": "Rank",
       "type": "integer"
@@ -4436,7 +4991,7 @@
     },
     "required": [
      "id",
-     "member",
+     "candidate",
      "job",
      "rank",
      "match_score",
@@ -4461,6 +5016,11 @@
       "default": false,
       "title": "Cancel Requested",
       "type": "boolean"
+     },
+     "candidate_count": {
+      "default": 0,
+      "title": "Candidate Count",
+      "type": "integer"
      },
      "completed_at": {
       "anyOf": [
@@ -4522,11 +5082,6 @@
      "matched_count": {
       "default": 0,
       "title": "Matched Count",
-      "type": "integer"
-     },
-     "member_count": {
-      "default": 0,
-      "title": "Member Count",
       "type": "integer"
      },
      "min_match_score": {
@@ -4626,8 +5181,8 @@
    },
    "SearchSkipped": {
     "properties": {
-     "member": {
-      "$ref": "#/components/schemas/UserRef"
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
      },
      "reason": {
       "title": "Reason",
@@ -4635,7 +5190,7 @@
      }
     },
     "required": [
-     "member",
+     "candidate",
      "reason"
     ],
     "title": "SearchSkipped",
@@ -4647,6 +5202,9 @@
       "default": 0,
       "title": "Assigned",
       "type": "integer"
+     },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
      },
      "discovered": {
       "default": 0,
@@ -4669,13 +5227,22 @@
       "title": "Matched",
       "type": "integer"
      },
-     "member": {
-      "$ref": "#/components/schemas/UserRef"
-     },
      "message": {
       "default": "",
       "title": "Message",
       "type": "string"
+     },
+     "resume_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resume Id"
      },
      "stage": {
       "default": "",
@@ -4701,7 +5268,7 @@
      }
     },
     "required": [
-     "member",
+     "candidate",
      "status"
     ],
     "title": "SearchTargetOut",
@@ -5030,6 +5597,19 @@
       "title": "Applications Over Time",
       "type": "array"
      },
+     "candidate_count": {
+      "default": 0,
+      "title": "Candidate Count",
+      "type": "integer"
+     },
+     "candidates": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CandidateRow"
+      },
+      "title": "Candidates",
+      "type": "array"
+     },
      "funnel": {
       "items": {
        "$ref": "#/components/schemas/NameValue"
@@ -5087,6 +5667,11 @@
        }
       ]
      },
+     "unassigned_candidates": {
+      "default": 0,
+      "title": "Unassigned Candidates",
+      "type": "integer"
+     },
      "weekly_activity": {
       "items": {
        "$ref": "#/components/schemas/SeriesPoint"
@@ -5135,6 +5720,11 @@
    },
    "TeamOut": {
     "properties": {
+     "candidate_count": {
+      "default": 0,
+      "title": "Candidate Count",
+      "type": "integer"
+     },
      "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -5201,6 +5791,11 @@
        }
       ],
       "title": "Team Lead Status"
+     },
+     "unassigned_candidates": {
+      "default": 0,
+      "title": "Unassigned Candidates",
+      "type": "integer"
      }
     },
     "required": [
@@ -5234,6 +5829,11 @@
    },
    "TeamRow": {
     "properties": {
+     "candidates": {
+      "default": 0,
+      "title": "Candidates",
+      "type": "integer"
+     },
      "is_active": {
       "default": true,
       "title": "Is Active",
@@ -5386,6 +5986,11 @@
    },
    "UserOut": {
     "properties": {
+     "candidate_count": {
+      "default": 0,
+      "title": "Candidate Count",
+      "type": "integer"
+     },
      "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -5399,11 +6004,6 @@
      "email": {
       "title": "Email",
       "type": "string"
-     },
-     "has_resume": {
-      "default": false,
-      "title": "Has Resume",
-      "type": "boolean"
      },
      "id": {
       "format": "uuid",
@@ -5441,11 +6041,6 @@
      "name": {
       "title": "Name",
       "type": "string"
-     },
-     "profile_completion": {
-      "default": 0,
-      "title": "Profile Completion",
-      "type": "integer"
      },
      "role": {
       "enum": [
@@ -5684,6 +6279,23 @@
      },
      {
       "in": "query",
+      "name": "candidate_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Candidate Id"
+      }
+     },
+     {
+      "in": "query",
       "name": "status",
       "required": false,
       "schema": {
@@ -5764,6 +6376,7 @@
   },
   "/api/analytics/member/{member_id}": {
    "get": {
+    "description": "The same answer as GET /api/users/{id}/dashboard: totals over the candidates assigned to this member today.",
     "operationId": "member_analytics_api_analytics_member__member_id__get",
     "parameters": [
      {
@@ -5918,8 +6531,26 @@
   },
   "/api/assignments": {
    "get": {
+    "description": "Jobs assigned to candidates, within the caller's scope (a member: the candidates assigned to them today).\n`candidate_id` narrows to one candidate, `member_id` to the candidates of one responsible member.",
     "operationId": "list_assignments_api_assignments_get",
     "parameters": [
+     {
+      "in": "query",
+      "name": "candidate_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Candidate Id"
+      }
+     },
      {
       "in": "query",
       "name": "member_id",
@@ -6226,6 +6857,23 @@
     "description": "Report of the caller's scope (Admin: organization, Team Lead: own team). Posting URLs are included for managers only.",
     "operationId": "export_assignments_api_assignments_export_csv_get",
     "parameters": [
+     {
+      "in": "query",
+      "name": "candidate_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Candidate Id"
+      }
+     },
      {
       "in": "query",
       "name": "member_id",
@@ -6949,6 +7597,726 @@
     "summary": "Reset Password",
     "tags": [
      "auth"
+    ]
+   }
+  },
+  "/api/candidates": {
+   "get": {
+    "description": "Filters only ever narrow the caller's scope. `unassigned=true`: candidates without a responsible member;\n`unassigned=false`: those with one. Sorts: `name`, `recent` (created), `updated`, `newest_job` (newest active\nassignment first, candidates without jobs last), `not_applied` (most jobs still to apply to first).",
+    "operationId": "list_candidates_api_candidates_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "assigned_member_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Assigned Member Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "unassigned",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Unassigned"
+      }
+     },
+     {
+      "in": "query",
+      "name": "active",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Active"
+      }
+     },
+     {
+      "in": "query",
+      "name": "has_resume",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Has Resume"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 100,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "default": "name",
+       "pattern": "^(name|recent|updated|newest_job|not_applied)$",
+       "title": "Sort",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_CandidateOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Candidates",
+    "tags": [
+     "candidates"
+    ]
+   },
+   "post": {
+    "operationId": "create_candidate_api_candidates_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CandidateCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CandidateOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Candidate",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}": {
+   "get": {
+    "operationId": "get_candidate_api_candidates__candidate_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CandidateOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Candidate",
+    "tags": [
+     "candidates"
+    ]
+   },
+   "patch": {
+    "operationId": "update_candidate_api_candidates__candidate_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CandidateUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CandidateOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Candidate",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/activity": {
+   "get": {
+    "operationId": "candidate_activity_api_candidates__candidate_id__activity_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_ActivityItem_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Candidate Activity",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/analytics": {
+   "get": {
+    "operationId": "candidate_analytics_api_candidates__candidate_id__analytics_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CandidateAnalytics"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Candidate Analytics",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/profile": {
+   "get": {
+    "operationId": "get_candidate_profile_api_candidates__candidate_id__profile_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProfileOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Candidate Profile",
+    "tags": [
+     "candidates"
+    ]
+   },
+   "patch": {
+    "operationId": "update_candidate_profile_api_candidates__candidate_id__profile_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProfileIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProfileOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Candidate Profile",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/resume": {
+   "delete": {
+    "description": "Deletes the current resume: its text and its file.",
+    "operationId": "delete_candidate_resume_api_candidates__candidate_id__resume_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Candidate Resume",
+    "tags": [
+     "candidates"
+    ]
+   },
+   "get": {
+    "description": "The current resume with its extracted text, or null when the candidate has none.",
+    "operationId": "get_candidate_resume_api_candidates__candidate_id__resume_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/ResumeOut"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "title": "Response Get Candidate Resume Api Candidates  Candidate Id  Resume Get"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Candidate Resume",
+    "tags": [
+     "candidates"
+    ]
+   },
+   "post": {
+    "description": "A Team Lead or Admin uploads the candidate's resume (PDF, DOCX or TXT). The text is extracted for searching\nand the file itself is kept, so the responsible member can download it when applying. It replaces the current one.",
+    "operationId": "upload_candidate_resume_api_candidates__candidate_id__resume_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_upload_candidate_resume_api_candidates__candidate_id__resume_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResumeOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Upload Candidate Resume",
+    "tags": [
+     "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/resume/download": {
+   "get": {
+    "description": "The file that was uploaded, for exactly the people who may see the candidate. Always an attachment, with a\ncontent type chosen by the server from the file's extension, so a browser never renders or interprets it.",
+    "operationId": "download_candidate_resume_api_candidates__candidate_id__resume_download_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/octet-stream": {}
+      },
+      "description": "The uploaded resume file, as an attachment"
+     },
+     "404": {
+      "description": "No candidate, no resume, or a resume uploaded before files were kept"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Download Candidate Resume",
+    "tags": [
+     "candidates"
     ]
    }
   },
@@ -7704,57 +9072,6 @@
     ]
    }
   },
-  "/api/members/{member_id}/resume": {
-   "get": {
-    "operationId": "member_resume_api_members__member_id__resume_get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "member_id",
-      "required": true,
-      "schema": {
-       "format": "uuid",
-       "title": "Member Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "anyOf": [
-          {
-           "$ref": "#/components/schemas/ResumeOut"
-          },
-          {
-           "type": "null"
-          }
-         ],
-         "title": "Response Member Resume Api Members  Member Id  Resume Get"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Member Resume",
-    "tags": [
-     "users"
-    ]
-   }
-  },
   "/api/notifications": {
    "get": {
     "operationId": "list_notifications_api_notifications_get",
@@ -7879,132 +9196,6 @@
     "summary": "Read Notification",
     "tags": [
      "admin"
-    ]
-   }
-  },
-  "/api/resumes/upload": {
-   "post": {
-    "description": "A member uploads their own resume; a Team Lead or Admin may upload one for a member in their scope.",
-    "operationId": "upload_resume_api_resumes_upload_post",
-    "requestBody": {
-     "content": {
-      "multipart/form-data": {
-       "schema": {
-        "$ref": "#/components/schemas/Body_upload_resume_api_resumes_upload_post"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "201": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ResumeOut"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Upload Resume",
-    "tags": [
-     "users"
-    ]
-   }
-  },
-  "/api/resumes/{resume_id}": {
-   "delete": {
-    "operationId": "delete_resume_api_resumes__resume_id__delete",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "resume_id",
-      "required": true,
-      "schema": {
-       "format": "uuid",
-       "title": "Resume Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Message"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Delete Resume",
-    "tags": [
-     "users"
-    ]
-   },
-   "get": {
-    "operationId": "get_resume_api_resumes__resume_id__get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "resume_id",
-      "required": true,
-      "schema": {
-       "format": "uuid",
-       "title": "Resume Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ResumeOut"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Get Resume",
-    "tags": [
-     "users"
     ]
    }
   },
@@ -8155,7 +9346,7 @@
      },
      {
       "in": "query",
-      "name": "member_id",
+      "name": "candidate_id",
       "required": false,
       "schema": {
        "anyOf": [
@@ -8167,7 +9358,7 @@
          "type": "null"
         }
        ],
-       "title": "Member Id"
+       "title": "Candidate Id"
       }
      },
      {
@@ -8433,7 +9624,7 @@
      },
      {
       "in": "query",
-      "name": "member_id",
+      "name": "candidate_id",
       "required": false,
       "schema": {
        "anyOf": [
@@ -8445,7 +9636,7 @@
          "type": "null"
         }
        ],
-       "title": "Member Id"
+       "title": "Candidate Id"
       }
      },
      {
@@ -9009,7 +10200,7 @@
     ]
    },
    "post": {
-    "description": "Admin hands jobs to a team; its Team Lead distributes them to members.",
+    "description": "Admin hands jobs to a team; its Team Lead distributes them to the team's candidates.",
     "operationId": "delegate_jobs_api_teams__team_id__queue_post",
     "parameters": [
      {
@@ -9332,6 +10523,7 @@
   },
   "/api/users/{user_id}/activity": {
    "get": {
+    "description": "What happened on the jobs of the candidates this member is responsible for today.",
     "operationId": "member_activity_api_users__user_id__activity_get",
     "parameters": [
      {
@@ -9395,6 +10587,7 @@
   },
   "/api/users/{user_id}/dashboard": {
    "get": {
+    "description": "Totals over the candidates this member is responsible for today, with one row per candidate.",
     "operationId": "member_dashboard_api_users__user_id__dashboard_get",
     "parameters": [
      {
@@ -9465,100 +10658,6 @@
      }
     },
     "summary": "Member Dashboard",
-    "tags": [
-     "users"
-    ]
-   }
-  },
-  "/api/users/{user_id}/profile": {
-   "get": {
-    "operationId": "get_profile_api_users__user_id__profile_get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "user_id",
-      "required": true,
-      "schema": {
-       "format": "uuid",
-       "title": "User Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ProfileOut"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Get Profile",
-    "tags": [
-     "users"
-    ]
-   },
-   "patch": {
-    "operationId": "update_profile_api_users__user_id__profile_patch",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "user_id",
-      "required": true,
-      "schema": {
-       "format": "uuid",
-       "title": "User Id",
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ProfileIn"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ProfileOut"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Update Profile",
     "tags": [
      "users"
     ]

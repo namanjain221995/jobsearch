@@ -1,9 +1,11 @@
 """Job assignments and application tracking.
 
 Rules that matter:
-- one assignment per (job, member); assigning again is a no-op, never a duplicate;
+- the subject of an assignment is a candidate; the member who works on it is the candidate's responsible member
+  of the moment (never stored on the assignment), so a candidate that moves takes jobs and history along;
+- one assignment per (job, candidate); assigning again is a no-op, never a duplicate;
 - opening a job link is logged as its own event and never counts as applying;
-- "applied" means the member (or a manager, audited) confirmed the submission: applied_at is set;
+- "applied" means the responsible member (or a manager, audited) confirmed the submission: applied_at is set;
 - every change of state is written to application_events, so history survives corrections."""
 import uuid
 from datetime import datetime, timedelta
@@ -14,16 +16,16 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import Principal, assignment_scope, forbid
-from ..models import (ASSIGNMENT_STATUSES, ApplicationEvent, AssignmentNote, JobAssignment, JobPosting, SearchResult,
+from ..models import (ASSIGNMENT_STATUSES, ApplicationEvent, AssignmentNote, Candidate, JobAssignment, JobPosting, SearchResult,
                       TeamJobQueue, User, SearchRun)
 from ..schemas import (AssignmentDetail, AssignmentOut, EventOut, JobAssignee, MatchExplanation, NoteOut, StatusUpdate)
 from ..security import utcnow
 from . import jobs as jobs_service
 from .audit import audit, notify
-from .common import PRE_APPLICATION, team_ref, teams_by_id, user_ref, users_by_id, viewer
+from .common import PRE_APPLICATION, candidate_ref, candidates_with_members, team_ref, teams_by_id, user_ref, users_by_id, viewer
 
 A = JobAssignment
-MEMBER_STATUSES = ASSIGNMENT_STATUSES          # members may record every stage of their own application
+MEMBER_STATUSES = ASSIGNMENT_STATUSES          # the responsible member may record every stage of a candidate's application
 
 
 def match_from(explanation: dict | None) -> MatchExplanation:
@@ -36,24 +38,25 @@ async def create_assignments(db: AsyncSession, principal: Principal, pairs: list
                              search_run_id: uuid.UUID | None = None, source: str = "manual",
                              queue_item_ids: list[uuid.UUID] | None = None, actor: User | None = None,
                              skip_scope_checks: bool = False) -> tuple[list[uuid.UUID], int]:
-    """Create assignments for (job, member) pairs. Returns (new assignment ids, pairs that already existed).
-    Scope is validated on the server: a Team Lead can only reach their own members and jobs they may see."""
+    """Create assignments for (job, candidate) pairs. Returns (new assignment ids, pairs that already existed).
+    Scope is validated on the server: a Team Lead can only reach their own team's candidates and jobs they may see.
+    A candidate needs no responsible member to receive jobs."""
     actor = actor or principal.user
     pairs = list(dict.fromkeys(pairs))
     if not pairs:
         return [], 0
-    member_ids = {m for _, m in pairs}
+    candidate_ids = {c for _, c in pairs}
     job_ids = {j for j, _ in pairs}
-    members = {u.id: u for u in (await db.execute(select(User).where(User.id.in_(member_ids)))).scalars()}
+    candidates = {c.id: c for c in (await db.execute(select(Candidate).where(Candidate.id.in_(candidate_ids)))).scalars()}
     if not skip_scope_checks:
-        for member_id in member_ids:
-            member = members.get(member_id)
-            if member is None or member.role != "MEMBER":
-                raise HTTPException(404 if principal.is_admin else 403, "Member not found" if principal.is_admin else "You do not have access to this resource")
-            if principal.is_team_lead and (member.team_id != principal.user.team_id or not principal.user.team_id):
+        for candidate_id in candidate_ids:
+            candidate = candidates.get(candidate_id)
+            if candidate is None:
+                raise HTTPException(404 if principal.is_admin else 403, "Candidate not found" if principal.is_admin else "You do not have access to this resource")
+            if principal.is_team_lead and (candidate.team_id != principal.user.team_id or not principal.user.team_id):
                 raise forbid()
-            if not member.is_active:
-                raise HTTPException(409, f"{member.name} is deactivated and cannot receive jobs")
+            if not candidate.is_active:
+                raise HTTPException(409, f"{candidate.name} is deactivated and cannot receive jobs")
         if not principal.is_manager:
             raise forbid()
         visible = await jobs_service.visible_jobs(db, principal, job_ids)
@@ -68,77 +71,86 @@ async def create_assignments(db: AsyncSession, principal: Principal, pairs: list
         if run is None or (principal.is_team_lead and run.team_id != principal.user.team_id):
             raise HTTPException(404, "Search not found") if principal.is_admin else forbid()
 
-    # Match details computed for this member by a search (this run first, otherwise the member's latest result).
+    # Match details computed for this candidate by a search (this run first, otherwise the candidate's latest result).
     result_rows = (await db.execute(
-        select(SearchResult).where(SearchResult.job_id.in_(job_ids), SearchResult.member_id.in_(member_ids))
+        select(SearchResult).where(SearchResult.job_id.in_(job_ids), SearchResult.candidate_id.in_(candidate_ids))
         .order_by(SearchResult.created_at))).scalars()
     matches: dict[tuple[uuid.UUID, uuid.UUID], SearchResult] = {}
     for r in result_rows:
-        key = (r.job_id, r.member_id)
+        key = (r.job_id, r.candidate_id)
         if key not in matches or r.search_run_id == search_run_id:
             matches[key] = r
-    # A member's own match details travel with them, but an assignment is only linked to a search of the member's
-    # current team (a search of the team they left belongs to that team).
+    # A candidate's own match details travel with them, but an assignment is only linked to a search of the
+    # candidate's current team (a search of the team they left belongs to that team).
     run_teams = dict((await db.execute(select(SearchRun.id, SearchRun.team_id).where(
         SearchRun.id.in_({m.search_run_id for m in matches.values()})))).all()) if matches else {}
 
     created: list[uuid.UUID] = []
-    per_member: dict[uuid.UUID, int] = {}
+    per_candidate: dict[uuid.UUID, int] = {}
     already = 0
-    for job_id, member_id in pairs:
-        member = members[member_id]
-        match = matches.get((job_id, member_id))
+    for job_id, candidate_id in pairs:
+        candidate = candidates[candidate_id]
+        match = matches.get((job_id, candidate_id))
         stmt = pg_insert(A).values(
-            id=uuid.uuid4(), job_id=job_id, member_id=member_id, team_id=member.team_id, assigned_by=actor.id,
-            search_run_id=search_run_id or (match.search_run_id if match and run_teams.get(match.search_run_id) == member.team_id else None),
+            id=uuid.uuid4(), job_id=job_id, candidate_id=candidate_id, team_id=candidate.team_id, assigned_by=actor.id,
+            search_run_id=search_run_id or (match.search_run_id if match and run_teams.get(match.search_run_id) == candidate.team_id else None),
             source=source,
             match_score=match.match_score if match else None, match_explanation=match.match_explanation if match else {},
             status="ASSIGNED", is_active=True,
-        ).on_conflict_do_nothing(index_elements=[A.job_id, A.member_id]).returning(A.id)
+        ).on_conflict_do_nothing(index_elements=[A.job_id, A.candidate_id]).returning(A.id)
         new_id = (await db.execute(stmt)).scalar_one_or_none()
         if new_id is None:
             # Already assigned. A previously withdrawn assignment is restored; progress is never overwritten.
-            previous = (await db.execute(select(A).where(A.job_id == job_id, A.member_id == member_id))).scalar_one()
+            previous = (await db.execute(select(A).where(A.job_id == job_id, A.candidate_id == candidate_id))).scalar_one()
             if not previous.is_active:
                 previous.is_active = True
                 db.add(ApplicationEvent(assignment_id=previous.id, actor_id=actor.id, event_type="reassigned",
                                         old_status=previous.status, new_status=previous.status, meta={"source": source}))
                 created.append(previous.id)
-                per_member[member_id] = per_member.get(member_id, 0) + 1
+                per_candidate[candidate_id] = per_candidate.get(candidate_id, 0) + 1
             else:
                 already += 1
             continue
         created.append(new_id)
-        per_member[member_id] = per_member.get(member_id, 0) + 1
+        per_candidate[candidate_id] = per_candidate.get(candidate_id, 0) + 1
         db.add(ApplicationEvent(assignment_id=new_id, actor_id=actor.id, event_type="assigned", new_status="ASSIGNED",
                                 meta={"source": source, "search_run_id": str(search_run_id) if search_run_id else None}))
-    for member_id, count in per_member.items():
-        notify(db, member_id, "jobs_assigned", {"count": count, "assigned_by": actor.name, "source": source,
-                                                 "search_run_id": str(search_run_id) if search_run_id else None})
+    for candidate_id, count in per_candidate.items():
+        candidate = candidates[candidate_id]
+        if candidate.assigned_member_id is not None:        # the member responsible for this candidate today
+            notify(db, candidate.assigned_member_id, "candidate_jobs_assigned", {
+                "count": count, "candidate_id": str(candidate.id), "candidate_name": candidate.name, "assigned_by": actor.name,
+                "source": source, "search_run_id": str(search_run_id) if search_run_id else None})
     if queue_item_ids:
         stmt = update(TeamJobQueue).where(TeamJobQueue.id.in_(queue_item_ids), TeamJobQueue.job_id.in_(job_ids)).values(status="assigned")
         if principal.is_team_lead:
             stmt = stmt.where(TeamJobQueue.team_id == principal.user.team_id)
         await db.execute(stmt)
     if created:
-        teams = {members[m].team_id for m in per_member}
+        teams = {candidates[c].team_id for c in per_candidate}
         audit(db, actor, "assignments.created", "assignment", None, next(iter(teams)) if len(teams) == 1 else None,
-              {"created": len(created), "already_assigned": already, "source": source, "members": len(per_member),
+              {"created": len(created), "already_assigned": already, "source": source, "candidates": len(per_candidate),
                "search_run_id": str(search_run_id) if search_run_id else None})
     return created, already
 
 
 # ---------------------------------------------------------------- reading
 async def load_scoped(db: AsyncSession, principal: Principal, assignment_id: uuid.UUID) -> JobAssignment:
-    """Fetch an assignment the caller may see, or refuse. Other people's assignments are indistinguishable from missing ones for members."""
+    """Fetch an assignment the caller may see, or refuse. A member reaches the assignments of the candidates they
+    are responsible for at this moment: when a candidate is moved, the previous member is refused from then on.
+    Other people's assignments are indistinguishable from missing ones for members."""
     assignment = (await db.execute(select(A).where(A.id == assignment_id))).scalar_one_or_none()
     if assignment is None:
         raise HTTPException(404, "Assignment not found") if principal.is_admin else forbid()
+    mine = False
+    if principal.is_member:
+        mine = (await db.execute(select(Candidate.id).where(
+            Candidate.id == assignment.candidate_id, Candidate.assigned_member_id == principal.user.id))).first() is not None
     allowed = principal.is_admin or (principal.is_team_lead and principal.user.team_id and assignment.team_id == principal.user.team_id) \
-        or (principal.is_member and assignment.member_id == principal.user.id and assignment.is_active)
+        or (mine and assignment.is_active)
     if not allowed:
-        if principal.is_member and assignment.member_id == principal.user.id:        # their own, taken back by a manager
-            raise HTTPException(410, "This job is no longer assigned to you.")
+        if mine:                                              # their candidate's, taken back by a manager
+            raise HTTPException(410, "This job is no longer assigned to your candidate.")
         raise forbid()
     return assignment
 
@@ -148,7 +160,8 @@ async def assignments_out(db: AsyncSession, assignments: list[JobAssignment]) ->
         return []
     ids = [a.id for a in assignments]
     postings = {p.id: p for p in (await db.execute(select(JobPosting).where(JobPosting.id.in_({a.job_id for a in assignments})))).scalars()}
-    users = await users_by_id(db, {a.member_id for a in assignments} | {a.assigned_by for a in assignments})
+    candidates, members = await candidates_with_members(db, {a.candidate_id for a in assignments})
+    users = await users_by_id(db, {a.assigned_by for a in assignments})
     teams = await teams_by_id(db, {a.team_id for a in assignments})
     opens = {r[0]: (r[1], r[2]) for r in (await db.execute(
         select(ApplicationEvent.assignment_id, func.count(), func.max(ApplicationEvent.created_at))
@@ -161,11 +174,12 @@ async def assignments_out(db: AsyncSession, assignments: list[JobAssignment]) ->
     notes = dict((await db.execute(select(AssignmentNote.assignment_id, func.count()).where(*note_where)
                                    .group_by(AssignmentNote.assignment_id))).all())
     return [AssignmentOut(
-        id=a.id, job=jobs_service.summary_out(postings[a.job_id]), member=user_ref(users.get(a.member_id)),
+        id=a.id, job=jobs_service.summary_out(postings[a.job_id]), candidate=candidate_ref(candidates[a.candidate_id]),
+        member=user_ref(members.get(candidates[a.candidate_id].assigned_member_id)),
         team=team_ref(teams.get(a.team_id)), status=a.status, is_active=a.is_active, source=a.source, match_score=a.match_score,
         assigned_at=a.assigned_at, assigned_by=user_ref(users.get(a.assigned_by)), viewed_at=a.viewed_at, applied_at=a.applied_at,
         link_opens=opens.get(a.id, (0, None))[0], last_link_open_at=opens.get(a.id, (0, None))[1], note_count=notes.get(a.id, 0),
-    ) for a in assignments if a.job_id in postings and a.member_id in users]
+    ) for a in assignments if a.job_id in postings and a.candidate_id in candidates]
 
 
 def allowed_statuses(principal: Principal, assignment: JobAssignment) -> list[str]:
@@ -181,7 +195,7 @@ async def detail(db: AsyncSession, principal: Principal, assignment: JobAssignme
     if principal.is_member:
         note_stmt = note_stmt.where(AssignmentNote.is_private.is_(False))
     notes = list((await db.execute(note_stmt.limit(200))).scalars())
-    if principal.is_member:                                  # what managers do among themselves is not the member's history
+    if principal.is_member:                                  # what managers do among themselves is not shown to the member
         events = [e for e in events if member_may_see(e.event_type, e.meta)]
     actors = await users_by_id(db, {e.actor_id for e in events} | {n.author_id for n in notes})
     others: list[JobAssignee] = []
@@ -189,10 +203,11 @@ async def detail(db: AsyncSession, principal: Principal, assignment: JobAssignme
     if principal.is_manager:
         where = [A.job_id == assignment.job_id, A.id != assignment.id, A.is_active, assignment_scope(principal)]
         rows = list((await db.execute(select(A).where(*where).order_by(A.assigned_at.desc()).limit(100))).scalars())
-        members = await users_by_id(db, {r.member_id for r in rows})
+        candidates, members = await candidates_with_members(db, {r.candidate_id for r in rows})
         teams = await teams_by_id(db, {r.team_id for r in rows})
-        others = [JobAssignee(assignment_id=r.id, member=user_ref(members[r.member_id]), team=team_ref(teams.get(r.team_id)),
-                              status=r.status, assigned_at=r.assigned_at, applied_at=r.applied_at) for r in rows if r.member_id in members]
+        others = [JobAssignee(assignment_id=r.id, candidate=candidate_ref(candidates[r.candidate_id]),
+                              member=user_ref(members.get(candidates[r.candidate_id].assigned_member_id)), team=team_ref(teams.get(r.team_id)),
+                              status=r.status, assigned_at=r.assigned_at, applied_at=r.applied_at) for r in rows if r.candidate_id in candidates]
         urls = {"canonical_url": posting.canonical_url, "apply_url": posting.apply_url}
     data = base.model_dump()
     data["job"] = jobs_service.detail_out(posting, hide_links=principal.is_member)      # members open jobs through Open Job only
@@ -298,7 +313,7 @@ async def set_status(db: AsyncSession, principal: Principal, assignment: JobAssi
         assignment.application_reference = data.reference.strip()
         meta["reference_recorded"] = bool(data.reference.strip())
     assignment.status = new
-    if principal.user.id != assignment.member_id:
+    if not principal.is_member:                              # a manager recorded it instead of the responsible member
         meta["on_behalf_of_member"] = True
     if old != new or meta:
         db.add(ApplicationEvent(assignment_id=assignment.id, actor_id=principal.user.id, event_type="status_changed",
@@ -324,7 +339,7 @@ async def add_note(db: AsyncSession, principal: Principal, assignment: JobAssign
 
 
 async def withdraw(db: AsyncSession, principal: Principal, assignment: JobAssignment) -> None:
-    """Manager removes an assignment from a member's list. The row and its history stay."""
+    """Manager removes an assignment from a candidate's list. The row and its history stay."""
     if not assignment.is_active:
         return
     assignment.is_active = False

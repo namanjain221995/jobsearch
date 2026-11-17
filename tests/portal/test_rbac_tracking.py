@@ -9,23 +9,38 @@ from tests.portal.conftest import add_job
 
 async def test_team_lead_cannot_reach_another_team(world):
     tl = await world.as_tl("alpha")
-    beta_team, beta_member = world.ids["team_beta"], world.ids["member_b1"]
+    beta_team, beta_member, beta_candidate = world.ids["team_beta"], world.ids["member_b1"], world.ids["cand_b1"]
     for path in (f"/api/teams/{beta_team}", f"/api/teams/{beta_team}/members", f"/api/teams/{beta_team}/analytics",
-                 f"/api/teams/{beta_team}/queue", f"/api/users/{beta_member}", f"/api/users/{beta_member}/profile",
-                 f"/api/users/{beta_member}/dashboard", f"/api/users/{beta_member}/activity", f"/api/members/{beta_member}/resume",
+                 f"/api/teams/{beta_team}/queue", f"/api/users/{beta_member}",
+                 f"/api/users/{beta_member}/dashboard", f"/api/users/{beta_member}/activity",
                  f"/api/analytics/member/{beta_member}"):
         response = await tl.get(path)
         assert response.status_code == 403, (path, response.status_code)
         assert "Member B1" not in response.text and "member.b1" not in response.text
+    # Profile and resume now live on the candidate: another team's candidate does not exist for this Team Lead.
+    for path in (f"/api/candidates/{beta_candidate}", f"/api/candidates/{beta_candidate}/profile", f"/api/candidates/{beta_candidate}/resume",
+                 f"/api/candidates/{beta_candidate}/resume/download", f"/api/candidates/{beta_candidate}/analytics",
+                 f"/api/candidates/{beta_candidate}/activity"):
+        response = await tl.get(path)
+        assert response.status_code == 404, (path, response.status_code)
+        assert "Candidate B1" not in response.text and "candidate.b1" not in response.text and "Member B1" not in response.text
+    candidates = (await tl.get("/api/candidates")).json()
+    assert {c["name"] for c in candidates["items"]} == {"Candidate A1", "Candidate A2"}
+    assert (await tl.get("/api/candidates", params={"team_id": str(beta_team)})).json()["items"] == []  # the filter cannot widen the scope
     listed = (await tl.get("/api/users")).json()
     assert {u["email"] for u in listed["items"]} == {"member.a1@example.com", "member.a2@example.com"}
     assert (await tl.get("/api/users", params={"team_id": str(beta_team)})).json()["items"] == []     # the filter cannot widen the scope
     assert [t["name"] for t in (await tl.get("/api/teams")).json()] == ["Team Alpha"]
     assert (await tl.patch(f"/api/users/{beta_member}", json={"is_active": False})).status_code == 403
     assert (await tl.patch(f"/api/users/{world.ids['member_a1']}", json={"team_id": str(beta_team)})).status_code == 403
-    assert (await tl.patch(f"/api/users/{beta_member}/profile", json={"skills": ["x"]})).status_code == 403
-    upload = await tl.post("/api/resumes/upload", data={"member_id": str(beta_member)}, files={"file": ("r.txt", b"x" * 100)})
-    assert upload.status_code == 403
+    assert (await tl.patch(f"/api/candidates/{beta_candidate}/profile", json={"skills": ["x"]})).status_code == 404
+    upload = await tl.post(f"/api/candidates/{beta_candidate}/resume", files={"file": ("r.txt", b"x" * 100)})
+    assert upload.status_code == 404
+    assert (await tl.patch(f"/api/candidates/{beta_candidate}", json={"notes": "x"})).status_code == 404
+    assert (await tl.delete(f"/api/candidates/{beta_candidate}/resume")).status_code == 404
+    beta_lead = await world.as_tl("beta")                                              # nothing above changed the candidate
+    assert (await beta_lead.get(f"/api/candidates/{beta_candidate}/profile")).json()["skills"] == ["Python", "PyTorch"]
+    assert (await beta_lead.get(f"/api/candidates/{beta_candidate}/resume")).json()["version"] == 1
 
 
 async def test_member_is_limited_to_their_own_data(world):
@@ -34,19 +49,45 @@ async def test_member_is_limited_to_their_own_data(world):
                  "/api/settings", "/api/integrations", f"/api/teams/{world.ids['team_alpha']}/analytics", "/api/searches/options"):
         assert (await member.get(path)).status_code == 403, path
     other = world.ids["member_a2"]
-    for path in (f"/api/users/{other}", f"/api/users/{other}/profile", f"/api/users/{other}/dashboard", f"/api/members/{other}/resume"):
+    for path in (f"/api/users/{other}", f"/api/users/{other}/dashboard"):
         assert (await member.get(path)).status_code == 403, path
-    assert (await member.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"])]})).status_code == 403
+    # A candidate assigned to another member (same team) does not exist for this member: reading and writing answer 404.
+    own_candidate, other_candidate = world.ids["cand_a1"], world.ids["cand_a2"]
+    for path in (f"/api/candidates/{other_candidate}", f"/api/candidates/{other_candidate}/profile", f"/api/candidates/{other_candidate}/resume",
+                 f"/api/candidates/{other_candidate}/resume/download"):
+        response = await member.get(path)
+        assert response.status_code == 404, path
+        assert "Candidate A2" not in response.text and "candidate.a2" not in response.text
+    assert (await member.patch(f"/api/candidates/{other_candidate}/profile", json={"skills": ["x"]})).status_code == 404
+    assert (await member.post(f"/api/candidates/{other_candidate}/resume", files={"file": ("r.txt", b"x" * 100)})).status_code == 404
+    assert [c["name"] for c in (await member.get("/api/candidates")).json()["items"]] == ["Candidate A1"]
+    assert (await member.post("/api/searches", json={"candidate_ids": [str(own_candidate)]})).status_code == 403
     assert (await member.post("/api/jobs", json={"company": "X", "title": "Engineer"})).status_code == 403
     assert (await member.patch(f"/api/users/{world.ids['member_a1']}", json={"team_id": str(world.ids["team_beta"])})).status_code == 403
     assert (await member.patch(f"/api/users/{world.ids['member_a1']}", json={"is_active": False})).status_code == 403
-    own = await member.get(f"/api/users/{world.ids['member_a1']}/profile")
+    # The member reads their own candidate's profile and resume, but only a manager writes them.
+    own = await member.get(f"/api/candidates/{own_candidate}/profile")
     assert own.status_code == 200 and own.json()["desired_titles"] == ["AI Engineer"]
-    saved = await member.patch(f"/api/users/{world.ids['member_a1']}/profile", json={"preferred_states": ["TX"], "skills": ["Python", "SQL"]})
+    assert (await member.get(f"/api/candidates/{own_candidate}/resume")).json()["version"] == 1
+    profile_change = {"preferred_states": ["TX"], "skills": ["Python", "SQL"]}
+    cv = {"file": ("cv.txt", ("Python engineer. " * 20).encode())}
+    assert (await member.patch(f"/api/candidates/{own_candidate}/profile", json=profile_change)).status_code == 403
+    assert (await member.post(f"/api/candidates/{own_candidate}/resume", files=cv)).status_code == 403
+    assert (await member.post(f"/api/candidates/{own_candidate}/resume", files={"file": ("cv.exe", b"MZ" * 50)})).status_code == 403
+    assert (await member.delete(f"/api/candidates/{own_candidate}/resume")).status_code == 403
+    assert (await member.patch(f"/api/candidates/{own_candidate}", json={"notes": "x"})).status_code == 403
+    assert (await member.post("/api/candidates", json={"name": "New Candidate"})).status_code == 403
+    unchanged = (await member.get(f"/api/candidates/{own_candidate}/profile")).json()
+    assert unchanged["skills"] == ["Python", "PyTorch"] and (await member.get(f"/api/candidates/{own_candidate}/resume")).json()["version"] == 1
+    tl = await world.as_tl("alpha")
+    saved = await tl.patch(f"/api/candidates/{own_candidate}/profile", json=profile_change)
     assert saved.status_code == 200 and saved.json()["completion"] == 100 and saved.json()["skills"] == ["Python", "SQL"]
-    resume = await member.post("/api/resumes/upload", files={"file": ("cv.txt", ("Python engineer. " * 20).encode())})
+    resume = await tl.post(f"/api/candidates/{own_candidate}/resume", files=cv)
     assert resume.status_code == 201 and resume.json()["version"] == 2 and "Python" in resume.json()["parsed_profile"]["skills"]
-    assert (await member.post("/api/resumes/upload", files={"file": ("cv.exe", b"MZ" * 50)})).status_code == 400
+    assert (await tl.post(f"/api/candidates/{own_candidate}/resume", files={"file": ("cv.exe", b"MZ" * 50)})).status_code == 400
+    seen = await member.get(f"/api/candidates/{own_candidate}/profile")                # the member sees what the Team Lead saved
+    assert seen.json()["skills"] == ["Python", "SQL"] and seen.json()["completion"] == 100
+    assert (await member.get(f"/api/candidates/{own_candidate}/resume")).json()["version"] == 2
     anonymous = await world.client()
     assert (await anonymous.get("/api/users")).status_code == 401
 
@@ -54,9 +95,9 @@ async def test_member_is_limited_to_their_own_data(world):
 async def test_assignment_rules_and_scope(world):
     job = await add_job(world)
     admin, tl_a, tl_b = await world.as_admin(), await world.as_tl("alpha"), await world.as_tl("beta")
-    a1, a2, b1 = (str(world.ids[k]) for k in ("member_a1", "member_a2", "member_b1"))
+    a1, a2, b1 = (str(world.ids[k]) for k in ("cand_a1", "cand_a2", "cand_b1"))
     # A job the Team Lead has no relation to is not assignable by them (and not visible).
-    assert (await tl_a.post("/api/assignments", json={"job_id": job, "member_id": a1})).status_code == 403
+    assert (await tl_a.post("/api/assignments", json={"job_id": job, "candidate_id": a1})).status_code == 403
     assert (await tl_a.get(f"/api/jobs/{job}")).status_code == 403
     # Admin delegates to Team Alpha's queue; now its Team Lead can distribute it.
     queued = await admin.post(f"/api/teams/{world.ids['team_alpha']}/queue", json={"job_ids": [job]})
@@ -64,20 +105,23 @@ async def test_assignment_rules_and_scope(world):
     assert (await tl_b.get(f"/api/teams/{world.ids['team_alpha']}/queue")).status_code == 403
     queue = (await tl_a.get(f"/api/teams/{world.ids['team_alpha']}/queue")).json()
     assert queue["total"] == 1 and queue["items"][0]["delegated_by"]["name"] == "Ada Admin"
-    assert (await tl_a.post("/api/assignments", json={"job_id": job, "member_id": b1})).status_code == 403     # other team's member
-    done = await tl_a.post("/api/assignments/bulk", json={"job_ids": [job], "member_ids": [a1, a2], "queue_item_ids": [queue["items"][0]["id"]]})
+    assert (await tl_a.post("/api/assignments", json={"job_id": job, "candidate_id": b1})).status_code == 403  # other team's candidate
+    done = await tl_a.post("/api/assignments/bulk", json={"job_ids": [job], "candidate_ids": [a1, a2], "queue_item_ids": [queue["items"][0]["id"]]})
     assert done.status_code == 201 and done.json()["created"] == 2
-    again = await tl_a.post("/api/assignments/bulk", json={"job_ids": [job], "member_ids": [a1, a2]})
+    again = await tl_a.post("/api/assignments/bulk", json={"job_ids": [job], "candidate_ids": [a1, a2]})
     assert again.json() == {"created": 0, "already_assigned": 2, "assignment_ids": []}                         # never duplicated
     assert (await tl_a.get(f"/api/teams/{world.ids['team_alpha']}/queue")).json()["total"] == 0
-    # Admin assigns the same job directly to a member of another team: allowed, one row per (job, member).
-    direct = await admin.post("/api/assignments", json={"job_id": job, "member_id": b1})
+    # Admin assigns the same job directly to a candidate of another team: allowed, one row per (job, candidate).
+    direct = await admin.post("/api/assignments", json={"job_id": job, "candidate_id": b1})
     assert direct.status_code == 201 and direct.json()["created"] == 1
     async with world.sessions() as db:
         rows = (await db.execute(select(JobAssignment).where(JobAssignment.job_id == uuid.UUID(job)))).scalars().all()
-    assert len(rows) == 3 and len({r.member_id for r in rows}) == 3
-    assert {a["member"]["name"] for a in (await tl_b.get("/api/assignments")).json()["items"]} == {"Member B1"}
-    assert {a["member"]["name"] for a in (await tl_a.get("/api/assignments")).json()["items"]} == {"Member A1", "Member A2"}
+    assert len(rows) == 3 and len({r.candidate_id for r in rows}) == 3
+    beta_items, alpha_items = (await tl_b.get("/api/assignments")).json()["items"], (await tl_a.get("/api/assignments")).json()["items"]
+    assert {a["candidate"]["name"] for a in beta_items} == {"Candidate B1"}
+    assert {a["candidate"]["name"] for a in alpha_items} == {"Candidate A1", "Candidate A2"}
+    assert {a["member"]["name"] for a in beta_items} == {"Member B1"}                                           # the responsible member
+    assert {a["member"]["name"] for a in alpha_items} == {"Member A1", "Member A2"}
     view = (await admin.get(f"/api/jobs/{job}")).json()
     assert view["assignment_count"] == 3 and {a["team"]["name"] for a in view["assignees"]} == {"Team Alpha", "Team Beta"}
     assert len((await tl_a.get(f"/api/jobs/{job}")).json()["assignees"]) == 2                                   # only own team's assignees
@@ -88,10 +132,10 @@ async def test_assignment_rules_and_scope(world):
 async def test_members_never_see_other_assignments_or_raw_links(world):
     job = await add_job(world, apply_url="https://careers.northwind.example/apply/777")
     admin = await world.as_admin()
-    ids = (await admin.post("/api/assignments/bulk", json={"job_ids": [job], "member_ids": [str(world.ids["member_a1"]), str(world.ids["member_a2"])]})).json()["assignment_ids"]
+    ids = (await admin.post("/api/assignments/bulk", json={"job_ids": [job], "candidate_ids": [str(world.ids["cand_a1"]), str(world.ids["cand_a2"])]})).json()["assignment_ids"]
     a1 = await world.as_member("a1")
     mine = (await a1.get("/api/assignments")).json()
-    assert mine["total"] == 1 and mine["items"][0]["member"]["name"] == "Member A1"
+    assert mine["total"] == 1 and mine["items"][0]["candidate"]["name"] == "Candidate A1" and mine["items"][0]["member"]["name"] == "Member A1"
     own_id = mine["items"][0]["id"]
     other_id = next(i for i in ids if i != own_id)
     assert (await a1.get(f"/api/assignments/{other_id}")).status_code == 403
@@ -99,6 +143,7 @@ async def test_members_never_see_other_assignments_or_raw_links(world):
     assert (await a1.patch(f"/api/assignments/{other_id}/status", json={"status": "APPLIED"})).status_code == 403
     assert (await a1.post(f"/api/assignments/{other_id}/notes", json={"note": "hi"})).status_code == 403
     assert (await a1.get("/api/assignments", params={"member_id": str(world.ids["member_a2"])})).json()["total"] == 0
+    assert (await a1.get("/api/assignments", params={"candidate_id": str(world.ids["cand_a2"])})).json()["total"] == 0
     detail = await a1.get(f"/api/assignments/{own_id}")
     assert detail.status_code == 200
     assert "northwind.example" not in detail.text and detail.json()["job_urls"] is None and detail.json()["other_assignees"] == []
@@ -113,9 +158,9 @@ async def test_opening_a_link_is_not_applying_and_dashboards_agree(world, monkey
         return None
     monkeypatch.setattr("app.portal.routers.assignments.assert_public_url", public)
     admin, tl, member = await world.as_admin(), await world.as_tl("alpha"), await world.as_member("a1")
-    a1 = str(world.ids["member_a1"])
+    a1, candidate = str(world.ids["member_a1"]), str(world.ids["cand_a1"])
     jobs = [await add_job(world, title=f"AI Engineer {n}") for n in range(5)]
-    assert (await admin.post("/api/assignments/bulk", json={"job_ids": jobs, "member_ids": [a1]})).json()["created"] == 5
+    assert (await admin.post("/api/assignments/bulk", json={"job_ids": jobs, "candidate_ids": [candidate]})).json()["created"] == 5
     listing = (await member.get("/api/assignments", params={"sort": "oldest"})).json()["items"]
     assert [a["status"] for a in listing] == ["ASSIGNED"] * 5
 
@@ -171,17 +216,19 @@ async def test_opening_a_link_is_not_applying_and_dashboards_agree(world, monkey
         assert "assignment.status_changed" in [a for (a,) in (await db.execute(select(AuditLog.action))).all()]
     activity = (await member.get(f"/api/users/{a1}/activity")).json()
     assert activity["total"] >= 12 and all(i["member"]["name"] == "Member A1" for i in activity["items"])
+    assert all(i["candidate"]["name"] == "Candidate A1" for i in activity["items"])
     funnel = {p["name"]: p["value"] for p in (await member.get(f"/api/users/{a1}/dashboard")).json()["funnel"]}
     assert funnel == {"Assigned": 5, "Viewed": 4, "Applied": 1, "Interview": 1, "Offer": 1}
     csv_export = await tl.get("/api/assignments/export.csv")
     assert csv_export.status_code == 200 and csv_export.text.count("\n") == 6 and "Member A1" in csv_export.text
+    assert "Candidate A1" in csv_export.text
     assert (await member.get("/api/assignments/export.csv")).status_code == 403
 
 
 async def test_unsafe_job_links_are_never_redirected(world):
     admin, member = await world.as_admin(), await world.as_member("a1")
     job = await add_job(world, canonical_url="http://127.0.0.1:8000/internal", apply_url="")
-    assignment = (await admin.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a1"])})).json()["assignment_ids"][0]
+    assignment = (await admin.post("/api/assignments", json={"job_id": job, "candidate_id": str(world.ids["cand_a1"])})).json()["assignment_ids"][0]
     blocked = await member.get(f"/api/assignments/{assignment}/open-job", follow_redirects=False)
     assert blocked.status_code == 409 and "location" not in blocked.headers
     # The destination only ever comes from the stored job: query parameters cannot redirect elsewhere.
@@ -192,20 +239,48 @@ async def test_unsafe_job_links_are_never_redirected(world):
 
 async def test_transfer_deactivation_and_team_management(world):
     admin, tl_a, tl_b = await world.as_admin(), await world.as_tl("alpha"), await world.as_tl("beta")
-    a1 = str(world.ids["member_a1"])
+    a1, cand_a1, cand_a2 = str(world.ids["member_a1"]), str(world.ids["cand_a1"]), str(world.ids["cand_a2"])
     job = await add_job(world)
-    await admin.post("/api/assignments", json={"job_id": job, "member_id": a1})
+    assert (await admin.post("/api/assignments", json={"job_id": job, "candidate_id": cand_a1})).status_code == 201
+    old_member = await world.as_member("a1")
+    assert (await old_member.get("/api/assignments")).json()["total"] == 1
+    assert (await tl_a.get("/api/assignments", params={"member_id": a1})).json()["total"] == 1
     moved = await admin.patch(f"/api/users/{a1}", json={"team_id": str(world.ids["team_beta"])})
     assert moved.status_code == 200 and moved.json()["team"]["name"] == "Team Beta"
     assert (await tl_a.get(f"/api/users/{a1}")).status_code == 403                    # previous Team Lead lost access
-    assert (await tl_b.get("/api/assignments", params={"member_id": a1})).json()["total"] == 1   # the pipeline moved with the member
-    assert (await tl_a.get("/api/assignments", params={"member_id": a1})).json()["total"] == 0
+    # The pipeline does not move with the member: the candidate stays in Team Alpha, unassigned, with the job.
+    kept = await tl_a.get(f"/api/candidates/{cand_a1}")
+    assert kept.status_code == 200 and kept.json()["team"]["name"] == "Team Alpha" and kept.json()["assigned_member"] is None
+    assert (await tl_b.get(f"/api/candidates/{cand_a1}")).status_code == 404
+    assert (await tl_b.get("/api/assignments", params={"member_id": a1})).json()["total"] == 0
+    assert (await tl_a.get("/api/assignments", params={"member_id": a1})).json()["total"] == 0   # nobody is responsible for it now
+    assert (await tl_b.get("/api/assignments")).json()["total"] == 0
+    assert (await tl_b.get("/api/assignments", params={"candidate_id": cand_a1})).json()["total"] == 0
+    still = (await tl_a.get("/api/assignments", params={"candidate_id": cand_a1})).json()
+    assert still["total"] == 1 and still["items"][0]["candidate"]["name"] == "Candidate A1" and still["items"][0]["member"] is None
+    assert still["items"][0]["team"]["name"] == "Team Alpha" and still["items"][0]["job"]["id"] == job
+    assert (await tl_a.get("/api/assignments")).json()["total"] == 1
+    for client in (old_member, await world.as_member("a1")):                           # the session from before the move and a new one
+        assert (await client.get("/api/assignments")).json()["total"] == 0
+        assert (await client.get("/api/candidates")).json()["total"] == 0
+        assert (await client.get(f"/api/candidates/{cand_a1}")).status_code == 404
     # Deactivation is logical: sessions end, history stays, the account can be restored.
     member = await world.as_member("a2")
+    assert (await admin.post("/api/assignments", json={"job_id": job, "candidate_id": cand_a2})).status_code == 201
     off = await tl_a.patch(f"/api/users/{world.ids['member_a2']}", json={"is_active": False})
     assert off.status_code == 200 and off.json()["status"] == "deactivated"
     assert (await member.get("/api/auth/me")).status_code == 401
-    assert (await admin.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a2"])})).status_code == 409
+    # The deactivated member's candidate stays in the team with its job, unassigned; the member cannot be given a candidate.
+    left = (await tl_a.get(f"/api/candidates/{cand_a2}")).json()
+    assert left["team"]["name"] == "Team Alpha" and left["assigned_member"] is None and left["is_active"] is True
+    assert (await tl_a.get("/api/assignments", params={"candidate_id": cand_a2})).json()["total"] == 1
+    assert (await tl_a.get("/api/assignments", params={"member_id": str(world.ids["member_a2"])})).json()["total"] == 0
+    assert (await admin.patch(f"/api/candidates/{cand_a2}", json={"assigned_member_id": str(world.ids["member_a2"])})).status_code == 409
+    # A deactivated candidate cannot receive jobs.
+    other_job = await add_job(world)
+    assert (await admin.patch(f"/api/candidates/{cand_a2}", json={"is_active": False})).json()["is_active"] is False
+    assert (await admin.post("/api/assignments", json={"job_id": other_job, "candidate_id": cand_a2})).status_code == 409
+    assert (await admin.patch(f"/api/candidates/{cand_a2}", json={"is_active": True})).json()["is_active"] is True
     assert (await admin.patch(f"/api/users/{world.ids['admin']}", json={"is_active": False})).status_code == 409
     # A lead may restore a member the lead deactivated, but not one an Admin deactivated.
     assert (await tl_a.patch(f"/api/users/{world.ids['member_a2']}", json={"is_active": True})).json()["status"] == "active"
@@ -217,9 +292,9 @@ async def test_transfer_deactivation_and_team_management(world):
     assert renamed.status_code == 200 and renamed.json()["name"] == "Team Apex" and renamed.json()["is_active"] is False
     assert (await admin.patch(f"/api/teams/{world.ids['team_beta']}", json={"name": "team apex"})).status_code == 409
     # The lead of a deactivated team can still read, but changes nothing until an Admin reactivates the team.
-    assert (await tl_a.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a2"])})).status_code == 409
+    assert (await tl_a.post("/api/assignments", json={"job_id": other_job, "candidate_id": cand_a2})).status_code == 409
     assert (await tl_a.post("/api/invitations", json={"name": "Late Joiner", "email": "late.joiner@example.com"})).status_code == 409
-    assert (await tl_a.post("/api/searches", json={"member_ids": [str(world.ids["member_a2"])]})).status_code == 409
+    assert (await tl_a.post("/api/searches", json={"candidate_ids": [cand_a2]})).status_code == 409
     assert (await tl_a.get(f"/api/teams/{world.ids['team_alpha']}/members")).status_code == 200
     assert (await tl_a.post("/api/auth/change-password", json={"current_password": "wrong", "new_password": "x"})).status_code in (403, 422)   # own account still works
     swapped = await admin.patch(f"/api/teams/{world.ids['team_alpha']}", json={"remove_team_lead": True})

@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { PageFallback } from "@/components/shared/page-fallback";
 import { MemberJobsView } from "@/components/views/member-jobs";
 
-export const metadata: Metadata = { title: "My Jobs" };
+export const metadata: Metadata = { title: "All Jobs" };
 
 export default function MemberJobsPage() {
   return (

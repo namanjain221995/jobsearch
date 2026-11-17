@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
 
-import { PageFallback } from "@/components/shared/page-fallback";
-import { MemberProfileView } from "@/components/views/member-profile";
+export const metadata: Metadata = { title: "Settings" };
 
-export const metadata: Metadata = { title: "Profile" };
-
+/**
+ * Members used to have a profile and a resume of their own on this page. Those belong to
+ * candidates now; what is left of the page (name, password, theme) is /member/settings.
+ * Old bookmarks and links still arrive here and are sent on.
+ */
 export default function MemberProfilePage() {
-  return (
-    <Suspense fallback={<PageFallback />}>
-      <MemberProfileView />
-    </Suspense>
-  );
+  redirect("/member/settings");
 }

@@ -227,7 +227,7 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
             <EmptyState
               icon={MailPlus}
               title="No invitations yet"
-              description="Invite a member to give them an account."
+              description="Invite a member (a recruiter on your team) to give them an account. Candidates need no invitation."
               action={
                 <Button size="sm" onClick={() => setInviting(preset ?? { role: "MEMBER" })}>
                   Add Member

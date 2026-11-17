@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useId, useState } from "react";
 import { ClipboardList, Download, SearchX } from "lucide-react";
 
@@ -11,14 +12,15 @@ import { PageHeader } from "@/components/shared/page-header";
 import { SearchInput } from "@/components/shared/search-input";
 import { EmptyState } from "@/components/shared/states";
 import { ApplicationStatusBadge, StageRail, Tag } from "@/components/shared/status-badge";
-import { useMe } from "@/components/shell/me-context";
+import { ResponsibleMember } from "@/components/candidates/candidate-meta";
+import { useArea, useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
 import { AssignmentDrawer } from "@/components/views/assignment-detail";
 import { buildUrl } from "@/lib/api";
 import { useToday } from "@/hooks/use-now";
 import { formatDate } from "@/lib/format";
 import type { ListState } from "@/lib/list-state";
-import { useAssignments, useTeams, useUsers } from "@/lib/queries";
+import { useAssignments, useCandidates, useTeams, useUsers } from "@/lib/queries";
 import { isAssignmentStatus, STATUS_META, STATUS_ORDER } from "@/lib/status";
 import type { Assignment, AssignmentListParams } from "@/lib/types";
 import { isApiDay } from "@/lib/date-range";
@@ -29,6 +31,7 @@ export const ASSIGNMENT_LIST_DEFAULTS = {
   status: "",
   applied: "all",
   team: "",
+  candidate: "",
   member: "",
   company: "",
   from: "",
@@ -49,8 +52,12 @@ const SORTS = [
 ];
 
 
-function toParams(state: AssignmentListState, fixed: { teamId?: string; memberId?: string; searchRunId?: string }): AssignmentListParams {
+function toParams(
+  state: AssignmentListState,
+  fixed: { teamId?: string; candidateId?: string; memberId?: string; searchRunId?: string },
+): AssignmentListParams {
   return {
+    candidate_id: fixed.candidateId ?? (state.candidate || undefined),
     member_id: fixed.memberId ?? (state.member || undefined),
     team_id: fixed.teamId ?? (state.team || undefined),
     status: isAssignmentStatus(state.status) ? state.status : undefined,
@@ -68,48 +75,60 @@ function toParams(state: AssignmentListState, fixed: { teamId?: string; memberId
 }
 
 /**
- * Assignments as managers see them: who has which job and how far it has got.
- * Filtering, sorting and paging are done by GET /api/assignments. A row opens
- * the assignment in a drawer, where its status can be changed on the member's behalf.
+ * Assignments as managers see them: which candidate has which job, who handles it
+ * and how far it has got. Filtering, sorting and paging are done by GET /api/assignments.
+ * A row opens the assignment in a drawer, where its status can be changed in place of
+ * the responsible member.
  */
 export function AssignmentsTable({
   listState,
   teamId,
+  candidateId,
   memberId,
   compact = false,
 }: {
   listState: ListState<AssignmentListState>;
   /** Limit to one team (a team page). A Team Lead is always limited to their own team by the API. */
   teamId?: string;
-  /** Limit to one member (a member page). */
+  /** Limit to one candidate (a candidate page). */
+  candidateId?: string;
+  /** Limit to the candidates one member is responsible for today (a member page). */
   memberId?: string;
   /** Fewer filters, for lists embedded in another screen. */
   compact?: boolean;
 }) {
   const me = useMe();
+  const area = useArea();
   const today = useToday();
   const isAdmin = me.role === "ADMIN";
   const fieldId = useId();
   const [state, setState] = listState;
   const [opened, setOpened] = useState<string | null>(null);
-  const params = toParams(state, { teamId, memberId });
+  const params = toParams(state, { teamId, candidateId, memberId });
   const list = useAssignments(params);
 
   const scopeTeamId = teamId ?? (isAdmin ? state.team || undefined : me.team?.id);
-  const teams = useTeams(true, { enabled: isAdmin && !teamId && !memberId && !compact });
-  // The member filter lists the members of the team in view (for an Admin, of the chosen team).
+  const scoped = Boolean(candidateId || memberId);
+  const teams = useTeams(true, { enabled: isAdmin && !teamId && !scoped && !compact });
+  // The candidate and member filters list the people of the team in view (for an Admin, of the chosen team).
+  const pickPeople = !scoped && !compact && (!isAdmin || Boolean(scopeTeamId));
   const members = useUsers(
     { role: "MEMBER", team_id: scopeTeamId, sort: "name", page: 1, page_size: 200 },
-    { enabled: !memberId && !compact && (!isAdmin || Boolean(scopeTeamId)), refetchInterval: false },
+    { enabled: pickPeople, refetchInterval: false },
+  );
+  const candidates = useCandidates(
+    { team_id: scopeTeamId, assigned_member_id: state.member || undefined, sort: "name", page: 1, page_size: 200 },
+    { enabled: pickPeople, live: false },
   );
 
   const filtered = Boolean(
-    state.q || state.status || state.applied !== "all" || state.team || state.member || state.company || state.from || state.to || state.withdrawn,
+    state.q || state.status || state.applied !== "all" || state.team || state.candidate || state.member || state.company || state.from || state.to || state.withdrawn,
   );
   const clear = () =>
-    setState({ q: "", status: "", applied: "all", team: "", member: "", company: "", from: "", to: "", withdrawn: "" });
+    setState({ q: "", status: "", applied: "all", team: "", candidate: "", member: "", company: "", from: "", to: "", withdrawn: "" });
 
   const exportHref = buildUrl("/api/assignments/export.csv", {
+    candidate_id: params.candidate_id,
     member_id: params.member_id,
     team_id: params.team_id,
     status: params.status,
@@ -136,20 +155,25 @@ export function AssignmentsTable({
 
   const columns: Column<Assignment>[] = [
     { id: "job", header: "Job", cell: jobCell },
-    ...(memberId
+    ...(candidateId
       ? []
       : [
           {
-            id: "member",
-            header: "Member",
+            id: "candidate",
+            header: "Candidate",
             cell: (row: Assignment) => (
               <div className="flex flex-col gap-0.5">
-                <span>{row.member.name}</span>
+                <Link href={`${area}/candidates/${row.candidate.id}`} className="w-fit rounded-sm underline-offset-4 hover:underline">
+                  {row.candidate.name}
+                </Link>
                 {isAdmin && !teamId && <span className="text-2sm text-muted-foreground">{row.team?.name ?? "No team"}</span>}
               </div>
             ),
           },
         ]),
+    ...(memberId
+      ? []
+      : [{ id: "member", header: "Responsible member", cell: (row: Assignment) => <ResponsibleMember member={row.member} /> }]),
     { id: "status", header: "Status", cell: (row) => <ApplicationStatusBadge status={row.status} /> },
     {
       id: "stage",
@@ -194,23 +218,32 @@ export function AssignmentsTable({
           onChange={(status) => setState({ status })}
           options={STATUS_ORDER.map((status) => ({ value: status, label: STATUS_META[status].label }))}
         />
-        {isAdmin && !teamId && !memberId && !compact && (
+        {isAdmin && !teamId && !scoped && !compact && (
           <FilterSelect
             label="Team"
             allLabel="All teams"
             value={state.team}
-            onChange={(team) => setState({ team, member: "" })}
+            onChange={(team) => setState({ team, candidate: "", member: "" })}
             options={(teams.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
           />
         )}
-        {!memberId && !compact && (!isAdmin || scopeTeamId) && (
-          <FilterSelect
-            label="Member"
-            allLabel="All members"
-            value={state.member}
-            onChange={(member) => setState({ member })}
-            options={(members.data?.items ?? []).map((user) => ({ value: user.id, label: user.name }))}
-          />
+        {pickPeople && (
+          <>
+            <FilterSelect
+              label="Candidate"
+              allLabel="All candidates"
+              value={state.candidate}
+              onChange={(candidate) => setState({ candidate })}
+              options={(candidates.data?.items ?? []).map((candidate) => ({ value: candidate.id, label: candidate.name }))}
+            />
+            <FilterSelect
+              label="Responsible member"
+              allLabel="Any responsible member"
+              value={state.member}
+              onChange={(member) => setState({ member, candidate: "" })}
+              options={(members.data?.items ?? []).map((user) => ({ value: user.id, label: user.name }))}
+            />
+          </>
         )}
         {!compact && (
           <>
@@ -263,7 +296,7 @@ export function AssignmentsTable({
             <EmptyState
               icon={ClipboardList}
               title="No jobs assigned yet"
-              description="Run a search or assign jobs by hand. Each job given to a member is listed here."
+              description={candidateId ? "Run a search for this candidate or assign jobs by hand. Each job given to the candidate is listed here." : "Run a search or assign jobs by hand. Each job given to a candidate is listed here."}
             />
           )
         }
@@ -278,7 +311,7 @@ export function AssignmentsTable({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <ApplicationStatusBadge status={row.status} />
               <span className="text-xs text-muted-foreground">
-                {memberId ? "" : `${row.member.name}. `}
+                {candidateId ? "" : `${row.candidate.name}. `}
                 {row.applied_at ? `Applied ${formatDate(row.applied_at)}` : `Assigned ${formatDate(row.assigned_at)}`}
               </span>
             </div>
@@ -312,10 +345,10 @@ export function AssignmentsView() {
         title={isLead ? (appliedOnly ? "Applications" : "Assigned Jobs") : "Assignments"}
         description={
           appliedOnly
-            ? "Jobs your members have applied to, and where each application stands."
+            ? "Jobs that were applied to for your candidates, and where each application stands."
             : isLead
-              ? "Every job given to a member of your team, and how far each one has got."
-              : "One row for each job given to a member, across all teams."
+              ? "Every job given to a candidate of your team, who handles it, and how far it has got."
+              : "One row for each job given to a candidate, across all teams."
         }
       />
       <AssignmentsTable listState={listState} />

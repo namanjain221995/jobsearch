@@ -1,4 +1,4 @@
-"""AI job searches for selected members. Creating one returns immediately with its id; the work happens in the
+"""AI job searches for selected candidates. Creating one returns immediately with its id; the work happens in the
 background worker and continues whether or not anyone is watching."""
 import asyncio
 import json
@@ -65,7 +65,7 @@ async def create_search(data: SearchCreate, request: Request, principal: Princip
 @router.get("/searches", response_model=Page[SearchRunOut])
 async def list_searches(principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db),
                         status: str | None = Query(default=None, pattern="^(active|queued|running|completed|partial|failed|cancelled)$"),
-                        team_id: uuid.UUID | None = None, member_id: uuid.UUID | None = None, mine: bool = False,
+                        team_id: uuid.UUID | None = None, candidate_id: uuid.UUID | None = None, mine: bool = False,
                         page: int = 1, page_size: int = 25):
     stmt = select(SearchRun).where(*scope(principal))
     if status == "active":
@@ -74,8 +74,8 @@ async def list_searches(principal: Principal = Depends(managers), db: AsyncSessi
         stmt = stmt.where(SearchRun.status == status)
     if team_id:
         stmt = stmt.where(SearchRun.team_id == team_id)
-    if member_id:
-        stmt = stmt.where(SearchRun.id.in_(select(SearchTarget.search_run_id).where(SearchTarget.member_id == member_id)))
+    if candidate_id:
+        stmt = stmt.where(SearchRun.id.in_(select(SearchTarget.search_run_id).where(SearchTarget.candidate_id == candidate_id)))
     if mine:
         stmt = stmt.where(SearchRun.initiated_by == principal.user.id)
     rows, total = await paginate(db, stmt.order_by(SearchRun.created_at.desc()), page, page_size)
@@ -122,16 +122,16 @@ async def search_events(search_id: uuid.UUID, request: Request, principal: Princ
 
 @router.get("/searches/{search_id}/results", response_model=Page[SearchResultOut])
 async def search_results(search_id: uuid.UUID, principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db),
-                         member_id: uuid.UUID | None = None, min_score: int = Query(default=0, ge=0, le=100),
+                         candidate_id: uuid.UUID | None = None, min_score: int = Query(default=0, ge=0, le=100),
                          unassigned_only: bool = False, page: int = 1, page_size: int = 50):
     run = await service.load_run(db, principal, search_id)
     stmt = select(SearchResult).where(SearchResult.search_run_id == run.id, SearchResult.match_score >= min_score)
-    if member_id:
-        stmt = stmt.where(SearchResult.member_id == member_id)
-    if unassigned_only:                                  # no active assignment of this job to this member, in any team
+    if candidate_id:
+        stmt = stmt.where(SearchResult.candidate_id == candidate_id)
+    if unassigned_only:                                  # no active assignment of this job to this candidate, in any team
         stmt = stmt.where(~exists().where(JobAssignment.job_id == SearchResult.job_id,
-                                          JobAssignment.member_id == SearchResult.member_id, JobAssignment.is_active))
-    rows, total = await paginate(db, stmt.order_by(SearchResult.member_id, SearchResult.rank), page, page_size)
+                                          JobAssignment.candidate_id == SearchResult.candidate_id, JobAssignment.is_active))
+    rows, total = await paginate(db, stmt.order_by(SearchResult.candidate_id, SearchResult.rank), page, page_size)
     items = await service.results_out(db, principal, [r[0] for r in rows])
     return Page[SearchResultOut](items=items, total=total, page=max(1, page), page_size=max(1, min(page_size, 200)))
 
@@ -143,7 +143,7 @@ async def cancel_search(search_id: uuid.UUID, request: Request, principal: Princ
     if run.status == "queued":
         run.status, run.completed_at, run.cancel_requested = "cancelled", utcnow(), True     # the worker skips it when it arrives
     elif run.status == "running":
-        run.cancel_requested = True                     # the worker stops the member searches within about a second
+        run.cancel_requested = True                     # the worker stops the candidate searches within about a second
     else:
         return (await service.runs_out(db, [run]))[0]
     audit(db, principal.user, "search.cancel_requested", "search", run.id, run.team_id, {}, client_ip(request))
@@ -161,7 +161,7 @@ async def list_presets(principal: Principal = Depends(managers), db: AsyncSessio
 @router.post("/search-presets", response_model=PresetOut, status_code=201)
 async def create_preset(data: PresetIn, principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db)):
     preset = SearchPreset(owner_id=principal.user.id, team_id=principal.user.team_id, name=data.name.strip(),
-                          filters=SearchCreate(**{**data.filters, "member_ids": []}).model_dump(mode="json", exclude={"member_ids", "team_id"}))
+                          filters=SearchCreate(**{**data.filters, "candidate_ids": []}).model_dump(mode="json", exclude={"candidate_ids", "team_id"}))
     db.add(preset)
     await db.flush()
     out = PresetOut(id=preset.id, name=preset.name, filters=preset.filters, created_at=preset.created_at)

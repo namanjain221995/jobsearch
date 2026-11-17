@@ -28,25 +28,25 @@ const STATUSES = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
-function memberNames(run: SearchRun): string {
-  const names = run.targets.map((target) => target.member.name);
-  if (names.length <= 2) return names.join(", ") || "No members";
+function candidateNames(run: SearchRun): string {
+  const names = run.targets.map((target) => target.candidate.name);
+  if (names.length <= 2) return names.join(", ") || "No candidates";
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
 }
 
 /**
- * Past and running searches (GET /api/searches). Embedded in a team or member
- * page it is limited to that team or member and keeps its own state.
+ * Past and running searches (GET /api/searches). Embedded in a team or candidate
+ * page it is limited to that team or candidate and keeps its own state.
  */
 export function SearchHistoryTable({
   listState,
   teamId,
-  memberId,
+  candidateId,
   showFilters = true,
 }: {
   listState: ListState<SearchListState>;
   teamId?: string;
-  memberId?: string;
+  candidateId?: string;
   showFilters?: boolean;
 }) {
   const me = useMe();
@@ -57,7 +57,7 @@ export function SearchHistoryTable({
   const params: SearchListParams = {
     status: state.status || undefined,
     team_id: teamId ?? (isAdmin ? state.team || undefined : undefined),
-    member_id: memberId,
+    candidate_id: candidateId,
     mine: state.mine === "mine" ? true : undefined,
     page: toPositiveInt(state.page, 1),
     page_size: toPositiveInt(state.page_size, 25),
@@ -79,13 +79,13 @@ export function SearchHistoryTable({
       ),
     },
     {
-      id: "members",
+      id: "candidates",
       header: "For",
       cell: (run) => (
         <div className="flex max-w-64 flex-col gap-0.5">
-          <span className="truncate">{memberNames(run)}</span>
+          <span className="truncate">{candidateNames(run)}</span>
           <span className="text-2sm text-muted-foreground">
-            {run.team?.name ?? "Several teams"}, {plural(run.member_count, "member")}
+            {run.team?.name ?? "Several teams"}, {plural(run.candidate_count, "candidate")}
           </span>
         </div>
       ),
@@ -143,10 +143,10 @@ export function SearchHistoryTable({
             <EmptyState
               icon={History}
               title="No searches yet"
-              description="Each search you start is kept here with what it found."
+              description={candidateId ? "No search has been run for this candidate yet." : "Each search you start is kept here with what it found."}
               action={
                 <Button asChild size="sm">
-                  <Link href={`${area}/search`}>
+                  <Link href={candidateId ? `${area}/search?candidate=${candidateId}` : `${area}/search`}>
                     <Search data-icon="inline-start" />
                     Find Jobs
                   </Link>
@@ -166,7 +166,7 @@ export function SearchHistoryTable({
               </div>
               <SearchStatusTag status={run.status} cancelling={run.cancel_requested} />
             </div>
-            <p className="text-sm">{memberNames(run)}</p>
+            <p className="text-sm">{candidateNames(run)}</p>
             <p className="text-2sm text-muted-foreground tabular-nums">
               {MODE_SHORT[run.mode]}. {run.matched_count} matched, {run.assigned_count} assigned.
             </p>

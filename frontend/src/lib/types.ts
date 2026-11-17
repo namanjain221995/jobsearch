@@ -45,6 +45,11 @@ export type Profile = Schemas["ProfileOut"];
 export type ProfileIn = Schemas["ProfileIn"];
 export type Resume = Schemas["ResumeOut"];
 
+export type CandidateRef = Schemas["CandidateRef"];
+export type Candidate = Schemas["CandidateOut"];
+export type CandidateCreate = Schemas["CandidateCreate"];
+export type CandidateUpdate = Schemas["CandidateUpdate"];
+
 export type JobSummary = Schemas["JobSummary"];
 export type JobDetail = Schemas["JobDetail"];
 export type JobListItem = Schemas["JobListItem"];
@@ -85,9 +90,11 @@ export type ActivityItem = Schemas["ActivityItem"];
 export type SeriesPoint = Schemas["SeriesPoint"];
 export type NameValue = Schemas["NameValue"];
 export type MemberRow = Schemas["MemberRow"];
+export type CandidateRow = Schemas["CandidateRow"];
 export type TeamRow = Schemas["TeamRow"];
 export type SearchUsagePoint = Schemas["SearchUsagePoint"];
 export type MemberAnalytics = Schemas["MemberAnalytics"];
+export type CandidateAnalytics = Schemas["CandidateAnalytics"];
 export type TeamAnalytics = Schemas["TeamAnalytics"];
 export type AdminAnalytics = Schemas["AdminAnalytics"];
 
@@ -101,6 +108,7 @@ export type Health = Schemas["HealthOut"];
 /* Query-string parameters, taken from the operation definitions. */
 export type AssignmentListParams = QueryOf<"list_assignments_api_assignments_get">;
 export type AssignmentExportParams = QueryOf<"export_assignments_api_assignments_export_csv_get">;
+export type CandidateListParams = QueryOf<"list_candidates_api_candidates_get">;
 export type UserListParams = QueryOf<"list_users_api_users_get">;
 export type JobListParams = QueryOf<"list_jobs_api_jobs_get">;
 export type SearchListParams = QueryOf<"list_searches_api_searches_get">;

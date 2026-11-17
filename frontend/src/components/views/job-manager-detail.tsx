@@ -93,7 +93,7 @@ export function JobManagerDetailView({ jobId }: { jobId: string }) {
             )}
             <Button onClick={() => setDialog("members")}>
               <ClipboardCheck data-icon="inline-start" />
-              Assign to Members
+              Assign to Candidates
             </Button>
           </>
         }

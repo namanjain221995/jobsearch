@@ -85,7 +85,7 @@ export function StatusDialog({
   /** The status to change to. The dialog is open while this is set. */
   target: AssignmentStatus | null;
   onOpenChange: (open: boolean) => void;
-  /** Set when a manager records the change for a member. */
+  /** Set when a manager records the change in place of the responsible member: the candidate's name. */
   onBehalfOf?: string;
 }) {
   return (
@@ -174,7 +174,7 @@ function StatusDialogBody({
         {note && <FormMessage tone="info">{note}</FormMessage>}
         {onBehalfOf && (
           <p className="text-2sm text-muted-foreground">
-            You are recording this for {onBehalfOf}. The history will show that you made the change.
+            You are recording this for {onBehalfOf}, in place of the responsible member. The history will show that you made the change.
           </p>
         )}
         {failure && <FormMessage>{errorMessage(update.error)}</FormMessage>}
@@ -204,7 +204,7 @@ function StatusDialogBody({
           label="Note"
           optional
           rows={3}
-          description="Saved with the assignment and visible to the member and their managers."
+          description="Saved with the assignment and visible to the responsible member and their managers."
           error={errors.note?.message}
           {...form.register("note")}
         />

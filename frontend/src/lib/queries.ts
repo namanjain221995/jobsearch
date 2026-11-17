@@ -29,6 +29,11 @@ import type {
   AuditListParams,
   BulkAssign,
   BulkAssignResult,
+  Candidate,
+  CandidateAnalytics,
+  CandidateCreate,
+  CandidateListParams,
+  CandidateUpdate,
   ChangePasswordIn,
   CsvImportResult,
   DateRange,
@@ -109,8 +114,13 @@ export const qk = {
   user: (id: string) => ["users", "detail", id] as const,
   userDashboard: (id: string, range: DateRange) => ["analytics", "member", id, range] as const,
   userActivity: (id: string, params: object) => ["activity", id, params] as const,
-  profile: (id: string) => ["profiles", id] as const,
-  resume: (id: string) => ["resumes", id] as const,
+  candidates: ["candidates"] as const,
+  candidateList: (params: object) => ["candidates", "list", params] as const,
+  candidate: (id: string) => ["candidates", "detail", id] as const,
+  candidateProfile: (id: string) => ["candidates", "profile", id] as const,
+  candidateResume: (id: string) => ["candidates", "resume", id] as const,
+  candidateAnalytics: (id: string, range: DateRange) => ["analytics", "candidate", id, range] as const,
+  candidateActivity: (id: string, params: object) => ["activity", "candidate", id, params] as const,
   jobs: ["jobs"] as const,
   jobList: (params: object) => ["jobs", "list", params] as const,
   job: (id: string) => ["jobs", "detail", id] as const,
@@ -135,13 +145,13 @@ export const qk = {
 };
 
 /**
- * Assignments feed almost every number in the product (dashboards, team and
- * member rows, job counts, search results). After anything that creates or
+ * Assignments feed almost every number in the product (dashboards, team, member
+ * and candidate rows, job counts, search results). After anything that creates or
  * changes one, all of those are refreshed together so they always agree.
  */
 export function invalidateWork(client: QueryClient): Promise<unknown> {
   return Promise.all(
-    [qk.assignments, ["analytics"], ["activity"], qk.users, qk.teams, qk.jobs, qk.searches, qk.notifications].map(
+    [qk.assignments, ["analytics"], ["activity"], qk.candidates, qk.users, qk.teams, qk.jobs, qk.searches, qk.notifications].map(
       (queryKey) => client.invalidateQueries({ queryKey }),
     ),
   );
@@ -416,7 +426,7 @@ export function useUpdateQueueItem() {
   });
 }
 
-/* ------------------------------------------------------------------ users, profiles, resumes */
+/* ------------------------------------------------------------------ users (the employees: Team Leads and members) */
 
 export function useUsers(params: UserListParams, options?: Options<Page<User>>) {
   return useQuery({
@@ -447,6 +457,8 @@ export function useUpdateUser() {
         client.invalidateQueries({ queryKey: qk.teams }),
         client.invalidateQueries({ queryKey: qk.me }),
         client.invalidateQueries({ queryKey: qk.assignments }),
+        // A member who is deactivated or moved to another team stops being responsible for their candidates.
+        client.invalidateQueries({ queryKey: qk.candidates }),
         client.invalidateQueries({ queryKey: ["analytics"] }),
       ]),
   });
@@ -478,66 +490,150 @@ export function useMemberActivity(id: string | undefined, params: { page: number
   });
 }
 
-export function useProfile(id: string | undefined) {
+/* ------------------------------------------------------------------ candidates: details, profile, resume */
+
+/**
+ * The people the teams find jobs for. An Admin receives every candidate, a Team Lead their team's,
+ * a member the candidates assigned to them today (GET /api/candidates decides).
+ */
+export function useCandidates(params: CandidateListParams, options?: Options<Page<Candidate>> & { live?: boolean }) {
+  const { live = true, ...rest } = options ?? {};
   return useQuery({
-    queryKey: qk.profile(id ?? ""),
-    queryFn: ({ signal }) => api.get<Profile>(`/api/users/${id}/profile`, undefined, signal),
+    queryKey: qk.candidateList(params),
+    queryFn: ({ signal }) => api.get<Page<Candidate>>("/api/candidates", asQuery(params), signal),
+    placeholderData: keepPreviousData,
+    refetchInterval: live ? LIVE_INTERVAL : false,
+    ...rest,
+  });
+}
+
+export function useCandidate(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.candidate(id ?? ""),
+    queryFn: ({ signal }) => api.get<Candidate>(`/api/candidates/${id}`, undefined, signal),
+    enabled: Boolean(id),
+    refetchInterval: LIVE_INTERVAL,
+  });
+}
+
+/** Everything that shows a candidate, their member or their counts. */
+function invalidateCandidates(client: QueryClient): Promise<unknown> {
+  return Promise.all(
+    [qk.candidates, qk.users, qk.teams, qk.assignments, ["analytics"], ["activity"], qk.notifications].map((queryKey) =>
+      client.invalidateQueries({ queryKey }),
+    ),
+  );
+}
+
+export function useCreateCandidate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CandidateCreate) => api.post<Candidate>("/api/candidates", body),
+    onSuccess: () => invalidateCandidates(client),
+  });
+}
+
+/** Details, the responsible member (`assigned_member_id`, null to take the candidate back) and `is_active`. */
+export function useUpdateCandidate() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Partial<CandidateUpdate> }) =>
+      api.patch<Candidate>(`/api/candidates/${id}`, body),
+    onSuccess: (candidate) => {
+      client.setQueryData(qk.candidate(candidate.id), candidate);
+      return invalidateCandidates(client);
+    },
+  });
+}
+
+export function useCandidateProfile(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.candidateProfile(id ?? ""),
+    queryFn: ({ signal }) => api.get<Profile>(`/api/candidates/${id}/profile`, undefined, signal),
     enabled: Boolean(id),
   });
 }
 
-export function useUpdateProfile(id: string) {
+export function useUpdateCandidateProfile(id: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: Partial<ProfileIn>) => api.patch<Profile>(`/api/users/${id}/profile`, body),
+    mutationFn: (body: Partial<ProfileIn>) => api.patch<Profile>(`/api/candidates/${id}/profile`, body),
     onSuccess: (profile) => {
-      client.setQueryData(qk.profile(id), profile);
-      return client.invalidateQueries({ queryKey: qk.users });
+      client.setQueryData(qk.candidateProfile(id), profile);
+      return Promise.all([
+        client.invalidateQueries({ queryKey: qk.candidate(id) }),
+        client.invalidateQueries({ queryKey: ["candidates", "list"] }),
+      ]);
     },
   });
 }
 
-export function useResume(memberId: string | undefined) {
+/** The candidate's current resume with its text, or null when there is none. */
+export function useCandidateResume(id: string | undefined) {
   return useQuery({
-    queryKey: qk.resume(memberId ?? ""),
-    queryFn: ({ signal }) => api.get<Resume | null>(`/api/members/${memberId}/resume`, undefined, signal),
-    enabled: Boolean(memberId),
+    queryKey: qk.candidateResume(id ?? ""),
+    queryFn: ({ signal }) => api.get<Resume | null>(`/api/candidates/${id}/resume`, undefined, signal),
+    enabled: Boolean(id),
   });
 }
 
-export function useUploadResume(memberId: string, onBehalf: boolean) {
+/** Where the browser downloads the uploaded file from (same origin, with the session cookie). */
+export const candidateResumeDownloadPath = (id: string) => `/api/candidates/${id}/resume/download`;
+
+function resumeChanged(client: QueryClient, id: string): Promise<unknown> {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: qk.candidateProfile(id) }),
+    client.invalidateQueries({ queryKey: qk.candidate(id) }),
+    client.invalidateQueries({ queryKey: ["candidates", "list"] }),
+    client.invalidateQueries({ queryKey: ["analytics"] }),
+  ]);
+}
+
+/** Upload a resume for a candidate; it replaces the current one. The candidate is named per call. */
+export function useUploadCandidateResume() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => {
+    mutationFn: ({ id, file }: { id: string; file: File }) => {
       const form = new FormData();
       form.append("file", file);
-      // A member uploads their own resume; a manager names the member it belongs to.
-      if (onBehalf) form.append("member_id", memberId);
-      return api.upload<Resume>("/api/resumes/upload", form);
+      return api.upload<Resume>(`/api/candidates/${id}/resume`, form);
     },
-    onSuccess: (resume) => {
-      client.setQueryData(qk.resume(memberId), resume);
-      return Promise.all([
-        client.invalidateQueries({ queryKey: qk.profile(memberId) }),
-        client.invalidateQueries({ queryKey: qk.users }),
-        client.invalidateQueries({ queryKey: ["analytics"] }),
-      ]);
+    onSuccess: (resume, { id }) => {
+      client.setQueryData(qk.candidateResume(id), resume);
+      return resumeChanged(client, id);
     },
   });
 }
 
-export function useDeleteResume(memberId: string) {
+export function useDeleteCandidateResume(id: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (resumeId: string) => api.delete<Message>(`/api/resumes/${resumeId}`),
+    mutationFn: () => api.delete<Message>(`/api/candidates/${id}/resume`),
     onSuccess: () => {
-      client.setQueryData(qk.resume(memberId), null);
-      return Promise.all([
-        client.invalidateQueries({ queryKey: qk.profile(memberId) }),
-        client.invalidateQueries({ queryKey: qk.users }),
-        client.invalidateQueries({ queryKey: ["analytics"] }),
-      ]);
+      client.setQueryData(qk.candidateResume(id), null);
+      return resumeChanged(client, id);
     },
+  });
+}
+
+export function useCandidateAnalytics(id: string | undefined, range: DateRange = {}) {
+  return useQuery({
+    queryKey: qk.candidateAnalytics(id ?? "", range),
+    queryFn: ({ signal }) =>
+      api.get<CandidateAnalytics>(`/api/candidates/${id}/analytics`, asQuery(range), signal),
+    enabled: Boolean(id),
+    refetchInterval: LIVE_INTERVAL,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useCandidateActivity(id: string | undefined, params: { page: number; page_size: number }) {
+  return useQuery({
+    queryKey: qk.candidateActivity(id ?? "", params),
+    queryFn: ({ signal }) => api.get<Page<ActivityItem>>(`/api/candidates/${id}/activity`, params, signal),
+    enabled: Boolean(id),
+    refetchInterval: LIVE_INTERVAL,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -664,7 +760,7 @@ export function useSearch(id: string | null | undefined) {
   });
 }
 
-/** Results of a run. While the run is still going (`live`), the list refreshes as members finish. */
+/** Results of a run. While the run is still going (`live`), the list refreshes as candidates finish. */
 export function useSearchResults(id: string | undefined, params: SearchResultParams, live = false) {
   return useQuery({
     queryKey: qk.searchResults(id ?? "", params),

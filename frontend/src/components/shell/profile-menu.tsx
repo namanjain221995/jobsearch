@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, Settings, UserRound } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { toast } from "sonner";
 
 import { useMe } from "@/components/shell/me-context";
@@ -61,8 +61,8 @@ export function ProfileMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href={ACCOUNT_PATH[me.role]}>
-            {me.role === "MEMBER" ? <UserRound /> : <Settings />}
-            {me.role === "MEMBER" ? "Profile" : "Settings"}
+            <Settings />
+            Settings
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

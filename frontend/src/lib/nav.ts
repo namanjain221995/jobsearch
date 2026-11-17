@@ -3,6 +3,7 @@ import {
   BriefcaseBusiness,
   ChartColumn,
   ClipboardList,
+  Contact,
   History,
   Inbox,
   LayoutDashboard,
@@ -12,7 +13,6 @@ import {
   SendHorizontal,
   Settings,
   UserCog,
-  UserRound,
   Users,
   UsersRound,
   type LucideIcon,
@@ -56,6 +56,7 @@ export const NAVIGATION: Record<Role, NavGroup[]> = {
         { label: "Teams", href: "/admin/teams", icon: UsersRound },
         { label: "Team Leads", href: "/admin/team-leads", icon: UserCog },
         { label: "Members", href: "/admin/members", icon: Users },
+        { label: "Candidates", href: "/admin/candidates", icon: Contact },
         { label: "Invitations", href: "/admin/invitations", icon: MailPlus },
       ],
     },
@@ -77,15 +78,18 @@ export const NAVIGATION: Record<Role, NavGroup[]> = {
     },
   ],
   /*
-   * A job reaches a team in three steps, and the middle of this menu follows them:
+   * The team works for its candidates: the people who need a job. Members are the
+   * employees who apply on a candidate's behalf.
+   * A job reaches a candidate in three steps, and the middle of this menu follows them:
    * Pending Jobs  - delegated by the Admin, waiting in the team queue to be handed out;
-   * Assigned Jobs - every job a member of the team has been given;
-   * Applications  - the assigned jobs a member has applied to.
+   * Assigned Jobs - every job a candidate of the team has been given;
+   * Applications  - the assigned jobs that have been applied to.
    */
   TEAM_LEAD: [
     {
       items: [
         { label: "Dashboard", href: "/tl/dashboard", icon: LayoutDashboard },
+        { label: "Candidates", href: "/tl/candidates", icon: Contact },
         { label: "Team Members", href: "/tl/members", icon: Users },
       ],
     },
@@ -110,11 +114,14 @@ export const NAVIGATION: Record<Role, NavGroup[]> = {
     {
       items: [
         { label: "Dashboard", href: "/member/dashboard", icon: LayoutDashboard },
-        { label: "My Jobs", href: "/member/jobs", icon: BriefcaseBusiness, badge: "my-open-jobs" },
+        { label: "My Candidates", href: "/member/candidates", icon: Contact },
+        { label: "All Jobs", href: "/member/jobs", icon: BriefcaseBusiness, badge: "my-open-jobs" },
         { label: "Applications", href: "/member/applications", icon: SendHorizontal },
         { label: "Activity", href: "/member/activity", icon: Activity },
-        { label: "Profile", href: "/member/profile", icon: UserRound },
       ],
+    },
+    {
+      items: [{ label: "Settings", href: "/member/settings", icon: Settings }],
     },
   ],
 };
@@ -149,5 +156,5 @@ export function activeNavItem(role: Role, pathname: string, search: URLSearchPar
 export const ACCOUNT_PATH: Record<Role, string> = {
   ADMIN: "/admin/settings",
   TEAM_LEAD: "/tl/settings",
-  MEMBER: "/member/profile",
+  MEMBER: "/member/settings",
 };

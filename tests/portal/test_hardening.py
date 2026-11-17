@@ -76,11 +76,18 @@ async def test_requests_are_refused_before_their_body_is_read(world):
     assert too_long.status_code == 413 and "too large" in too_long.json()["error"]
     streamed = await admin.post("/api/jobs", content=body(), headers={"content-type": "application/json"})
     assert streamed.status_code == 413 and sent["bytes"] == MIB     # stopped at the first chunk over the limit
-    member = await world.as_member("a1")
-    big = await member.post("/api/resumes/upload", files={"file": ("cv.txt", b"Python engineer. " * (700 * 1024), "text/plain")})
+    lead, member = await world.as_tl("alpha"), await world.as_member("a1")
+    upload = f"/api/candidates/{world.ids['cand_a1']}/resume"          # a resume is uploaded by a manager, for a candidate
+    big = await lead.post(upload, files={"file": ("cv.txt", b"Python engineer. " * (700 * 1024), "text/plain")})
     assert big.status_code == 413
-    ok = await member.post("/api/resumes/upload", files={"file": ("cv.txt", b"Python engineer with PyTorch and SQL experience. " * 30, "text/plain")})
+    small = b"Python engineer with PyTorch and SQL experience. " * 30
+    refused = await member.post(upload, files={"file": ("cv.txt", small, "text/plain")})
+    assert refused.status_code == 403                               # the responsible member reads the resume, never replaces it
+    ok = await lead.post(upload, files={"file": ("cv.txt", small, "text/plain")})
     assert ok.status_code == 201
+    # The upload route has the upload limit, not the JSON one: a file larger than the JSON body that was refused above.
+    larger = b"Python engineer with PyTorch and SQL experience. " * (16 * 1024)
+    assert len(larger) > 600 * 1024 and (await lead.post(upload, files={"file": ("cv.txt", larger, "text/plain")})).status_code == 201
     assert (await admin.get("/api/users", params={"q": "a\x00b"})).status_code == 422
     assert (await admin.post("/api/teams", json={"name": "Nul\x00Team"})).status_code == 422
 
@@ -99,13 +106,23 @@ async def test_real_pdf_and_docx_resumes_are_read_in_the_limited_process(world):
         document.add_paragraph(f"Line {line}: Built ML systems with Python, PyTorch and Kubernetes")
     buffer = io.BytesIO()
     document.save(buffer)
-    member = await world.as_member("a1")
+    lead, member = await world.as_tl("alpha"), await world.as_member("a1")
+    candidate = str(world.ids["cand_a1"])
+    resume = f"/api/candidates/{candidate}/resume"
     for name, data in (("cv.pdf", pdf.tobytes()), ("cv.docx", buffer.getvalue())):
-        response = await member.post("/api/resumes/upload", files={"file": (name, data)})
+        assert (await member.post(resume, files={"file": (name, data)})).status_code == 403          # only managers upload
+        response = await lead.post(resume, files={"file": (name, data)})
         assert response.status_code == 201, response.text
         assert "Python" in response.json()["parsed_profile"]["skills"] and response.json()["truncated"] is False
-    wrong = await member.post("/api/resumes/upload", files={"file": ("cv.pdf", b"this is not a pdf at all, just text " * 4)})
+        assert response.json()["has_file"] is True and response.json()["candidate_id"] == candidate
+        for reader in (lead, member):                               # the file itself is kept, byte for byte
+            current = (await reader.get(resume)).json()
+            assert current["id"] == response.json()["id"] and current["filename"] == name and current["has_file"] is True
+            download = await reader.get(f"{resume}/download")
+            assert download.status_code == 200 and download.content == data
+    wrong = await lead.post(resume, files={"file": ("cv.pdf", b"this is not a pdf at all, just text " * 4)})
     assert wrong.status_code == 400 and "not a valid PDF" in wrong.json()["error"]
+    assert (await member.get(f"{resume}/download")).content == buffer.getvalue()                     # a refused upload replaces nothing
 
 
 async def test_invitations_to_one_address_are_limited(world):
@@ -124,11 +141,11 @@ async def test_search_queue_has_a_limit_per_person(world, monkeypatch):
         return True
     monkeypatch.setattr(world.queue, "enqueue", accepted)           # keep them queued
     lead, admin = await world.as_tl("alpha"), await world.as_admin()
-    body = {"member_ids": [str(world.ids["member_a1"])], "target_count": 5, "deep_search": False}
+    body = {"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 5, "deep_search": False}
     limit = world.settings.max_active_searches_per_user
     codes = [(await lead.post("/api/searches", json=body)).status_code for _ in range(limit + 1)]
     assert codes == [202] * limit + [429]
-    assert (await admin.post("/api/searches", json={**body, "member_ids": [str(world.ids["member_b1"])]})).status_code == 202     # another person's allowance
+    assert (await admin.post("/api/searches", json={**body, "candidate_ids": [str(world.ids["cand_b1"])]})).status_code == 202     # another person's allowance
     first = (await lead.get("/api/searches", params={"status": "active"})).json()["items"][0]["id"]
     assert (await lead.post(f"/api/searches/{first}/cancel")).status_code == 200
     assert (await lead.post("/api/searches", json=body)).status_code == 202                                                       # room again
@@ -148,7 +165,8 @@ async def test_member_copy_of_a_posting_has_no_web_addresses_but_managers_keep_t
     text = "Apply at https://careers.northwind.example/apply/9 or www.northwind.example/jobs today. Stack: Next.js, ASP.NET."
     job = await add_job(world, description=text)
     admin, member = await world.as_admin(), await world.as_member("a1")
-    created = await admin.post("/api/assignments", json={"job_id": job, "member_id": str(world.ids["member_a1"])})
+    created = await admin.post("/api/assignments", json={"job_id": job, "candidate_id": str(world.ids["cand_a1"])})
+    assert created.status_code == 201, created.text
     assignment = created.json()["assignment_ids"][0]
     seen = (await member.get(f"/api/assignments/{assignment}")).json()["job"]["description"]
     assert "northwind.example" not in seen and seen.count("[link removed: use Open Job]") == 2 and "Next.js, ASP.NET." in seen
@@ -169,16 +187,23 @@ async def test_admin_defined_profile_fields_are_typed_and_reach_every_role(world
     me = (await member.get("/api/auth/me")).json()["settings"]
     assert [f["key"] for f in me["profile_extra_fields"]] == ["notice_period", "relocate", "shift", "linkedin"]
     assert me["password_min_length"] == world.settings.password_min_length and me["deep_search_default"] is True
-    own = f"/api/users/{world.ids['member_a1']}/profile"
-    saved = await member.patch(own, json={"extra": {"notice_period": "4", "relocate": True, "shift": "Night", "linkedin": "  ML   engineer ", "made_up": "x"}})
-    assert saved.status_code == 200
+    # The answers belong to the candidate's profile: the Team Lead fills them in, the responsible member reads them.
+    own = f"/api/candidates/{world.ids['cand_a1']}/profile"
+    answers = {"notice_period": "4", "relocate": True, "shift": "Night", "linkedin": "  ML   engineer ", "made_up": "x"}
+    assert (await member.patch(own, json={"extra": answers})).status_code == 403
+    assert (await member.get(own)).json()["extra"] == {}                                     # the refused attempt stored nothing
+    saved = await lead.patch(own, json={"extra": answers})
+    assert saved.status_code == 200 and saved.json()["candidate_id"] == str(world.ids["cand_a1"])
     assert saved.json()["extra"] == {"notice_period": 4, "relocate": True, "shift": "Night", "linkedin": "ML engineer"}      # typed; unknown key dropped
-    assert (await member.patch(own, json={"extra": {"shift": "Afternoon"}})).status_code == 422
-    assert (await member.patch(own, json={"extra": {"notice_period": "soon"}})).status_code == 422
-    assert (await member.patch(own, json={"extra": {"relocate": "yes"}})).status_code == 422
-    partial = await member.patch(own, json={"extra": {"shift": "Day"}})                     # other values stay
+    assert (await lead.patch(own, json={"extra": {"shift": "Afternoon"}})).status_code == 422
+    assert (await lead.patch(own, json={"extra": {"notice_period": "soon"}})).status_code == 422
+    assert (await lead.patch(own, json={"extra": {"relocate": "yes"}})).status_code == 422
+    partial = await lead.patch(own, json={"extra": {"shift": "Day"}})                       # other values stay
     assert partial.json()["extra"] == {"notice_period": 4, "relocate": True, "shift": "Day", "linkedin": "ML engineer"}
-    assert (await lead.get(own)).json()["extra"]["shift"] == "Day"                           # the Team Lead sees them
+    assert (await member.patch(own, json={"extra": {"shift": "Night"}})).status_code == 403
+    for reader in (member, lead, admin):                                                     # the member, the Team Lead and the Admin see them
+        read = await reader.get(own)
+        assert read.status_code == 200 and read.json()["extra"] == partial.json()["extra"]
     assert (await (await world.client()).get("/api/auth/password-policy")).json() == {
         "min_length": world.settings.password_min_length, "max_length": 128, "character_kinds_required": 3}
 
@@ -187,6 +212,7 @@ async def test_stored_answers_always_match_the_fields_that_exist(world):
     """An answer is tied to its field. Removing a field, changing its type or taking an option away deletes the answers
     that no longer fit, so nothing comes back when a field with the same key is added later."""
     admin, member, other = await world.as_admin(), await world.as_member("a1"), await world.as_member("b1")
+    lead, other_lead = await world.as_tl("alpha"), await world.as_tl("beta")        # managers write; the members above read
     fields = [{"key": "shift", "label": "  Preferred   shift ", "type": "choice", "options": [" Day ", "Night", "Night", "Flexible"]},
               {"key": "badge", "label": "Badge number", "type": "text"},
               {"key": "notice", "label": "Notice (weeks)", "type": "text"},
@@ -200,16 +226,18 @@ async def test_stored_answers_always_match_the_fields_that_exist(world):
     twins = await admin.patch("/api/settings", json={"profile_extra_fields": [{"key": "x", "label": "X", "type": "choice", "options": ["A", " A "]}]})
     assert twins.status_code == 422                                                                        # one option, listed twice
 
-    own, theirs = f"/api/users/{world.ids['member_a1']}/profile", f"/api/users/{world.ids['member_b1']}/profile"
+    own, theirs = f"/api/candidates/{world.ids['cand_a1']}/profile", f"/api/candidates/{world.ids['cand_b1']}/profile"
     answers = {"shift": "Night", "badge": "A-17", "notice": "4", "relocate": True}
-    assert (await member.patch(own, json={"extra": answers})).json()["extra"] == answers
-    assert (await other.patch(theirs, json={"extra": {"shift": "Day", "badge": "B-2"}})).json()["extra"] == {"shift": "Day", "badge": "B-2"}
+    assert (await member.patch(own, json={"extra": answers})).status_code == 403                          # a member changes no profile
+    assert (await lead.patch(own, json={"extra": answers})).json()["extra"] == answers
+    assert (await other_lead.patch(theirs, json={"extra": {"shift": "Day", "badge": "B-2"}})).json()["extra"] == {"shift": "Day", "badge": "B-2"}
+    assert (await member.get(own)).json()["extra"] == answers and (await other.get(theirs)).json()["extra"] == {"shift": "Day", "badge": "B-2"}
 
     # Answers that cannot be stored are refused or cleared, never kept in another shape.
-    assert (await member.patch(own, json={"extra": {"badge": "x" * 501}})).status_code == 422             # too long: said, not cut
-    assert (await member.patch(own, json={"extra": {"badge": ["A-17"]}})).status_code == 422
-    assert (await member.patch(own, json={"extra": {"badge": "   "}})).json()["extra"] == {k: v for k, v in answers.items() if k != "badge"}
-    assert (await member.patch(own, json={"extra": {"badge": "A-17"}})).json()["extra"] == answers
+    assert (await lead.patch(own, json={"extra": {"badge": "x" * 501}})).status_code == 422               # too long: said, not cut
+    assert (await lead.patch(own, json={"extra": {"badge": ["A-17"]}})).status_code == 422
+    assert (await lead.patch(own, json={"extra": {"badge": "   "}})).json()["extra"] == {k: v for k, v in answers.items() if k != "badge"}
+    assert (await lead.patch(own, json={"extra": {"badge": "A-17"}})).json()["extra"] == answers
 
     # "badge" is removed, "notice" becomes a number, "Night" is no longer offered, "relocate" becomes text.
     changed = [{"key": "shift", "label": "Preferred shift", "type": "choice", "options": ["Day", "Flexible"]},
@@ -235,8 +263,9 @@ async def test_stored_answers_always_match_the_fields_that_exist(world):
 async def test_a_resume_carries_no_fixed_sentence_about_ai_services(world):
     """Which outside AI services receive resume text is said in one place, from the configuration (settings.ai_providers)."""
     member = await world.as_member("a1")
-    resume = await member.get(f"/api/members/{world.ids['member_a1']}/resume")
-    assert resume.status_code == 200 and "ai_processing_notice" not in resume.json()
+    resume = await member.get(f"/api/candidates/{world.ids['cand_a1']}/resume")
+    assert resume.status_code == 200 and resume.json()["candidate_id"] == str(world.ids["cand_a1"])     # a resume, not null
+    assert "ai_processing_notice" not in resume.json()
     assert (await member.get("/api/auth/me")).json()["settings"]["ai_providers"] == []       # the test server has no AI keys
 
 
@@ -256,13 +285,13 @@ async def test_unassigned_only_filters_before_paging_and_first_view_is_recorded_
 
     from app.portal.models import ApplicationEvent
     lead, member = await world.as_tl("alpha"), await world.as_member("a1")
-    started = await lead.post("/api/searches", json={"member_ids": [str(world.ids["member_a1"])], "mode": "review", "target_count": 6, "deep_search": False})
+    started = await lead.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "mode": "review", "target_count": 6, "deep_search": False})
     run_id = started.json()["search"]["id"]
     await world.queue.drain()
     rows = (await lead.get(f"/api/searches/{run_id}/results")).json()
     assert rows["total"] == 6
     picked = [r["job"]["id"] for r in rows["items"][:2]]
-    assert (await lead.post("/api/assignments/bulk", json={"job_ids": picked, "member_ids": [str(world.ids["member_a1"])], "search_run_id": run_id})).status_code == 201
+    assert (await lead.post("/api/assignments/bulk", json={"job_ids": picked, "candidate_ids": [str(world.ids["cand_a1"])], "search_run_id": run_id})).status_code == 201
     left = (await lead.get(f"/api/searches/{run_id}/results", params={"unassigned_only": True, "page_size": 3})).json()
     assert left["total"] == 4 and len(left["items"]) == 3 and not {r["job"]["id"] for r in left["items"]} & set(picked)
     second_page = (await lead.get(f"/api/searches/{run_id}/results", params={"unassigned_only": True, "page_size": 3, "page": 2})).json()

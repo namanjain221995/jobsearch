@@ -23,7 +23,7 @@ from .cache import AnalyticsCache
 from .db import make_engine, make_sessionmaker
 from .limits import RequestGuardMiddleware
 from .queue import SearchQueue
-from .routers import admin, assignments, auth, invitations, jobs, searches, teams, users
+from .routers import admin, assignments, auth, candidates, invitations, jobs, searches, teams, users
 from .security import RateLimiter
 from .services.emailer import Emailer
 
@@ -152,7 +152,7 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
-    for module in (auth, invitations, teams, users, jobs, searches, assignments, admin):
+    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, admin):
         app.include_router(module.router)
     return app
 

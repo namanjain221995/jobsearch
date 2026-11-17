@@ -1,32 +1,29 @@
 "use client";
 
 import { useId, useRef, useState, type DragEvent } from "react";
-import { FileText, Trash2, Upload } from "lucide-react";
+import { Download, FileText, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { FormMessage } from "@/components/shared/form-fields";
-import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
+import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/shared/states";
 import { Tag } from "@/components/shared/status-badge";
 import { useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
-import { useDeleteResume, useProfile, useResume, useUpdateProfile, useUploadResume } from "@/lib/queries";
+import {
+  candidateResumeDownloadPath,
+  useCandidateProfile,
+  useCandidateResume,
+  useDeleteCandidateResume,
+  useUpdateCandidateProfile,
+  useUploadCandidateResume,
+} from "@/lib/queries";
+import { RESUME_ACCEPT, RESUME_FORMATS, resumeFileProblem } from "@/lib/resume-file";
 import type { Resume } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-const MAX_BYTES = 10 * 1024 * 1024;
-const EXTENSIONS = [".pdf", ".docx", ".txt"];
-
-function validate(file: File): string | null {
-  const name = file.name.toLowerCase();
-  if (!EXTENSIONS.some((extension) => name.endsWith(extension))) return "Choose a PDF, DOCX or TXT file.";
-  if (file.size > MAX_BYTES) return `This file is ${formatBytes(file.size)}. The limit is 10 MB.`;
-  if (file.size === 0) return "This file is empty.";
-  return null;
-}
 
 /** "OpenAI", "OpenAI and Anthropic", "OpenAI, Anthropic and Another". */
 const joinNames = (names: string[]) =>
@@ -35,10 +32,107 @@ const joinNames = (names: string[]) =>
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "") : [];
 
+/**
+ * Where the text of a resume goes, said before anything is uploaded and from the server's actual
+ * configuration (`me.settings.ai_providers`: the outside AI services a search sends resume text to).
+ */
+export function ResumeAiNotice({ className }: { className?: string }) {
+  const aiProviders = useMe().settings.ai_providers;
+  return (
+    <FormMessage tone="info" className={className}>
+      {aiProviders.length > 0
+        ? `When a job search runs for this candidate, text from this resume is sent to ${joinNames(aiProviders)} to match and rank the jobs found. The uploaded file is kept on this server, where the candidate's responsible member can download it.`
+        : "No outside AI service is configured on this server. The resume text and the uploaded file stay on this server."}
+    </FormMessage>
+  );
+}
+
+/** The file that was uploaded, as a download. Resumes from before files were kept have only their text. */
+export function ResumeDownload({ candidateId, resume, size = "sm" }: { candidateId: string; resume: Pick<Resume, "has_file" | "filename">; size?: "sm" | "default" }) {
+  if (!resume.has_file) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Only the text of this resume was kept, so there is no file to download.
+      </span>
+    );
+  }
+  return (
+    <Button asChild variant="outline" size={size}>
+      <a href={candidateResumeDownloadPath(candidateId)} download={resume.filename}>
+        <Download data-icon="inline-start" />
+        Download File
+      </a>
+    </Button>
+  );
+}
+
+/** The text read from the resume: what a search matches jobs against, and what a member copies from when applying. */
+export function ResumeText({ resume }: { resume: Resume }) {
+  if (!resume.text) return <p className="text-sm text-muted-foreground">No text could be read from this resume.</p>;
+  return (
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label="Resume text"
+      className="max-h-[32rem] overflow-y-auto overscroll-contain rounded-md border bg-muted/40 px-3 py-2.5 text-sm leading-relaxed break-words whitespace-pre-wrap focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+    >
+      {resume.text}
+    </div>
+  );
+}
+
+function ResumeFacts({ resume }: { resume: Resume }) {
+  return (
+    <div className="flex min-w-0 items-start gap-2.5">
+      <FileText className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <p className="text-sm font-medium break-all">{resume.filename}</p>
+        <p className="text-xs text-muted-foreground">
+          Version {resume.version}, {formatBytes(resume.size_bytes)}, uploaded {formatDateTime(resume.created_at)}
+          {resume.uploaded_by ? ` by ${resume.uploaded_by.name}` : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A candidate's resume for the member who applies on their behalf: the file to download and
+ * the text to read. Nothing here can be changed; the Team Lead keeps the resume up to date.
+ */
+export function ResumeView({ candidateId }: { candidateId: string }) {
+  const resume = useCandidateResume(candidateId);
+  if (resume.isPending) return <LoadingSkeleton variant="list" count={2} />;
+  if (resume.isError) return <ErrorState compact error={resume.error} onRetry={() => resume.refetch()} />;
+  const current = resume.data;
+  if (!current) {
+    return (
+      <EmptyState
+        compact
+        icon={FileText}
+        title="No resume yet"
+        description="Your Team Lead uploads the candidate's resume. It appears here as soon as it is in."
+      />
+    );
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border bg-muted/40 p-3">
+        <ResumeFacts resume={current} />
+        <ResumeDownload candidateId={candidateId} resume={current} />
+      </div>
+      {current.truncated && (
+        <FormMessage tone="info">This resume was longer than the limit, so only the first part of its text was kept.</FormMessage>
+      )}
+      <ResumeText resume={current} />
+    </div>
+  );
+}
+
 /** What was read from the resume text, shown for review. Skills can be copied into the profile. */
-function ExtractedDetails({ resume, memberId }: { resume: Resume; memberId: string }) {
-  const profile = useProfile(memberId);
-  const save = useUpdateProfile(memberId);
+function ExtractedDetails({ resume, candidateId }: { resume: Resume; candidateId: string }) {
+  const profile = useCandidateProfile(candidateId);
+  const save = useUpdateCandidateProfile(candidateId);
   const parsed = resume.parsed_profile as Record<string, unknown>;
   const skills = strings(parsed.skills);
   const titles = strings(parsed.job_titles);
@@ -111,30 +205,31 @@ function ExtractedDetails({ resume, memberId }: { resume: Resume; memberId: stri
 }
 
 /**
- * Upload, replace, review and delete a member's resume. Members use it for
- * themselves; a Team Lead or Admin can upload on a member's behalf.
+ * Upload, replace, review, download and delete a candidate's resume. For the Team Lead
+ * and Admins; the responsible member reads it through ResumeView.
  */
-export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBehalfOf?: string }) {
+export function ResumeUpload({ candidateId, candidateName }: { candidateId: string; candidateName: string }) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  // The outside AI services this server sends resume text to when a search runs; none when no provider is configured.
-  const aiProviders = useMe().settings.ai_providers;
-  const resume = useResume(memberId);
-  const upload = useUploadResume(memberId, Boolean(onBehalfOf));
-  const remove = useDeleteResume(memberId);
+  const resume = useCandidateResume(candidateId);
+  const upload = useUploadCandidateResume();
+  const remove = useDeleteCandidateResume(candidateId);
   const [dragging, setDragging] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const send = (file: File | undefined) => {
     if (!file) return;
-    const issue = validate(file);
+    const issue = resumeFileProblem(file);
     setProblem(issue);
     if (issue) return;
-    upload.mutate(file, {
-      onSuccess: (saved) => toast.success(`${saved.filename} uploaded (version ${saved.version})`),
-      onError: (error) => setProblem(errorMessage(error)),
-    });
+    upload.mutate(
+      { id: candidateId, file },
+      {
+        onSuccess: (saved) => toast.success(`${saved.filename} uploaded (version ${saved.version})`),
+        onError: (error) => setProblem(errorMessage(error)),
+      },
+    );
   };
 
   const onDrop = (event: DragEvent<HTMLLabelElement>) => {
@@ -152,21 +247,16 @@ export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBeh
       {current && (
         <div className="flex flex-col gap-3 rounded-md border bg-muted/40 p-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-2.5">
-              <FileText className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <p className="text-sm font-medium break-all">{current.filename}</p>
-                <p className="text-xs text-muted-foreground">
-                  Version {current.version}, {formatBytes(current.size_bytes)}, uploaded {formatDateTime(current.created_at)}
-                  {current.uploaded_by ? ` by ${current.uploaded_by.name}` : ""}
-                </p>
-              </div>
+            <ResumeFacts resume={current} />
+            <div className="flex flex-wrap items-center gap-2">
+              {current.has_file && <ResumeDownload candidateId={candidateId} resume={current} />}
+              <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
+                <Trash2 data-icon="inline-start" />
+                Delete
+              </Button>
             </div>
-            <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
-              <Trash2 data-icon="inline-start" />
-              Delete
-            </Button>
           </div>
+          {!current.has_file && <ResumeDownload candidateId={candidateId} resume={current} />}
           {current.truncated && (
             <FormMessage tone="info">
               This resume was longer than the limit, so only the first part of its text was kept.
@@ -199,15 +289,15 @@ export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBeh
             {upload.isPending
               ? "Uploading and reading the resume"
               : current
-                ? "Drop a new file here to replace the resume, or choose a file"
-                : "Drop the resume here, or choose a file"}
+                ? `Drop a new file here to replace ${candidateName}'s resume, or choose a file`
+                : `Drop ${candidateName}'s resume here, or choose a file`}
           </span>
-          <span className="text-xs text-muted-foreground">PDF, DOCX or TXT, up to 10 MB</span>
+          <span className="text-xs text-muted-foreground">{RESUME_FORMATS}</span>
           <input
             id={inputId}
             ref={inputRef}
             type="file"
-            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            accept={RESUME_ACCEPT}
             className="sr-only"
             disabled={upload.isPending}
             onChange={(event) => {
@@ -217,19 +307,20 @@ export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBeh
           />
         </label>
         {problem && <FormMessage>{problem}</FormMessage>}
-        {onBehalfOf && <p className="text-xs text-muted-foreground">You are uploading on behalf of {onBehalfOf}.</p>}
-        {/* Said before anything is uploaded, and from the server's actual configuration: where the text of a resume goes. */}
-        <FormMessage tone="info">
-          {aiProviders.length > 0
-            ? `When a job search runs for ${onBehalfOf ? "this member" : "you"}, text from this resume is sent to ${joinNames(aiProviders)} to match and rank the jobs found. The uploaded file itself is not kept; only its text is stored.`
-            : "No outside AI service is configured on this server. Resume text stays on this server."}
-        </FormMessage>
+        <ResumeAiNotice />
       </div>
 
       {current && (
         <div className="flex flex-col gap-3 border-t pt-4">
           <h3 className="font-label text-sm">Read from the resume</h3>
-          <ExtractedDetails resume={current} memberId={memberId} />
+          <ExtractedDetails resume={current} candidateId={candidateId} />
+        </div>
+      )}
+
+      {current && (
+        <div className="flex flex-col gap-3 border-t pt-4">
+          <h3 className="font-label text-sm">Resume text</h3>
+          <ResumeText resume={current} />
         </div>
       )}
 
@@ -237,13 +328,12 @@ export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBeh
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete this resume?"
-        description="The stored resume text is removed. Searches for this member then rely on the skills in the profile until a new resume is uploaded."
+        description={`The stored text and the uploaded file are removed. Searches for ${candidateName} then rely on the skills in the profile until a new resume is uploaded.`}
         confirmLabel="Delete resume"
         destructive
         pending={remove.isPending}
         onConfirm={() =>
-          current &&
-          remove.mutate(current.id, {
+          remove.mutate(undefined, {
             onSuccess: (result) => {
               toast.success(result.message);
               setConfirmDelete(false);
@@ -254,4 +344,17 @@ export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBeh
       />
     </div>
   );
+}
+
+/** The candidate's resume: upload, replace and delete for managers; text and download only when `readOnly` (the responsible member). */
+export function CandidateResumePanel({
+  candidateId,
+  candidateName,
+  readOnly = false,
+}: {
+  candidateId: string;
+  candidateName: string;
+  readOnly?: boolean;
+}) {
+  return readOnly ? <ResumeView candidateId={candidateId} /> : <ResumeUpload candidateId={candidateId} candidateName={candidateName} />;
 }

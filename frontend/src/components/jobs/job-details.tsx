@@ -113,16 +113,19 @@ export function JobOverview({ job }: { job: JobDetail }) {
 
 function OtherAssignees({ assignees }: { assignees: JobAssignee[] }) {
   const area = useArea();
-  if (assignees.length === 0) return <p className="text-sm text-muted-foreground">Nobody else has this job.</p>;
+  if (assignees.length === 0) return <p className="text-sm text-muted-foreground">No other candidate has this job.</p>;
   return (
     <ul className="flex flex-col divide-y">
       {assignees.map((assignee) => (
         <li key={assignee.assignment_id} className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
           <span className="min-w-0">
-            <Link href={`${area}/members/${assignee.member.id}`} className="rounded-sm text-sm font-medium underline-offset-4 hover:underline">
-              {assignee.member.name}
+            <Link href={`${area}/candidates/${assignee.candidate.id}`} className="rounded-sm text-sm font-medium underline-offset-4 hover:underline">
+              {assignee.candidate.name}
             </Link>
-            {assignee.team && <span className="block text-xs text-muted-foreground">{assignee.team.name}</span>}
+            <span className="block text-xs text-muted-foreground">
+              {assignee.member ? `Handled by ${assignee.member.name}` : "No responsible member"}
+              {assignee.team ? `, ${assignee.team.name}` : ""}
+            </span>
           </span>
           <ApplicationStatusBadge status={assignee.status} />
         </li>
@@ -192,7 +195,7 @@ export function AssignmentActions({ assignment, className }: { assignment: Assig
     <div className={cn("flex flex-col gap-2", className)}>
       {!assignment.is_active && (
         <p className="rounded-md border border-border-strong bg-muted px-3 py-2 text-sm">
-          This assignment was withdrawn from the member&apos;s list. Its history is kept.
+          This assignment was withdrawn from the candidate&apos;s list. Its history is kept.
         </p>
       )}
       <div className="flex flex-wrap gap-2">
@@ -260,7 +263,7 @@ export function AssignmentActions({ assignment, className }: { assignment: Assig
         assignment={assignment}
         target={target}
         onOpenChange={(open) => !open && setTarget(null)}
-        onBehalfOf={!isMember ? assignment.member.name : undefined}
+        onBehalfOf={!isMember ? assignment.candidate.name : undefined}
       />
       <ConfirmDialog
         open={withdrawing}
@@ -269,7 +272,7 @@ export function AssignmentActions({ assignment, className }: { assignment: Assig
         description={
           <>
             <span className="font-medium text-foreground">{assignment.job.title}</span> disappears from{" "}
-            {assignment.member.name}&apos;s list and from the counts. Its history is kept, and assigning the job
+            {assignment.candidate.name}&apos;s list and from the counts. Its history is kept, and assigning the job
             again restores it.
           </>
         }
@@ -335,11 +338,26 @@ export function TrackingSummary({ assignment }: { assignment: AssignmentDetail }
         <div className="flex flex-wrap items-center justify-between gap-2">
           <ApplicationStatusBadge status={assignment.status} size="lg" />
           {isManager && (
-            <span className="text-sm">
-              <Link href={`${area}/members/${assignment.member.id}`} className="rounded-sm font-medium underline-offset-4 hover:underline">
-                {assignment.member.name}
-              </Link>
-              {assignment.team && <span className="text-muted-foreground">, {assignment.team.name}</span>}
+            <span className="flex flex-col items-end text-sm">
+              <span>
+                <span className="text-muted-foreground">For </span>
+                <Link href={`${area}/candidates/${assignment.candidate.id}`} className="rounded-sm font-medium underline-offset-4 hover:underline">
+                  {assignment.candidate.name}
+                </Link>
+              </span>
+              <span className="text-2sm text-muted-foreground">
+                {assignment.member ? (
+                  <>
+                    Handled by{" "}
+                    <Link href={`${area}/members/${assignment.member.id}`} className="rounded-sm underline-offset-4 hover:underline">
+                      {assignment.member.name}
+                    </Link>
+                  </>
+                ) : (
+                  <span className="text-warning">No responsible member</span>
+                )}
+                {assignment.team ? `, ${assignment.team.name}` : ""}
+              </span>
             </span>
           )}
         </div>
@@ -362,7 +380,7 @@ export function TrackingSummary({ assignment }: { assignment: AssignmentDetail }
       )}
       {isManager && (
         <div className="flex flex-col gap-2 border-t pt-4">
-          <h4 className="font-label text-sm">Also assigned to</h4>
+          <h4 className="font-label text-sm">Other candidates with this job</h4>
           <OtherAssignees assignees={assignment.other_assignees} />
         </div>
       )}

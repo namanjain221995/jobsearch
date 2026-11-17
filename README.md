@@ -1,10 +1,11 @@
 # AI Job Finder — team portal
 
-A multi-team platform for finding real US job postings, assigning them to people and tracking applications.
+A multi-team platform for a staffing business: it finds real US job postings for candidates, assigns them and tracks the applications made on each candidate's behalf.
 
 - **Admin** creates teams and Team Leads, adds or imports jobs, runs searches, delegates jobs and sees organization-wide analytics.
-- **Team Lead** invites members, manages their resumes, runs AI searches for selected members, assigns jobs and follows the team's progress.
-- **Member** sees only their own assigned jobs, reads the full description, opens the application page and records what they actually applied to.
+- **Team Lead** invites members, creates candidates and uploads their resumes, runs AI searches for selected candidates, assigns each candidate to a member and follows the team's progress.
+- **Member** is a recruiter working under a Team Lead. A member sees the candidates assigned to them (details, profile, resume) and those candidates' jobs, reads the full description, opens the application page, applies for the candidate and records what was actually applied to.
+- A **candidate** is the person who needs a job. A candidate is a record, never an account, and never signs in.
 
 Every job comes from a live source (employer job boards, job-board APIs, AI web search with verification, or manual entry by an Admin). Nothing is generated to fill a quota.
 
@@ -25,7 +26,7 @@ Browser ──► Next.js (frontend/, port 3010) ──/api/* proxy──► Fas
 | API | FastAPI, Pydantic, SQLAlchemy 2 (async, asyncpg), Alembic | `app/portal/` |
 | Background searches | arq worker on Redis | `app/portal/worker.py`, `search_runner.py` |
 | Search engine | unchanged engine from the single-user version: 9 source types, verification, deduplication, ranking | `app/*.py`, `app/providers/` |
-| Database | PostgreSQL 17: users, teams, jobs, searches, assignments, events, audit log, and the crawler's job index | `alembic/` |
+| Database | PostgreSQL 17: users, teams, candidates, jobs, searches, assignments, events, audit log, and the crawler's job index | `alembic/` |
 
 The browser only talks to Next.js. Next.js forwards `/api/*` to FastAPI, so the session cookie is same-origin and API keys never reach the browser.
 
@@ -94,27 +95,33 @@ There is no public registration.
 
 Password reset works the same way (`/forgot-password`, or a manager creates a reset link for someone in their scope).
 
-## Member profiles and resumes
+## Candidates, profiles and resumes
 
-A member fills in their profile (desired titles, experience, skills, locations, work arrangement, work authorization) and uploads a resume as PDF, DOCX or TXT. Their Team Lead and Admins can do both on the member's behalf. The text of the resume is extracted and stored; the file itself is not kept. The upload area says which outside AI services receive text from the resume when a search runs, read from the server's configuration.
+A Team Lead (or an Admin) creates a candidate in their team: name, optional e-mail and phone, free-text notes. The candidate's job-search profile holds the desired titles, experience, skills, locations, work arrangement, work authorization, sponsorship, salary, seniority, excluded companies and required keywords. Members do not look for jobs themselves and have no profile or resume.
 
-An Admin can add up to 20 extra profile fields under Settings (text, number, yes or no, or a choice from a list). They appear on every member's profile under "Additional information". Stored answers always match the fields that exist: removing a field, changing its type or removing an option deletes the answers that no longer fit when the settings are saved, the audit log records how many, and a field added again later starts empty.
+The Team Lead uploads the candidate's resume as PDF, DOCX or TXT (10 MB at most). Its text is extracted and stored for searching, and the uploaded file is kept so that the responsible member can download it when applying. The download is offered to exactly the people who may see the candidate and is always sent as an attachment. Uploading a new resume erases the text and the file of the previous version. Resumes uploaded before files were kept have only their text; the app says so and offers no download for them. The upload area says which outside AI services receive text from the resume when a search runs, read from the server's configuration.
+
+Each candidate has at most one responsible member at a time, always an active member of the candidate's own team; a member can hold many candidates. The Team Lead can hand a candidate to another member at any moment: all jobs and their history stay with the candidate, the previous member loses access at once and the new one gains it. The member is told about a new candidate by a notification. When a member is deactivated or moved to another team, their candidates stay in the team and become unassigned; the Team Lead is notified and finds them under the "unassigned" filter. A candidate can be deactivated (no searches, no new jobs) without losing anything.
+
+An Admin can add up to 20 extra profile fields under Settings (text, number, yes or no, or a choice from a list). They appear on every candidate's profile under "Additional information". Stored answers always match the fields that exist: removing a field, changing its type or removing an option deletes the answers that no longer fit when the settings are saved, the audit log records how many, and a field added again later starts empty.
+
+When this model was introduced (migration `c4d2a9e71f36`), every member account that held job-seeker data (a resume, searches, jobs, or a profile with at least one field filled in) became a candidate carrying the same name, in the same team, assigned to that same member, so nothing was lost; a member who only had the empty profile created at invitation stayed a plain member; `docs/candidate-api.md` describes the API.
 
 ## Searching and assigning
 
-1. A Team Lead (or Admin) picks members, optionally overrides the search criteria, and chooses **Find & Assign Matching Jobs** or **Search first, review, then assign**. The result count is per member.
+1. A Team Lead (or Admin) picks candidates, optionally overrides the search criteria, and chooses **Find & Assign Matching Jobs** or **Search first, review, then assign**. The result count is per candidate. A candidate needs no responsible member to be searched.
 2. The API stores a search run and returns its id at once. The worker does the work; it continues if the browser is closed.
-3. For each member the existing search engine runs with that member's resume and preferences: local index first, live sources, AI web search (deep search), verification, US filter, authorization filters, deduplication, ranking.
-4. Results are saved as global job postings (one row per vacancy) plus per-member results. In auto-assign mode, jobs scoring at least the minimum match score become assignments. A job is never assigned twice to the same member; the same job can go to several members who each qualify.
+3. For each candidate the existing search engine runs with that candidate's current resume and preferences: local index first, live sources, AI web search (deep search), verification, US filter, authorization filters, deduplication, ranking. The run records which resume version it used.
+4. Results are saved as global job postings (one row per vacancy) plus per-candidate results. In auto-assign mode, jobs scoring at least the minimum match score become assignments. A job is never assigned twice to the same candidate; the same job can go to several candidates who each qualify. The member responsible for a candidate is notified about new jobs for that candidate.
 5. Progress (sources read, postings examined, verified, duplicates, matched, assigned, warnings) is written to the run about once a second and shown in the progress window. If 50 jobs were requested and 18 qualify, 18 is what is shown.
 
-An Admin can also add a job by hand, import one from a URL (reviewed before saving), import a CSV, delegate jobs to a team's queue, or assign directly to members of any team. A manually entered job is marked **unverified** until its page has been checked.
+An Admin can also add a job by hand, import one from a URL (reviewed before saving), import a CSV, delegate jobs to a team's queue, or assign directly to candidates of any team. A manually entered job is marked **unverified** until its page has been checked.
 
 ## Application tracking
 
 Statuses: `ASSIGNED → VIEWED → APPLYING → APPLIED → INTERVIEWING → OFFER`, plus `REJECTED`, `WITHDRAWN`, `SKIPPED`.
 
-Opening a job page is **not** applying. "Open Job" goes through an audited redirect that records who opened which job and when. A member marks the application as submitted separately (optionally with a reference number and the real date). Mistakes can be corrected; the earlier state stays in the history.
+An assignment is a job given to a candidate; the member responsible for that candidate works on it. Opening a job page is **not** applying. "Open Job" goes through an audited redirect that records who opened which job and when. The member marks the application as submitted separately (optionally with a reference number and the real date). Mistakes can be corrected; the earlier state stays in the history.
 
 ### Metric definitions (identical on every dashboard)
 
@@ -128,23 +135,23 @@ Opening a job page is **not** applying. "Open Job" goes through an audited redir
 | Completion rate | Applied ÷ (assigned − skipped − withdrawn before applying) |
 | Link opens | Times "Open Job" was used; never counted as applied |
 
-A date range selects assignments by the day they were assigned (UTC). Charts show, per day or week, jobs assigned, applications confirmed and links opened.
+A member's numbers are the totals over the candidates assigned to that member at the moment; team and organization numbers also include candidates nobody is responsible for. Team and organization dashboards break the numbers down per candidate and per responsible member. A date range selects assignments by the day they were assigned (UTC). Charts show, per day or week, jobs assigned, applications confirmed and links opened.
 
 ## Security
 
 - **Passwords:** Argon2id, computed in worker threads so a sign-in never stalls other requests. **Sessions:** random token in an HttpOnly, SameSite=Lax cookie; only its hash is stored; validated on the server for every request; revoked on sign-out, password reset and deactivation. Set `COOKIE_SECURE=true` (or `APP_ENV=production`) when served over HTTPS.
 - **CSRF:** state-changing requests need the `X-CSRF-Token` header matching the session, and the `Origin` must be the app's own. The two GET requests that record something (opening an assignment, Open Job) do not record when the browser reports a cross-site request.
 - **Sign-in throttling**, counted in Redis: an account is locked for 15 minutes after 5 failed sign-ins. See "Client addresses" below for the finer limits that become available behind a reverse proxy.
-- **Authorization** is enforced in the API on every endpoint and query, never only in the UI. A Team Lead's queries are limited to the team they lead today (a lead who is moved or removed loses the old team's members, assignments and searches at once); a member's to their own rows. Client-supplied team or member ids are checked against the session, not trusted.
+- **Authorization** is enforced in the API on every endpoint and query, never only in the UI. A Team Lead's queries are limited to the team they lead today (a lead who is moved or removed loses the old team's members, candidates, assignments and searches at once); a member's to the candidates assigned to them at that moment and those candidates' jobs. A candidate outside the caller's scope answers exactly like one that does not exist. Client-supplied team or member ids are checked against the session, not trusted.
 - **One-time links** (invitations, password resets) are stored as hashes, expire, work once, and die early when the manager who issued them is deactivated or no longer manages that person, when the person moves to another team, and when a newer link or a password change replaces them. A link that was e-mailed is not also shown to the manager who requested it.
 - **Job links for members:** raw URLs are not sent to members at all, and web addresses written inside a posting's text are removed from the member's copy. The redirect target is read from the stored job, must be a public http(s) address, and cannot be changed by request parameters.
-- **What a member receives about other people:** names only. Sign-in e-mail addresses of managers, private notes (including their existence) and manager-only events are left out.
+- **What a member receives about other people:** of colleagues, names only; of the candidates assigned to them, the details needed to apply (e-mail, phone, notes, profile, resume). Sign-in e-mail addresses of managers, private notes (including their existence) and manager-only events are left out.
 - **Outbound requests** (page verification, URL import, headless browser) are allowed only to globally routable addresses, and the connection is made to the address that was checked, so a host name cannot answer differently the second time (DNS rebinding). The headless browser reaches the network only through a local guard proxy.
 - **Uploads and request sizes:** a request without a session is refused before its body is read; JSON bodies are limited to 512 KB, resumes to 10 MB, CSV imports to 2 MB. PDF and DOCX resumes are parsed in a separate process limited to 1 GB of memory, 10 s of CPU and 20 s of run time, and a file whose content inflates beyond the upload limit is refused, so a "decompression bomb" costs about a tenth of a second.
 - **Limits against abuse by a signed-in account:** at most 3 queued or running searches per person and 12 in total, 5 invitations per address and 60 per sender per hour. A search stops assigning as soon as the person who started it is deactivated or no longer manages that team.
 - **Audit log:** sign-ins, invitations, account changes, assignments, status changes, searches, settings. Request logs never hold tokens, query strings or bodies, and SQL parameters are kept out of error logs.
 - **API documentation** (`/api/docs`, `/api/openapi.json`) is switched off when `APP_ENV=production` (`API_DOCS=true` turns it back on).
-- **Resumes:** the extracted text and structured profile are stored in PostgreSQL; the uploaded file is not kept. Replacing a resume erases the text of the previous version. Resume text is sent to the configured AI providers when a search runs for that member; the UI says so. Resume and posting text are passed to models as untrusted data.
+- **Resumes:** the extracted text, the structured profile and the uploaded file are stored in PostgreSQL. Only managers upload or delete; the file is downloadable by the people who may see the candidate, always as an attachment with a content type fixed by the server per extension, `X-Content-Type-Options: nosniff` and a sanitised file name, so a browser never renders it. Replacing a resume erases the text and the file of the previous version. Resume text is sent to the configured AI providers when a search runs for that candidate; the UI says so. Resume and posting text are passed to models as untrusted data.
 
 The rules above were checked by an adversarial review on 2026-11-17; its 23 findings and their fixes are pinned by the 30 tests of `tests/portal/test_security_review.py`; further rules are in `tests/portal/test_hardening.py`. `tests/portal/test_email_delivery.py` runs the real mail sender against an SMTP server on the test machine: delivery, refusals, and the certificate checks.
 
@@ -187,7 +194,10 @@ tunnel, whose public hostname points at `http://frontend:3000`.
 - The pipeline signs in with its own SSH key, which the server binds to `deploy/deploy.sh` and nothing else. The
   script pulls the images, starts them, and waits until `/api/health` reports the database, Redis and the worker.
   When that does not happen within three minutes it starts the previous build again and the pipeline fails.
-  Database migrations are not undone by that, so a migration must leave the previous build working.
+  Database migrations are not undone by that. Before a release the script writes a database dump to
+  `/opt/jobfinder/backups`; when a migration changed tables the previous build needs (the candidate migration
+  `c4d2a9e71f36` renames columns), going back means `alembic downgrade` to the earlier revision or restoring that
+  dump, by hand.
 - Repository secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`. The server's SSH port must
   accept connections from GitHub's runners.
 - On the server, never in git: `/opt/jobfinder/.env` (API keys, `POSTGRES_PASSWORD`, `PUBLIC_BASE_URL`) and
@@ -215,7 +225,7 @@ See `.env.example` for every variable. The ones you are most likely to set:
 | `COOKIE_SECURE`, `APP_ENV` | Secure cookies in production; production also switches the API docs off |
 | `TRUST_FORWARDED_FOR`, `TRUSTED_PROXY_HOPS` | Believe `X-Forwarded-For` (only behind a reverse proxy that sets it; see Security) |
 | `MAX_ACTIVE_SEARCHES_PER_USER`, `MAX_ACTIVE_SEARCHES` | Queued and running searches per person (3) and in total (12) |
-| `MAX_MEMBERS_PER_SEARCH`, `MAX_RESULTS_PER_SEARCH_RUN`, `MAX_AI_CALLS_PER_SEARCH` | Cost and concurrency limits |
+| `MAX_MEMBERS_PER_SEARCH`, `MAX_RESULTS_PER_SEARCH_RUN`, `MAX_AI_CALLS_PER_SEARCH` | Cost and concurrency limits (`MAX_MEMBERS_PER_SEARCH` counts candidates per search; the name is historical) |
 | `API_ORIGIN` (frontend) | Where Next.js forwards `/api/*` (default `http://127.0.0.1:8010`) |
 | `ANALYTICS_CACHE_SECONDS` | Lifetime of cached team and organization analytics in Redis (default 60, 0 turns the cache off) |
 | `LOG_FORMAT`, `LOG_LEVEL` | `json` (default, one object per line) or `text`; `INFO` by default |
@@ -258,7 +268,7 @@ Last full run, 2026-11-17: 7 scenarios, 94 page loads and 907 checks, no failure
 
 ## Measured performance
 
-API response times on a synthetic dataset of 60 teams, 1,200 members, 5,000 postings, 240,000 assignments and 415,000
+These figures were measured before candidates were introduced (when assignments belonged to members) and have not been repeated since. API response times on a synthetic dataset of 60 teams, 1,200 members, 5,000 postings, 240,000 assignments and 415,000
 events (PostgreSQL 17 in Docker on the development machine, best of three calls):
 
 | Endpoint | Time |
@@ -296,7 +306,7 @@ switched off in the commands above.
 
 ## API
 
-Interactive documentation: `http://127.0.0.1:8010/api/docs`. The contract is exported with `python -m app.portal.export_openapi > openapi.json`. Errors have one shape: `{"error": "...", "detail": "...", "fields": {...}}`.
+Interactive documentation: `http://127.0.0.1:8010/api/docs`. `docs/candidate-api.md` lists the candidate endpoints and every field renamed when candidates were introduced. The contract is exported with `python -m app.portal.export_openapi > openapi.json`. Errors have one shape: `{"error": "...", "detail": "...", "fields": {...}}`.
 
 ## The earlier single-user app
 
@@ -304,7 +314,7 @@ Interactive documentation: `http://127.0.0.1:8010/api/docs`. The contract is exp
 
 ## Known limits
 
-- A search interrupted by a worker stop, crash or the one-hour job limit is resumed once: members already finished are kept, the others are searched again. After a clean stop the next worker resumes at once; after a crash it takes about two and a half minutes (the run's heartbeat must be 120 seconds old). A second interruption closes the run as failed or partial. Measured live: stop, 0.3 s to re-queue; kill, resumed after 141 s.
+- A search interrupted by a worker stop, crash or the one-hour job limit is resumed once: candidates already finished are kept, the others are searched again. After a clean stop the next worker resumes at once; after a crash it takes about two and a half minutes (the run's heartbeat must be 120 seconds old). A second interruption closes the run as failed or partial. Measured live: stop, 0.3 s to re-queue; kill, resumed after 141 s.
 - Workday is throttled by Workday, so Workday coverage builds up over several minutes in the background.
 - Dashboards use page/offset pagination; very large lists (tens of thousands of rows per page set) would need keyset pagination.
 - E-mail addresses on reserved domains (for example `.test`, `.local`) are rejected by validation.

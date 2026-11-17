@@ -10,16 +10,27 @@ ap.add_argument("--roles", default="admin,tl,member"); ap.add_argument("--shots"
 ap.add_argument("--dark", action="store_true"); ap.add_argument("--base", default=BASE)
 a = ap.parse_args()
 
+CANDIDATE_TABS = ["?tab=jobs", "?tab=profile", "?tab=activity", "?tab=searches"]
 ROUTES = {
-  "admin": ("admin@example.com", ["/admin/dashboard", "/admin/analytics", "/admin/teams", "/admin/teams/{team}", "/admin/teams/{team}?tab=members", "/admin/teams/{team}?tab=assignments",
-                                   "/admin/teams/{team}?tab=queue", "/admin/teams/{team}?tab=searches", "/admin/team-leads", "/admin/members", "/admin/members/{member}",
-                                   "/admin/members/{member}?tab=assignments", "/admin/members/{member}?tab=profile", "/admin/members/{member}?tab=activity", "/admin/members/{member}?tab=searches",
-                                   "/admin/jobs", "/admin/jobs/{job}", "/admin/search", "/admin/searches", "/admin/searches/{search}", "/admin/assignments", "/admin/invitations",
-                                   "/admin/activity", "/admin/settings", "/admin/settings?tab=integrations", "/admin/settings?tab=account"]),
-  "tl": ("lead.alpha@example.com", ["/tl/dashboard", "/tl/members", "/tl/members/{member}", "/tl/members/{member}?tab=profile", "/tl/search", "/tl/searches", "/tl/searches/{search}",
+  "admin": ("admin@example.com", ["/admin/dashboard", "/admin/analytics", "/admin/teams", "/admin/teams/{team}", "/admin/teams/{team}?tab=candidates", "/admin/teams/{team}?tab=members",
+                                   "/admin/teams/{team}?tab=assignments", "/admin/teams/{team}?tab=queue", "/admin/teams/{team}?tab=searches", "/admin/team-leads",
+                                   "/admin/members", "/admin/members/{member}", "/admin/members/{member}?tab=candidates", "/admin/members/{member}?tab=jobs", "/admin/members/{member}?tab=activity",
+                                   "/admin/candidates", "/admin/candidates?member=unassigned&resume=no", "/admin/candidates/{candidate}", *["/admin/candidates/{candidate}" + t for t in CANDIDATE_TABS],
+                                   "/admin/candidates/{bare}?tab=profile",
+                                   "/admin/jobs", "/admin/jobs/{job}", "/admin/search", "/admin/search?candidate={candidate}", "/admin/searches", "/admin/searches/{search}", "/admin/assignments",
+                                   "/admin/invitations", "/admin/activity", "/admin/settings", "/admin/settings?tab=integrations", "/admin/settings?tab=account"]),
+  "tl": ("lead.alpha@example.com", ["/tl/dashboard", "/tl/candidates", "/tl/candidates?member=unassigned&resume=no", "/tl/candidates/{candidate}", *["/tl/candidates/{candidate}" + t for t in CANDIDATE_TABS],
+                                    "/tl/candidates/{bare}?tab=profile", "/tl/members", "/tl/members/{member}", "/tl/members/{member}?tab=candidates", "/tl/members/{member}?tab=jobs",
+                                    "/tl/members/{member}?tab=activity", "/tl/search", "/tl/search?candidate={candidate}", "/tl/searches", "/tl/searches/{search}",
                                     "/tl/jobs", "/tl/jobs?tab=jobs", "/tl/jobs/{job}", "/tl/assignments", "/tl/assignments?applied=true", "/tl/analytics", "/tl/invitations", "/tl/settings"]),
-  "member": ("maya@example.com", ["/member/dashboard", "/member/jobs", "/member/jobs/{assignment}", "/member/applications", "/member/activity", "/member/profile"]),
+  # /member/profile no longer exists as a page of its own: it must land on the account settings.
+  "member": ("maya@example.com", ["/member/dashboard", "/member/candidates", "/member/candidates?sort=name", "/member/candidates/{candidate}", "/member/candidates/{candidate}?tab=details",
+                                  "/member/candidates/{candidate}?tab=profile", "/member/candidates/{candidate}?tab=resume", "/member/candidates/{candidate}?tab=activity",
+                                  "/member/jobs", "/member/jobs?candidate={candidate}", "/member/jobs/{assignment}", "/member/applications", "/member/activity", "/member/settings",
+                                  "/member/profile"]),
 }
+# Where a route must end up when it is only a redirect.
+LANDS_ON = {"/member/profile": "/member/settings"}
 
 # Elements that stick out of the box they sit in (a card, a panel, a table cell with a border or a background).
 # Scrolling or clipping containers, absolutely positioned elements and 1px screen-reader elements are left out.
@@ -81,8 +92,9 @@ with sync_playwright() as pw:
         if role != "member":
             teams = api(page, "/api/teams") or []
             ids["team"] = teams[0]["id"] if teams else ""
-            users = api(page, "/api/users?role=MEMBER&page_size=5") or {"items": []}
-            ids["member"] = users["items"][0]["id"] if users["items"] else ""
+            users = api(page, "/api/users?role=MEMBER&sort=name&page_size=50") or {"items": []}
+            holders = [u for u in users["items"] if u.get("candidate_count")]             # a member who holds candidates: every tab has content
+            ids["member"] = (holders or users["items"] or [{"id": ""}])[0]["id"]
             jobs = api(page, "/api/jobs?page_size=1") or {"items": []}
             ids["job"] = jobs["items"][0]["id"] if jobs["items"] else ""
             searches = api(page, "/api/searches?page_size=5") or {"items": []}
@@ -91,6 +103,15 @@ with sync_playwright() as pw:
         else:
             asg = api(page, "/api/assignments?page_size=1&status=APPLIED") or {"items": []}
             ids["assignment"] = asg["items"][0]["id"] if asg["items"] else ""
+        # The candidate with the most jobs (charts, lists and activity are filled), and one without a resume (empty states).
+        people = (api(page, "/api/candidates?page_size=200") or {"items": []})["items"]
+        people.sort(key=lambda c: -c["stats"]["assigned"])
+        ids["candidate"] = people[0]["id"] if people else ""
+        ids["bare"] = next((c["id"] for c in people if not c["has_resume"]), ids["candidate"])
+        missing = [k for k, v in ids.items() if not v]
+        if missing:
+            problems += 1
+            print(f"BAD [{role} {a.w}px] no demo record to visit for: {', '.join(missing)}")
         for route in routes:
             path = route.format(**ids)
             logs.clear()
@@ -105,6 +126,10 @@ with sync_playwright() as pw:
             h1 = page.locator("h1").filter(visible=True).first
             title = h1.inner_text() if h1.count() else "(no h1)"
             errs = page.locator("[data-slot=error-state]").filter(visible=True).count()
+            if route in LANDS_ON and not page.url.split("?")[0].endswith(LANDS_ON[route]):
+                logs.append(f"expected to land on {LANDS_ON[route]}, is on {page.url}")
+            if title == "(no h1)":
+                logs.append("the page has no visible h1")
             for line in page.evaluate(STICKS_OUT):
                 logs.append("sticks out: " + line)
             state = "OK " if not logs and overflow <= 0 and not errs else "BAD"

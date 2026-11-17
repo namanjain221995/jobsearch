@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bell, CheckCheck, FolderInput, Inbox, SearchCheck, UserCheck, type LucideIcon } from "lucide-react";
+import { Bell, CheckCheck, Contact, FolderInput, Inbox, SearchCheck, UserCheck, UserRoundX, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { useMe } from "@/components/shell/me-context";
@@ -41,10 +41,53 @@ function present(notification: Notification, role: Role): Presented {
   const area = ROLE_AREA[role];
   const payload = notification.payload as Record<string, unknown>;
   switch (notification.type) {
-    case "jobs_assigned":
+    case "candidate_assigned": {
+      // A candidate was handed to this member: from now on they apply on the candidate's behalf.
+      const id = text(payload.candidate_id);
+      return {
+        icon: Contact,
+        text: `${text(payload.assigned_by, "Your Team Lead")} made you responsible for the candidate ${text(payload.candidate_name, "(name not given)")}.`,
+        href: id ? `${area}/candidates/${id}` : `${area}/candidates`,
+      };
+    }
+    case "candidate_jobs_assigned": {
+      const id = text(payload.candidate_id);
+      const jobs = plural(count(payload.count), "new job");
+      const candidate = text(payload.candidate_name, "one of your candidates");
       return {
         icon: Inbox,
-        text: `${text(payload.assigned_by, "Your Team Lead")} assigned you ${plural(count(payload.count), "job")}.`,
+        text:
+          text(payload.source) === "search"
+            ? `A search found ${jobs} for ${candidate}.`
+            : `${text(payload.assigned_by, "Your Team Lead")} assigned ${jobs} to ${candidate}.`,
+        href: id ? `${area}/candidates/${id}` : `${area}/candidates`,
+      };
+    }
+    case "candidates_unassigned": {
+      const reason = text(payload.reason);
+      const why =
+        reason === "member_deactivated"
+          ? " was deactivated"
+          : reason === "member_moved_to_another_team"
+            ? " was moved to another team"
+            : " no longer handles them";
+      const teamId = text(payload.team_id);
+      return {
+        icon: UserRoundX,
+        text: `${plural(count(payload.count), "candidate")} ${count(payload.count) === 1 ? "has" : "have"} no responsible member any more: ${text(payload.member_name, "their member")}${why}. Choose who takes over.`,
+        href:
+          role === "TEAM_LEAD"
+            ? "/tl/candidates?member=unassigned"
+            : role === "ADMIN"
+              ? `/admin/candidates?${teamId ? `team=${teamId}&` : ""}member=unassigned`
+              : null,
+      };
+    }
+    case "jobs_assigned":
+      // From before candidates existed: the old payload names no candidate.
+      return {
+        icon: Inbox,
+        text: `${plural(count(payload.count), "job")} assigned.`,
         href: role === "MEMBER" ? "/member/jobs" : `${area}/assignments`,
       };
     case "jobs_delegated":
@@ -75,7 +118,7 @@ function present(notification: Notification, role: Role): Presented {
       const status = text(payload.status, "finished");
       return {
         icon: SearchCheck,
-        text: `Search ${status}: ${plural(count(payload.matched), "job")} matched, ${count(payload.assigned).toLocaleString()} assigned, for ${plural(count(payload.members), "member")}.`,
+        text: `Search ${status}: ${plural(count(payload.matched), "job")} matched, ${count(payload.assigned).toLocaleString()} assigned${count(payload.candidates) > 0 ? `, for ${plural(count(payload.candidates), "candidate")}` : ""}.`,
         href: role !== "MEMBER" && id ? `${area}/searches/${id}` : null,
       };
     }
@@ -105,7 +148,7 @@ function NotificationList({ onNavigate }: { onNavigate: () => void }) {
         compact
         icon={Bell}
         title="No notifications yet"
-        description="New assignments, finished searches and accepted invitations show up here."
+        description="Candidates assigned to you, new jobs for them, finished searches and accepted invitations show up here."
       />
     );
   }
@@ -186,7 +229,7 @@ export function NotificationCenter() {
   const unread = useUnreadCount();
   const unreadCount = unread.data ?? 0;
 
-  // A new notification means something changed for this person (jobs assigned, a search finished):
+  // A new notification means something changed for this person (a candidate or jobs assigned, a search finished):
   // refresh the lists and dashboards right away instead of waiting for their next poll.
   const previous = useRef<number | null>(null);
   useEffect(() => {

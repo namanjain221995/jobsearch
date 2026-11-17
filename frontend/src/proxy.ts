@@ -89,6 +89,7 @@ export async function proxy(request: NextRequest) {
   const area = AREA_PREFIXES.find((prefix) => within(pathname, prefix));
   if (area && area !== ROLE_AREAS[session.role]) return redirect(request, session.home);
 
+
   return NextResponse.next();
 }
 

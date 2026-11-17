@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Ellipsis, MailPlus, Pencil, Plus, Power, PowerOff, UserCog, UserMinus, UsersRound } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -8,6 +9,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { z } from "@/lib/zod";
 
+import { AddCandidateDialog } from "@/components/candidates/candidate-dialog";
+import { CANDIDATE_LIST_DEFAULTS, CandidateTable } from "@/components/candidates/candidate-table";
 import { InvitationDialog, type InvitationPreset } from "@/components/people/invitation-dialog";
 import { CompletionMeter, MEMBER_LIST_DEFAULTS, MemberTable } from "@/components/people/member-table";
 import { UserStatusTag } from "@/components/people/user-actions";
@@ -106,7 +109,7 @@ function TeamForm({ team, onClose }: { team?: Team; onClose: () => void }) {
       <DialogHeader>
         <DialogTitle className="text-lg">{team ? "Edit Team" : "Create Team"}</DialogTitle>
         <DialogDescription>
-          {team ? "Change the name or the description. Members and history are not affected." : "A team groups members under one Team Lead."}
+          {team ? "Change the name or the description. Members, candidates and history are not affected." : "A team groups members and their candidates under one Team Lead."}
         </DialogDescription>
       </DialogHeader>
       {failure && <FormMessage>{errorMessage(mutation.error)}</FormMessage>}
@@ -139,7 +142,7 @@ function ChangeLeadDialog({ team, onClose }: { team: Team; onClose: () => void }
           <DialogTitle className="text-lg">{team.team_lead ? "Change the Team Lead" : "Assign a Team Lead"}</DialogTitle>
           <DialogDescription>
             {team.team_lead
-              ? `${team.team_lead.name} stops leading ${team.name} and keeps their account. The new Team Lead manages the team's members, queue and searches.`
+              ? `${team.team_lead.name} stops leading ${team.name} and keeps their account. The new Team Lead manages the team's members, candidates, queue and searches.`
               : `Choose who leads ${team.name}.`}
           </DialogDescription>
         </DialogHeader>
@@ -289,7 +292,7 @@ export function TeamActions({ team, variant = "menu" }: { team: Team; variant?: 
         open={action === "deactivate"}
         onOpenChange={(open) => !open && close()}
         title={`Deactivate ${team.name}?`}
-        description="No new members can be invited into it and no jobs can be sent to its queue. Members, assignments and history stay as they are, and you can reactivate the team at any time."
+        description="No new members can be invited into it, no candidates added and no jobs sent to its queue. Members, candidates, assignments and history stay as they are, and you can reactivate the team at any time."
         confirmLabel="Deactivate team"
         destructive
         pending={update.isPending}
@@ -299,7 +302,7 @@ export function TeamActions({ team, variant = "menu" }: { team: Team; variant?: 
         open={action === "activate"}
         onOpenChange={(open) => !open && close()}
         title={`Reactivate ${team.name}?`}
-        description="Members can be invited into it and jobs can be sent to its queue again."
+        description="Members can be invited into it, candidates added and jobs sent to its queue again."
         confirmLabel="Reactivate team"
         pending={update.isPending}
         onConfirm={() => patch({ is_active: true }, `${team.name} reactivated`)}
@@ -346,6 +349,7 @@ export function TeamsView() {
     },
     { id: "lead", header: "Team Lead", sortValue: (team) => team.team_lead?.name ?? "", cell: (team) => <LeadCell team={team} /> },
     { id: "members", header: "Members", align: "right", sortValue: (team) => team.member_count, cell: (team) => team.member_count.toLocaleString() },
+    { id: "candidates", header: "Candidates", align: "right", sortValue: (team) => team.candidate_count, cell: (team) => team.candidate_count.toLocaleString() },
     { id: "queue", header: "In queue", align: "right", sortValue: (team) => team.queue_pending, cell: (team) => team.queue_pending.toLocaleString() },
     { id: "assigned", header: "Assigned", align: "right", sortValue: (team) => team.stats.assigned, cell: (team) => team.stats.assigned.toLocaleString() },
     { id: "applied", header: "Applied", align: "right", sortValue: (team) => team.stats.applied, cell: (team) => team.stats.applied.toLocaleString() },
@@ -358,7 +362,7 @@ export function TeamsView() {
     <>
       <PageHeader
         title="Teams"
-        description="Each team has one Team Lead and any number of members. Create teams, give them a lead, and open one to see its people and pipeline."
+        description="Each team has one Team Lead, any number of members, and the candidates they find jobs for. Create teams, give them a lead, and open one to see its people and pipeline."
         actions={
           <>
             <Button variant="outline" onClick={() => setInviting({ role: "TEAM_LEAD" })}>
@@ -405,7 +409,7 @@ export function TeamsView() {
                   {!team.is_active && <Tag>Deactivated</Tag>}
                 </span>
                 <span className="text-2sm text-muted-foreground">
-                  {team.team_lead ? `Led by ${team.team_lead.name}` : "No Team Lead"}, {plural(team.member_count, "member")}
+                  {team.team_lead ? `Led by ${team.team_lead.name}` : "No Team Lead"}, {plural(team.member_count, "member")}, {plural(team.candidate_count, "candidate")}
                 </span>
               </div>
               <TeamActions team={team} />
@@ -427,6 +431,7 @@ export function TeamsView() {
 
 const TEAM_TABS = [
   { value: "overview", label: "Overview" },
+  { value: "candidates", label: "Candidates" },
   { value: "members", label: "Members" },
   { value: "assignments", label: "Assignments" },
   { value: "queue", label: "Queue" },
@@ -445,8 +450,38 @@ function TeamMembersTab({ team }: { team: Team }) {
   );
   return (
     <>
-      <MemberTable listState={listState} teamId={team.id} memberHref={(id) => `/admin/members/${id}`} actions={add} emptyAction={add} />
+      <MemberTable
+        listState={listState}
+        teamId={team.id}
+        memberHref={(id) => `/admin/members/${id}`}
+        candidatesHref={(user) => `/admin/candidates?team=${team.id}&member=${user.id}`}
+        actions={add}
+        emptyAction={add}
+      />
       <InvitationDialog open={inviting} onOpenChange={setInviting} preset={{ role: "MEMBER", teamId: team.id }} title={`Add Member to ${team.name}`} />
+    </>
+  );
+}
+
+function TeamCandidatesTab({ team }: { team: Team }) {
+  const router = useRouter();
+  const listState = useLocalListState(CANDIDATE_LIST_DEFAULTS);
+  const [adding, setAdding] = useState(false);
+  const add = (
+    <Button onClick={() => setAdding(true)} disabled={!team.is_active} title={team.is_active ? undefined : "This team is deactivated"}>
+      <Plus data-icon="inline-start" />
+      Add Candidate
+    </Button>
+  );
+  return (
+    <>
+      <CandidateTable listState={listState} teamId={team.id} actions={add} emptyAction={add} />
+      <AddCandidateDialog
+        open={adding}
+        onOpenChange={setAdding}
+        teamId={team.id}
+        onCreated={(candidate) => router.push(`/admin/candidates/${candidate.id}?tab=profile`)}
+      />
     </>
   );
 }
@@ -461,7 +496,7 @@ function TeamSearchesTab({ teamId }: { teamId: string }) {
   return <SearchHistoryTable listState={listState} teamId={teamId} />;
 }
 
-/** Admin: one team's lead, members, assignments, queue, searches and analytics. */
+/** Admin: one team's lead, candidates, members, assignments, queue, searches and analytics. */
 export function TeamDetailView({ teamId }: { teamId: string }) {
   const team = useTeam(teamId);
   const [state, setState] = useUrlState(TEAM_TAB_DEFAULTS);
@@ -504,6 +539,8 @@ export function TeamDetailView({ teamId }: { teamId: string }) {
             ) : (
               <span className="text-warning">No Team Lead. Jobs sent to this team wait in its queue.</span>
             )}{" "}
+            {plural(data.candidate_count, "active candidate")}
+            {data.unassigned_candidates > 0 ? ` (${data.unassigned_candidates} without a responsible member)` : ""},{" "}
             {plural(data.member_count, "active member")}, {plural(data.queue_pending, "job")} waiting in the queue.
             {data.description ? ` ${data.description}` : ""}
           </>
@@ -523,6 +560,9 @@ export function TeamDetailView({ teamId }: { teamId: string }) {
         </TabsList>
         <TabsContent value="overview">
           <TeamAnalyticsPanels teamId={data.id} variant="analytics" />
+        </TabsContent>
+        <TabsContent value="candidates">
+          <TeamCandidatesTab team={data} />
         </TabsContent>
         <TabsContent value="members">
           <TeamMembersTab team={data} />

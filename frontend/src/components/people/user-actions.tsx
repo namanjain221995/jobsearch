@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, errorMessage } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, plural } from "@/lib/format";
 import { isPersonName, PERSON_NAME_RULE } from "@/lib/forms";
 import { useCreateResetLink, useTeams, useUpdateUser } from "@/lib/queries";
 import type { ResetLink, User, UserStatus } from "@/lib/types";
@@ -236,7 +236,7 @@ function RenameDialog({ user, onClose }: { user: User; onClose: () => void }) {
 }
 
 /**
- * What a manager can do to an account: rename, deactivate or reactivate, create
+ * What a manager can do to an account (a Team Lead or a member; candidates have no account): rename, deactivate or reactivate, create
  * a password reset link, and (Admin, members only) move to another team.
  * The API decides what is actually allowed; this only offers what can work.
  */
@@ -347,7 +347,15 @@ export function UserActions({ user, variant = "menu" }: { user: User; variant?: 
         open={action === "deactivate"}
         onOpenChange={(open) => !open && close()}
         title={`Deactivate ${user.name}?`}
-        description="They are signed out everywhere and cannot sign in until you reactivate them. Their assignments and history stay as they are."
+        description={
+          user.role === "MEMBER"
+            ? `They are signed out everywhere and cannot sign in until you reactivate them. ${
+                user.candidate_count > 0
+                  ? `Their ${plural(user.candidate_count, "candidate")} ${user.candidate_count === 1 ? "becomes" : "become"} unassigned: the candidates keep their jobs and history, and wait for you to choose another member.`
+                  : "They are responsible for no candidates at the moment."
+              }`
+            : "They are signed out everywhere and cannot sign in until you reactivate them. Their team and its history stay as they are."
+        }
         confirmLabel="Deactivate account"
         destructive
         pending={update.isPending}
@@ -357,7 +365,11 @@ export function UserActions({ user, variant = "menu" }: { user: User; variant?: 
         open={action === "activate"}
         onOpenChange={(open) => !open && close()}
         title={`Reactivate ${user.name}?`}
-        description="They will be able to sign in again with their existing password."
+        description={
+          user.role === "MEMBER"
+            ? "They will be able to sign in again with their existing password. Candidates are not given back automatically: assign them again."
+            : "They will be able to sign in again with their existing password."
+        }
         confirmLabel="Reactivate account"
         pending={update.isPending}
         onConfirm={() => setActive(true)}

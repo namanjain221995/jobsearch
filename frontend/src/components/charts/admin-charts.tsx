@@ -145,44 +145,75 @@ export function SearchUsageChart({ data, ...rest }: BaseProps & { data: SearchUs
   );
 }
 
-function BandTooltip({ active, payload }: TooltipContentProps) {
+function BandTooltip({ active, payload, noun }: TooltipContentProps & { noun: string }) {
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload as NameValue | undefined;
   if (!point) return null;
   return (
     <ChartTooltipCard
       title={`Completion rate ${point.name}`}
-      rows={[{ key: "members", label: "Members", color: "var(--status-applied)", value: point.value.toLocaleString() }]}
+      rows={[{ key: "count", label: noun, color: "var(--status-applied)", value: point.value.toLocaleString() }]}
     />
   );
 }
 
-/** How many members sit in each completion-rate band. One series, so one colour and no legend. */
-export function MemberDistributionChart({ data, ...rest }: BaseProps & { data: NameValue[] | undefined }) {
+/** How many people sit in each completion-rate band. One series, so one colour and no legend. */
+function CompletionBands({
+  data,
+  noun,
+  description,
+  emptyDescription,
+  ...rest
+}: BaseProps & { data: NameValue[] | undefined; noun: "Members" | "Candidates"; description: string; emptyDescription: string }) {
   const points = data ?? [];
   const total = points.reduce((sum, point) => sum + point.value, 0);
+  const lower = noun.toLowerCase();
   return (
     <ChartPanel
-      title="Members by completion rate"
-      description="Members with at least one assignment, grouped by how much of it they have applied to."
+      title={`${noun} by completion rate`}
+      description={description}
       empty={total === 0}
       emptyIcon={Users}
-      emptyTitle="No members with assignments"
-      emptyDescription="Members are grouped by completion rate once they have jobs assigned."
-      table={{ columns: ["Completion rate", "Members"], rows: points.map((point) => [point.name, point.value]) }}
+      emptyTitle={`No ${lower} with assignments`}
+      emptyDescription={emptyDescription}
+      table={{ columns: ["Completion rate", noun], rows: points.map((point) => [point.name, point.value]) }}
       {...rest}
     >
-      <ChartCanvas height={220} label={`Members by completion rate band. Column chart, ${total} members in ${points.length} bands.`}>
+      <ChartCanvas height={220} label={`${noun} by completion rate band. Column chart, ${total} ${lower} in ${points.length} bands.`}>
         {(width) => (
           <BarChart width={width} height={220} data={points} margin={{ top: 6, right: 8, bottom: 0, left: 0 }} barCategoryGap="30%">
             <CartesianGrid vertical={false} stroke={GRID_STROKE} />
             <XAxis dataKey="name" axisLine={{ stroke: "var(--border-strong)" }} tickMargin={8} {...axis} />
             <YAxis allowDecimals={false} axisLine={false} width={30} {...axis} />
-            <Tooltip isAnimationActive={false} cursor={{ fill: "var(--muted)", opacity: 0.7 }} content={(props) => <BandTooltip {...props} />} />
-            <Bar dataKey="value" name="Members" fill="var(--status-applied)" maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+            <Tooltip isAnimationActive={false} cursor={{ fill: "var(--muted)", opacity: 0.7 }} content={(props) => <BandTooltip {...props} noun={noun} />} />
+            <Bar dataKey="value" name={noun} fill="var(--status-applied)" maxBarSize={24} radius={[4, 4, 0, 0]} isAnimationActive={false} />
           </BarChart>
         )}
       </ChartCanvas>
     </ChartPanel>
+  );
+}
+
+/** Responsible members per completion-rate band, over the jobs of the candidates each holds today. */
+export function MemberDistributionChart(props: BaseProps & { data: NameValue[] | undefined }) {
+  return (
+    <CompletionBands
+      noun="Members"
+      description="Responsible members whose candidates have at least one assignment, grouped by how much of it has been applied to."
+      emptyDescription="Members are grouped by completion rate once their candidates have jobs assigned."
+      {...props}
+    />
+  );
+}
+
+/** Candidates per completion-rate band. Candidates without a responsible member are included. */
+export function CandidateDistributionChart(props: BaseProps & { data: NameValue[] | undefined }) {
+  return (
+    <CompletionBands
+      noun="Candidates"
+      description="Candidates with at least one assignment, grouped by how much of it has been applied to."
+      emptyDescription="Candidates are grouped by completion rate once they have jobs assigned."
+      {...props}
+    />
   );
 }

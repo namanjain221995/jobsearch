@@ -22,7 +22,7 @@ from ..schemas import (CsvImportResult, JobAssignee, JobCreate, JobDetail, JobIm
                        JobSummary, JobUpdate)
 from ..security import utcnow
 from .audit import audit
-from .common import team_ref, teams_by_id, user_ref, users_by_id
+from .common import candidate_ref, candidates_with_members, team_ref, teams_by_id, user_ref, users_by_id
 
 _STATE_BY_NAME = {name: abbr for abbr, name in US_STATES.items()}
 _NOT_A_CITY = {"us", "usa", "united states", "united states of america", "remote", "hybrid", "on-site", "onsite", "u.s.", "u.s.a."}
@@ -338,7 +338,7 @@ _LINK = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"')\]]+")
 
 
 def without_links(text: str) -> str:
-    """The member's copy of a posting's text: web addresses written in it are taken out, so the only way to the
+    """The member's copy of a posting's text (a member works on the jobs of their candidates): web addresses written in it are taken out, so the only way to the
     posting is Open Job, which records that the link was opened."""
     return _LINK.sub("[link removed: use Open Job]", text or "")
 
@@ -368,15 +368,16 @@ async def manager_view(db: AsyncSession, principal: Principal, p: JobPosting) ->
     if principal.is_team_lead:
         where.append(JobAssignment.team_id == principal.user.team_id)
     assignments = list((await db.execute(select(JobAssignment).where(*where).order_by(JobAssignment.assigned_at.desc()).limit(200))).scalars())
-    users = await users_by_id(db, {a.member_id for a in assignments})
+    candidates, members = await candidates_with_members(db, {a.candidate_id for a in assignments})
     queue_where = [TeamJobQueue.job_id == p.id, TeamJobQueue.status == "pending"]
     if principal.is_team_lead:
         queue_where.append(TeamJobQueue.team_id == principal.user.team_id)
     queue_team_ids = set((await db.execute(select(TeamJobQueue.team_id).where(*queue_where))).scalars())
     teams = await teams_by_id(db, {a.team_id for a in assignments} | queue_team_ids)
-    assignees = [JobAssignee(assignment_id=a.id, member=user_ref(users[a.member_id]), team=team_ref(teams.get(a.team_id)),
-                             status=a.status, assigned_at=a.assigned_at, applied_at=a.applied_at)
-                 for a in assignments if a.member_id in users]
+    assignees = [JobAssignee(assignment_id=a.id, candidate=candidate_ref(candidates[a.candidate_id]),
+                             member=user_ref(members.get(candidates[a.candidate_id].assigned_member_id)),
+                             team=team_ref(teams.get(a.team_id)), status=a.status, assigned_at=a.assigned_at, applied_at=a.applied_at)
+                 for a in assignments if a.candidate_id in candidates]
     return JobManagerView(**job_summary(p), description=p.description or "", verification_note=p.verification_note,
                           sources=[str(s) for s in (p.sources or [])], canonical_url=p.canonical_url, apply_url=p.apply_url,
                           company_url=p.company_url, external_source=p.external_source, external_job_id=p.external_job_id,

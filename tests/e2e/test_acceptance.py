@@ -1,5 +1,9 @@
 """Acceptance scenarios 1 to 7 of the brief, driven through the real web app in a browser.
 
+Members are recruiters (accounts); candidates are the people who need a job (records, never accounts). A Team Lead
+creates candidates with their resume, assigns each to one member, runs searches for candidates; the responsible
+member works the candidate's jobs.
+
 Every step a person would take is taken in the page (sign in, dialogs, buttons). The API is only asked directly to
 read numbers the test compares the screen with, and to probe addresses a person would have to type by hand.
 
@@ -9,6 +13,7 @@ import os
 import re
 import tempfile
 import time
+from urllib.parse import urlparse
 
 import pytest
 
@@ -19,7 +24,7 @@ DEMO_PASSWORD = "Demo-Password-42!"
 NEW_PASSWORD = "Scenario-Pass-77!"
 STAMP = str(int(time.time()))[-6:]
 STATE: dict = {}                     # what one scenario leaves for the next
-RESUME = ("Jordan Example\nMachine Learning Engineer with 3 years of experience.\n"
+RESUME = ("Casey Example\nMachine Learning Engineer with 3 years of experience.\n"
           "Skills: Python, PyTorch, TensorFlow, scikit-learn, SQL, AWS, Docker, Kubernetes, MLOps, NLP.\n"
           "Built and deployed machine learning models, model serving and data pipelines. B.S. Computer Science.\n") * 3
 
@@ -45,8 +50,9 @@ class Session:
         self.page = self.context.new_page()
 
     def _note(self, kind: str, text: str) -> None:
-        if not any(part in text for part in self.allowed):
-            self.problems.append(f"{kind}: {text[:300]}")
+        line = f"{kind}: {text[:300]}"
+        if not any(part in line for part in self.allowed):
+            self.problems.append(line)
 
     def _watch(self, page) -> None:
         page.on("console", lambda m: self._note(f"console.{m.type}", m.text) if m.type == "error" else None)
@@ -191,54 +197,106 @@ def test_scenario_2_team_lead_creates_a_member_who_sees_only_their_own_dashboard
     mpage = member.login(email, NEW_PASSWORD, "/member/dashboard")
     status, me = member.api("/api/auth/me")
     assert status == 200 and me["role"] == "MEMBER" and me["team"]["name"] == STATE["team"]       # joined that Team Lead's team
-    for path in ("/admin/dashboard", "/tl/members", "/admin/teams"):                              # only their own area opens
+    for path in ("/admin/dashboard", "/tl/members", "/admin/teams", "/tl/candidates", "/admin/candidates"):   # only their own area opens
         mpage.goto(BASE + path)
         mpage.wait_for_url(re.compile(r"/member/dashboard$"), timeout=15000)
-    member.allowed += ["403", "/api/users", "/api/teams", "/api/analytics"]                       # the refusals below are the point
+    member.allowed += ["http 403: GET", "status of 403"]                       # the refusals below are the point
     assert member.api("/api/users")[0] == 403 and member.api("/api/teams")[0] == 403 and member.api("/api/analytics/admin")[0] == 403
     assert member.api(f"/api/teams/{STATE['team_id']}/members")[0] == 403
     status, own = member.api("/api/assignments")
     assert status == 200 and own["total"] == 0
+    # A member is a recruiter: no candidate is theirs until the Team Lead assigns one, and there is no profile or resume of their own.
+    status, mine = member.api("/api/candidates")
+    assert status == 200 and mine["total"] == 0
+    mpage.goto(BASE + "/member/candidates")
+    mpage.get_by_text("Your Team Lead has not assigned a candidate to you yet").first.wait_for(timeout=15000)
+    mpage.goto(BASE + "/member/profile")                                              # the old profile page only leads to the account settings
+    mpage.wait_for_url(re.compile(r"/member/settings$"), timeout=15000)
+    assert mpage.locator('input[type="file"]').count() == 0
     STATE.update(member_email=email, member_name=name, member_id=me["id"])
     member.close()
     lead.close()
 
 
-def test_scenario_3_team_lead_search_assigns_verified_jobs_and_shows_the_real_count(browser, problems):
-    need("member_email")
-    # "Resume is available": the member uploads one on their profile page.
-    member = Session(browser, problems)
-    mpage = member.login(STATE["member_email"], NEW_PASSWORD, "/member/dashboard")
-    mpage.goto(BASE + "/member/profile")
-    mpage.wait_for_load_state("networkidle")
-    path = os.path.join(tempfile.mkdtemp(prefix="jobfinder-acceptance-"), "resume.txt")
-    with open(path, "w") as handle:
-        handle.write(RESUME)
-    mpage.locator('input[type="file"]').first.set_input_files(path)
-    for _ in range(60):
-        if member.api(f"/api/users/{STATE['member_id']}")[1].get("has_resume"):
-            break
-        mpage.wait_for_timeout(250)
-    assert member.api(f"/api/users/{STATE['member_id']}")[1]["has_resume"] is True
-
-    lead = Session(browser, problems)
-    page = lead.login(STATE["lead_email"], NEW_PASSWORD, "/tl/dashboard")
+def start_search(session, candidate: str, titles: str, per_candidate: str, mode: str):
+    """Team Lead: Find Jobs for one candidate of the own team. Returns the progress window."""
+    page = session.page
     page.goto(BASE + "/tl/search")
     page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Members")
-    group.wait_for(timeout=15000)
-    assert "Maya Chen" not in group.inner_text() and "Priya Nair" not in group.inner_text()       # only this Team Lead's team is offered
-    group.get_by_role("checkbox", name=re.compile(re.escape(STATE["member_name"]))).check()
-    titles = page.get_by_label(re.compile("^Job titles"))
-    titles.fill("Machine Learning Engineer")
-    titles.press("Enter")
-    page.get_by_label("Years of experience").fill("3")
-    page.get_by_label("Results per member").fill("50")
-    page.get_by_role("radio", name=re.compile("Find & Assign Matching Jobs")).check()
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
+    group.get_by_role("checkbox", name=re.compile(re.escape(candidate))).check()
+    page.get_by_role("region", name="Selected candidates").get_by_text(candidate).first.wait_for(timeout=5000)
+    field = page.get_by_label(re.compile("^Job titles"))
+    field.fill(titles)
+    field.press("Enter")
+    page.get_by_label("Results per candidate").fill(per_candidate)
+    page.get_by_role("radio", name=re.compile(mode)).check()
     page.get_by_role("button", name="Start Search").click()
     window = page.get_by_role("dialog", name="AI Job Search Started")                # the progress popup appears at once
     window.wait_for(timeout=15000)
-    assert window.get_by_text(STATE["member_name"]).first.is_visible()
+    return window
+
+
+def test_scenario_3_team_lead_adds_a_candidate_with_resume_and_the_search_assigns_verified_jobs(browser, problems):
+    need("member_email")
+    lead = Session(browser, problems)
+    page = lead.login(STATE["lead_email"], NEW_PASSWORD, "/tl/dashboard")
+    candidate, contact = f"Casey Candidate {STAMP}", f"casey.{STAMP}@example.com"
+    # "Resume is available": the Team Lead creates the candidate, uploads the resume and chooses the responsible member in one dialog.
+    path = os.path.join(tempfile.mkdtemp(prefix="jobfinder-acceptance-"), "casey-resume.txt")
+    with open(path, "w") as handle:
+        handle.write(RESUME)
+    page.goto(BASE + "/tl/candidates")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("button", name="Add Candidate").first.click()
+    dialog = page.get_by_role("dialog", name="Add Candidate")
+    dialog.get_by_label("Full name").fill(candidate)
+    dialog.get_by_label(re.compile("^E-mail")).fill(contact)
+    dialog.get_by_label(re.compile("^Phone")).fill("+1 555 0199")
+    dialog.get_by_label(re.compile("^Notes")).fill("Available from next month.")
+    dialog.get_by_role("combobox", name=re.compile("Responsible member")).click()
+    options = page.get_by_role("option")
+    page.get_by_role("option", name=STATE["member_name"]).wait_for(timeout=15000)
+    assert sorted(options.all_inner_texts()) == sorted(["Nobody yet (unassigned)", STATE["member_name"]])   # only this team's members
+    page.get_by_role("option", name=STATE["member_name"]).click()
+    dialog.locator('input[type="file"]').set_input_files(path)
+    dialog.get_by_text("casey-resume.txt").wait_for(timeout=5000)
+    dialog.get_by_role("button", name="Add Candidate").click()
+    lead.toast(f"{candidate} added")
+    page.wait_for_url(re.compile(r"/tl/candidates/[0-9a-f-]{36}\?tab=profile$"), timeout=15000)   # the new candidate's own page
+    candidate_id = page.url.rsplit("/", 1)[1].split("?")[0]
+    page.get_by_role("heading", level=1, name=candidate).wait_for(timeout=15000)
+    status, record = lead.api(f"/api/candidates/{candidate_id}")
+    assert status == 200 and record["has_resume"] is True and record["resume_has_file"] is True
+    assert record["assigned_member"]["id"] == STATE["member_id"] and record["team"]["name"] == STATE["team"]
+    assert record["email"] == contact and record["is_active"] is True
+    status, resume = lead.api(f"/api/candidates/{candidate_id}/resume")
+    assert status == 200 and resume["filename"] == "casey-resume.txt" and "Machine Learning Engineer" in resume["text"]
+    # A candidate is a record, never an account: nobody can sign in with the candidate's address, and no user was created.
+    status, users = lead.api(f"/api/users?q={STAMP}&page_size=50")
+    assert contact not in [u["email"] for u in users["items"]] and candidate not in [u["name"] for u in users["items"]]
+
+    # The member finds the candidate under My Candidates without signing in again, with resume and contact details.
+    member = Session(browser, problems)
+    mpage = member.login(STATE["member_email"], NEW_PASSWORD, "/member/dashboard")
+    mpage.goto(BASE + "/member/candidates")
+    card = mpage.locator('[data-slot="candidate-card"]').filter(has_text=candidate)
+    card.wait_for(timeout=15000)
+    assert mpage.locator('[data-slot="candidate-card"]').count() == 1 and contact in card.inner_text()
+    status, mine = member.api("/api/candidates")
+    assert status == 200 and [c["id"] for c in mine["items"]] == [candidate_id]
+    assert member.api(f"/api/candidates/{candidate_id}/resume/download")[0] == 200   # the file to attach when applying
+
+    # The Team Lead searches for the candidate.
+    page.goto(BASE + "/tl/search")
+    page.wait_for_load_state("networkidle")
+    group = page.get_by_role("group", name="Candidates")
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
+    assert group.get_by_role("checkbox").count() == 1                                 # only this Team Lead's team is offered
+    assert "Jordan Rivera" not in group.inner_text() and "Aisha Rahman" not in group.inner_text()
+    window = start_search(lead, candidate, "Machine Learning Engineer", "50", "Find & Assign Matching Jobs")
+    assert window.get_by_text(candidate).first.is_visible()
     for label in ("Requested", "Discovered", "Verified", "Duplicates removed", "Matched", "Assigned"):
         assert window.locator(f'[data-slot="run-counter"][data-label="{label}"]').is_visible(), label
     window.locator('[data-slot="tag"][data-status="completed"]').first.wait_for(timeout=120000)
@@ -252,23 +310,32 @@ def test_scenario_3_team_lead_search_assigns_verified_jobs_and_shows_the_real_co
     status, run = lead.api("/api/searches?page_size=1")
     newest = run["items"][0]
     assert newest["status"] == "completed" and newest["assigned_count"] == assigned and newest["matched_count"] == matched
+    assert newest["candidate_count"] == 1
+    status, detail = lead.api(f"/api/searches/{newest['id']}")
+    assert [t["candidate"]["id"] for t in detail["targets"]] == [candidate_id]
+    assert detail["targets"][0]["resume_id"] == resume["id"]                         # the search ran with the uploaded resume
     lead.close()
 
-    # The member sees exactly those jobs, without signing in again.
+    # The jobs belong to the candidate; the responsible member sees exactly those, without signing in again.
     mpage.goto(BASE + "/member/jobs")
     mpage.locator('[data-slot="job-card"]').filter(visible=True).first.wait_for(timeout=15000)
+    assert candidate in mpage.locator('[data-slot="job-card"]').filter(visible=True).first.inner_text()      # each card names the candidate
     status, own = member.api("/api/assignments?page_size=200")
     assert own["total"] == assigned
+    assert all(item["candidate"]["id"] == candidate_id and item["member"]["id"] == STATE["member_id"] for item in own["items"])
     found = [item["job"]["title"] for item in own["items"]]
     assert any("Machine Learning Engineer" in title for title in found)
     assert not any("Account Executive" in title for title in found), found           # the unrelated posting in the demo data is not assigned
     assert all(item["match_score"] >= newest["min_match_score"] for item in own["items"])         # nothing below the threshold to fill the quota
     assert all(item["status"] == "ASSIGNED" and item["applied_at"] is None for item in own["items"])
-    STATE.update(assigned=assigned)
+    mpage.goto(BASE + f"/member/candidates/{candidate_id}")                          # the candidate's page lists the same jobs
+    mpage.locator('[data-slot="job-card"]').filter(visible=True).first.wait_for(timeout=15000)
+    assert member.kpi("Total Assigned") == assigned
+    STATE.update(assigned=assigned, candidate_id=candidate_id, candidate_name=candidate)
     member.close()
 
 
-def test_scenario_4_member_applies_and_every_dashboard_updates(browser, problems):
+def test_scenario_4_member_applies_for_the_candidate_and_every_dashboard_updates(browser, problems):
     need("assigned")
     lead, admin, member = Session(browser, problems), Session(browser, problems), Session(browser, problems)
     lead.login(STATE["lead_email"], NEW_PASSWORD, "/tl/dashboard")
@@ -276,16 +343,31 @@ def test_scenario_4_member_applies_and_every_dashboard_updates(browser, problems
     page = member.login(STATE["member_email"], NEW_PASSWORD, "/member/dashboard")
     before = {"member": member.kpi("Applied"), "lead": lead.kpi("Applied"), "admin": admin.kpi("Applied")}
     assert before["member"] == 0 and before["lead"] == 0
+    # The three dashboards agree before anything happens: the member's totals are the candidate's, and so are the team's.
+    assert member.kpi("Total Assigned") == lead.kpi("Total Assigned") == STATE["assigned"]
 
-    page.goto(BASE + "/member/jobs")
-    card = page.locator('[data-slot="job-card"]').filter(visible=True).first
+    page.goto(BASE + f"/member/candidates/{STATE['candidate_id']}")                   # My Candidates -> the candidate -> a job
+    page.locator('[data-slot="job-card"]').filter(visible=True).first.wait_for(timeout=15000)
+    # "Open Job" refuses a stored address that is not a public one (409), and some synthetic postings live on a host that
+    # does not exist. The member cannot see addresses, so the Team Lead's view of the job says which posting can be opened.
+    target = None
+    for item in member.api(f"/api/assignments?candidate_id={STATE['candidate_id']}&page_size=200")[1]["items"]:
+        address = lead.api(f"/api/jobs/{item['job']['id']}")[1].get("apply_url") or lead.api(f"/api/jobs/{item['job']['id']}")[1]["canonical_url"]
+        if urlparse(address).hostname == "job-boards.greenhouse.io":
+            target = item
+            break
+    assert target, "no assigned job with a public posting address in the demo data"
+    page.get_by_label("Search jobs").fill(target["job"]["company"])
+    card = page.locator('[data-slot="job-card"]').filter(visible=True).filter(has=page.get_by_role("link", name=target["job"]["title"], exact=True)).first
     card.wait_for(timeout=15000)
-    card.get_by_role("link").first.click()
-    page.wait_for_url(re.compile(r"/member/jobs/[0-9a-f-]{36}$"), timeout=15000)
-    assignment_id = page.url.rsplit("/", 1)[1]
+    card.get_by_role("link", name=target["job"]["title"], exact=True).click()
+    page.wait_for_url(re.compile(r"/member/jobs/[0-9a-f-]{36}(\?candidate=[0-9a-f-]{36})?$"), timeout=15000)
+    assignment_id = page.url.rsplit("/", 1)[1].split("?")[0]
+    assert assignment_id == target["id"]
     description = page.locator('[data-slot="job-description"]')
     description.wait_for(timeout=15000)
     assert len(description.inner_text()) > 80                                         # the complete available description
+    assert STATE["candidate_name"] in page.locator("main").inner_text()               # whose job this is
     html = page.content()
     assert "greenhouse.io" not in html and "lever.co" not in html                     # no raw posting address for the member
 
@@ -305,6 +387,7 @@ def test_scenario_4_member_applies_and_every_dashboard_updates(browser, problems
     assert page.get_by_role("button", name="Mark as Applied").is_visible()
     status, detail = member.api(f"/api/assignments/{assignment_id}")
     assert detail["applied_at"] is None and detail["link_opens"] == 1 and detail["status"] == "VIEWED"
+    assert detail["candidate"]["id"] == STATE["candidate_id"]
 
     page.get_by_role("button", name="Mark as Applied").click()                       # after applying on the employer's site
     dialog = page.get_by_role("dialog", name="Mark as Applied")
@@ -316,12 +399,31 @@ def test_scenario_4_member_applies_and_every_dashboard_updates(browser, problems
     assert member.dashboard_kpi("/member/dashboard", "Applied") == before["member"] + 1
     assert member.kpi("Not Applied") == STATE["assigned"] - 1
     assert lead.dashboard_kpi("/tl/dashboard", "Applied") == before["lead"] + 1       # the Team Lead's analytics follow
+    assert lead.kpi("Not Applied") == STATE["assigned"] - 1
     assert admin.dashboard_kpi("/admin/dashboard", "Applied") == before["admin"] + 1  # and the Admin's
+    # The candidate's own figures say the same to the member and to the Team Lead.
+    seen_by_member = member.api(f"/api/candidates/{STATE['candidate_id']}")[1]["stats"]
+    seen_by_lead = lead.api(f"/api/candidates/{STATE['candidate_id']}")[1]["stats"]
+    assert seen_by_member == seen_by_lead and seen_by_member["applied"] == 1 and seen_by_member["assigned"] == STATE["assigned"]
+
+    # The employer answers: the member records the next status, and the dashboards follow again.
+    page.goto(BASE + f"/member/jobs/{assignment_id}")
+    page.get_by_role("button", name="Change Status").click()
+    page.get_by_role("menuitem", name=re.compile("^Interviewing")).click()
+    dialog = page.get_by_role("dialog", name="Change status to Interviewing")
+    dialog.wait_for(timeout=5000)
+    dialog.get_by_role("button", name="Change to Interviewing").click()
+    page.locator('[data-slot="status-badge"][data-status="INTERVIEWING"]').filter(visible=True).first.wait_for(timeout=10000)
+    assert member.dashboard_kpi("/member/dashboard", "Interviews") == 1 and member.kpi("Applied") == before["member"] + 1
+    assert lead.dashboard_kpi("/tl/dashboard", "Interviews") == 1
+    status, detail = lead.api(f"/api/assignments/{assignment_id}")                    # the Team Lead sees who did it, for which candidate
+    assert detail["status"] == "INTERVIEWING" and detail["candidate"]["name"] == STATE["candidate_name"]
+    assert detail["member"]["id"] == STATE["member_id"]
     for session in (lead, admin, member):
         session.close()
 
 
-def test_scenario_5_admin_delegates_ten_jobs_and_team_lead_beta_distributes_them(browser, problems):
+def test_scenario_5_admin_delegates_ten_jobs_and_team_lead_beta_distributes_them_to_candidates(browser, problems):
     admin = Session(browser, problems)
     page = admin.login("admin@example.com", DEMO_PASSWORD, "/admin/dashboard")
     company = f"Delegation Co {STAMP}"
@@ -353,21 +455,28 @@ def test_scenario_5_admin_delegates_ten_jobs_and_team_lead_beta_distributes_them
     lead = Session(browser, problems)
     lpage = lead.login("lead.beta@example.com", DEMO_PASSWORD, "/tl/dashboard")
     status, people = lead.api("/api/users?role=MEMBER&page_size=50")
-    ids = {u["name"]: u["id"] for u in people["items"]}
-    before = {name: lead.api(f"/api/assignments?member_id={ids[name]}&page_size=1")[1]["total"] for name in ("Priya Nair", "Quinn Lopez")}
-    for name, share in (("Priya Nair", titles[:5]), ("Quinn Lopez", titles[5:])):      # five each
+    members = {u["name"]: u["id"] for u in people["items"]}
+    status, records = lead.api("/api/candidates?page_size=50")
+    candidates = {c["name"]: c for c in records["items"]}
+    # Aisha Rahman is Priya's candidate, Grace Liu is Quinn's.
+    plan = (("Aisha Rahman", "Priya Nair", titles[:5]), ("Grace Liu", "Quinn Lopez", titles[5:]))
+    assert all(candidates[c]["assigned_member"]["name"] == m for c, m, _ in plan)
+    before = {m: lead.api(f"/api/assignments?member_id={members[m]}&page_size=1")[1]["total"] for _, m, _ in plan}
+    for name, _, share in plan:                                                       # five each
         lpage.goto(BASE + "/tl/jobs")
         lpage.wait_for_load_state("networkidle")
         for title in share:
             box = lpage.get_by_role("checkbox", name=f"Select {title} at {company}")
             box.wait_for(timeout=15000)                                               # the delegated jobs wait in this team's queue
             box.check()
-        lpage.get_by_role("button", name=re.compile(r"Distribute to Members \(5\)")).click()
-        dialog = lpage.get_by_role("dialog", name="Assign to Members")
-        members = dialog.get_by_role("group", name="Members")
-        members.get_by_role("checkbox", name=re.compile(name)).wait_for(timeout=15000)
-        assert "Maya Chen" not in members.inner_text()                                # only this team's members can receive them
-        members.get_by_role("checkbox", name=re.compile(name)).check()
+        lpage.get_by_role("button", name=re.compile(r"Distribute to Candidates \(5\)")).click()
+        dialog = lpage.get_by_role("dialog", name="Assign to Candidates")
+        group = dialog.get_by_role("group", name="Candidates")
+        group.get_by_role("checkbox", name=re.compile(name)).wait_for(timeout=15000)
+        offered = group.inner_text()
+        assert "Jordan Rivera" not in offered and "Samuel Okafor" not in offered     # only this team's candidates can receive them
+        assert "Victor Hale" not in offered                                           # and no deactivated candidate
+        group.get_by_role("checkbox", name=re.compile(name)).check()
         dialog.get_by_role("button", name=re.compile("Review 5 Assignment")).click()
         lpage.get_by_role("button", name=re.compile("^Assign 5 Job")).click()
         lead.toast("Jobs assigned")
@@ -375,65 +484,146 @@ def test_scenario_5_admin_delegates_ten_jobs_and_team_lead_beta_distributes_them
     lpage.wait_for_load_state("networkidle")
     assert lpage.get_by_role("checkbox", name=re.compile(f"at {re.escape(company)}$")).count() == 0      # the queue is empty again
 
-    for name, email in (("Priya Nair", "priya@example.com"), ("Quinn Lopez", "quinn@example.com")):
+    for name, member_name, _ in plan:
         member = Session(browser, problems)
-        member.login(email, DEMO_PASSWORD, "/member/dashboard")
-        assert member.kpi("Total Assigned") == before[name] + 5                      # each member's dashboard shows their five
+        member.login(f"{member_name.split()[0].lower()}@example.com", DEMO_PASSWORD, "/member/dashboard")
+        assert member.kpi("Total Assigned") == before[member_name] + 5               # the responsible member's dashboard shows the five
         mine = member.api(f"/api/assignments?q={company.replace(' ', '%20')}&page_size=50")[1]
-        assert mine["total"] == 5 and all(item["job"]["company"] == company for item in mine["items"])
+        assert mine["total"] == 5 and all(item["job"]["company"] == company and item["candidate"]["name"] == name for item in mine["items"])
         member.close()
-    # The Admin can trace every one of them: who received which job, and that Team Beta's lead assigned it.
+    # The Admin can trace every one of them: which candidate received which job, who is responsible, and that Team Beta's lead assigned it.
     status, traced = admin.api(f"/api/assignments?company={company.replace(' ', '%20')}&page_size=50")
-    received = sorted((item["job"]["title"], item["member"]["name"], item["assigned_by"]["name"], item["team"]["name"]) for item in traced["items"])
+    received = sorted((item["job"]["title"], item["candidate"]["name"], item["member"]["name"], item["assigned_by"]["name"], item["team"]["name"])
+                      for item in traced["items"])
     assert traced["total"] == 10
-    assert received == sorted([(t, "Priya Nair", "Ben Beta", "Team Beta") for t in titles[:5]] + [(t, "Quinn Lopez", "Ben Beta", "Team Beta") for t in titles[5:]])
-    STATE.update(beta_member_id=ids["Priya Nair"], beta_team_id=traced["items"][0]["team"]["id"], beta_assignment_id=traced["items"][0]["id"])
+    assert received == sorted([(t, c, m, "Ben Beta", "Team Beta") for c, m, share in plan for t in share])
+    STATE.update(beta_member_id=members["Priya Nair"], beta_team_id=traced["items"][0]["team"]["id"], beta_assignment_id=traced["items"][0]["id"],
+                 beta_candidate_id=candidates["Aisha Rahman"]["id"])
     lead.close()
     admin.close()
 
 
-def test_scenario_6_a_team_lead_cannot_reach_another_team_by_changing_the_address(browser, problems):
+def move_candidate(session, candidate_id: str, candidate: str, to: str, button: str) -> None:
+    """Team Lead: on the candidate's page, hand the candidate to another member."""
+    page = session.page
+    page.goto(BASE + f"/tl/candidates/{candidate_id}")
+    page.get_by_role("heading", level=1, name=candidate).wait_for(timeout=15000)
+    page.get_by_role("button", name=button).click()
+    dialog = page.get_by_role("dialog", name=button)
+    dialog.get_by_role("combobox", name=re.compile("Responsible member")).click()
+    page.get_by_role("option", name=to).click()
+    dialog.get_by_role("button", name="Move Candidate").click()
+    session.toast(f"{to} is now responsible for {candidate}")
+    dialog.wait_for(state="hidden", timeout=10000)
+
+
+def test_scenario_6_nobody_reaches_another_team_or_another_members_candidate_by_changing_the_address(browser, problems):
     need("beta_member_id")
     lead = Session(browser, problems)
     page = lead.login("lead.alpha@example.com", DEMO_PASSWORD, "/tl/dashboard")
-    lead.allowed += ["403", "404", STATE["beta_member_id"], STATE["beta_team_id"], STATE["beta_assignment_id"]]      # refusals are expected here
-    member, team, assignment = STATE["beta_member_id"], STATE["beta_team_id"], STATE["beta_assignment_id"]
+    member, team, assignment, candidate = STATE["beta_member_id"], STATE["beta_team_id"], STATE["beta_assignment_id"], STATE["beta_candidate_id"]
+    lead.allowed += ["http 403: GET", "http 404: GET", "status of 403", "status of 404", member, team, assignment, candidate]               # refusals are expected here
     page.goto(BASE + f"/tl/members/{member}")                                         # Member B1's record, by typing the address
     page.wait_for_load_state("networkidle")
     text = page.locator("body").inner_text()
     assert "Priya" not in text and "priya@example.com" not in text                   # nothing of the other team is shown
-    assert re.search(r"do not have access|not found|cannot be shown|no access", text, re.I), text[:300]
+    assert re.search(r"do not have access|not found|cannot be shown|no access|access denied", text, re.I), text[:300]
+    page.goto(BASE + f"/tl/candidates/{candidate}")                                   # a candidate of Team Beta, by typing the address
+    page.get_by_text("This candidate is not available to you").wait_for(timeout=15000)
+    text = page.locator("body").inner_text()
+    assert "Aisha" not in text and "aisha.candidate@example.com" not in text
     refused = {path: lead.api(path)[0] for path in (
-        f"/api/users/{member}", f"/api/users/{member}/dashboard", f"/api/users/{member}/profile", f"/api/users/{member}/activity",
-        f"/api/members/{member}/resume", f"/api/teams/{team}", f"/api/teams/{team}/members", f"/api/teams/{team}/analytics",
+        f"/api/users/{member}", f"/api/users/{member}/dashboard", f"/api/users/{member}/activity",
+        f"/api/teams/{team}", f"/api/teams/{team}/members", f"/api/teams/{team}/analytics",
         f"/api/teams/{team}/queue", f"/api/analytics/member/{member}", f"/api/assignments/{assignment}")}
     assert set(refused.values()) == {403}, refused                                    # the backend refuses each one
+    # A candidate outside the caller's scope answers exactly like one that does not exist.
+    hidden = {path: lead.api(path)[0] for path in (
+        f"/api/candidates/{candidate}", f"/api/candidates/{candidate}/profile", f"/api/candidates/{candidate}/resume",
+        f"/api/candidates/{candidate}/resume/download", f"/api/candidates/{candidate}/analytics", f"/api/candidates/{candidate}/activity",
+        "/api/candidates/00000000-0000-4000-8000-000000000000")}
+    assert set(hidden.values()) == {404}, hidden
     status, filtered = lead.api(f"/api/assignments?member_id={member}&team_id={team}&page_size=50")
     assert status == 200 and filtered["total"] == 0                                   # a filter cannot widen the scope either
+    status, filtered = lead.api(f"/api/assignments?candidate_id={candidate}&page_size=50")
+    assert status == 200 and filtered["total"] == 0
     status, everyone = lead.api("/api/users?page_size=200")
     assert all(u["team"]["name"] == "Team Alpha" for u in everyone["items"])
-    lead.close()
+    status, records = lead.api(f"/api/candidates?team_id={team}&page_size=200")
+    assert status == 200 and all(c["team"]["name"] == "Team Alpha" for c in records["items"])
+    status, records = lead.api("/api/candidates?page_size=200")
+    assert records["total"] == 5 and all(c["team"]["name"] == "Team Alpha" for c in records["items"])
+    alpha = {c["name"]: c for c in records["items"]}
+    jordan, samuel = alpha["Jordan Rivera"], alpha["Samuel Okafor"]
+
+    # Inside one team: a member sees the candidates assigned to them and nobody else's.
+    maya, omar = Session(browser, problems), Session(browser, problems)
+    mpage = maya.login("maya@example.com", DEMO_PASSWORD, "/member/dashboard")
+    opage = omar.login("omar@example.com", DEMO_PASSWORD, "/member/dashboard")
+    for session in (maya, omar):
+        session.allowed += ["http 403: GET", "http 404: GET", "status of 403", "status of 404", jordan["id"], samuel["id"]]
+    status, mine = maya.api("/api/candidates?page_size=50")
+    assert sorted(c["name"] for c in mine["items"]) == ["Elena Petrova", "Jordan Rivera"]
+    status, jobs = maya.api(f"/api/assignments?candidate_id={jordan['id']}&page_size=1")
+    assert jobs["total"] > 0
+    jordan_job = jobs["items"][0]["id"]
+    status, foreign = lead.api(f"/api/assignments?candidate_id={samuel['id']}&page_size=1")
+    samuel_job = foreign["items"][0]["id"]
+    mpage.goto(BASE + f"/member/candidates/{samuel['id']}")                           # Noah's candidate, by typing the address
+    mpage.get_by_text("This candidate is not assigned to you").wait_for(timeout=15000)
+    text = mpage.locator("body").inner_text()
+    assert "Samuel" not in text and "samuel.candidate@example.com" not in text
+    hidden = {path: maya.api(path)[0] for path in (
+        f"/api/candidates/{samuel['id']}", f"/api/candidates/{samuel['id']}/profile", f"/api/candidates/{samuel['id']}/resume",
+        f"/api/candidates/{samuel['id']}/resume/download", f"/api/candidates/{samuel['id']}/analytics", f"/api/candidates/{samuel['id']}/activity",
+        f"/api/candidates/{candidate}")}
+    assert set(hidden.values()) == {404}, hidden
+    assert maya.api(f"/api/assignments/{samuel_job}")[0] == 403
+    assert maya.api(f"/api/assignments?candidate_id={samuel['id']}&page_size=50")[1]["total"] == 0
+    assert omar.api("/api/candidates")[1]["total"] == 0 and omar.api("/api/assignments")[1]["total"] == 0
+    assert omar.api(f"/api/candidates/{jordan['id']}")[0] == 404 and omar.api(f"/api/assignments/{jordan_job}")[0] == 403
+
+    # The Team Lead hands Jordan to Omar: Maya loses the candidate with all jobs at once, Omar gains them. No one signs in again.
+    total = jobs["total"]
+    move_candidate(lead, jordan["id"], "Jordan Rivera", "Omar Haddad", "Move to Another Member")
+    assert maya.api(f"/api/candidates/{jordan['id']}")[0] == 404
+    assert maya.api(f"/api/candidates/{jordan['id']}/resume/download")[0] == 404
+    assert maya.api(f"/api/assignments/{jordan_job}")[0] == 403
+    assert maya.api(f"/api/assignments?candidate_id={jordan['id']}&page_size=1")[1]["total"] == 0
+    assert [c["name"] for c in maya.api("/api/candidates")[1]["items"]] == ["Elena Petrova"]
+    mpage.goto(BASE + f"/member/candidates/{jordan['id']}")
+    mpage.get_by_text("This candidate is not assigned to you").wait_for(timeout=15000)
+    assert "Jordan" not in mpage.locator("main").inner_text()
+    mpage.goto(BASE + "/member/candidates")
+    mpage.locator('[data-slot="candidate-card"]').first.wait_for(timeout=15000)
+    assert mpage.locator('[data-slot="candidate-card"]').count() == 1 and "Jordan" not in mpage.locator("main").inner_text()
+    mpage.goto(BASE + f"/member/jobs/{jordan_job}")
+    mpage.wait_for_load_state("networkidle")
+    assert mpage.locator('[data-slot="job-description"]').count() == 0               # the job page shows nothing of it any more
+    assert omar.api(f"/api/candidates/{jordan['id']}")[0] == 200 and omar.api(f"/api/assignments/{jordan_job}")[0] == 200
+    assert omar.api(f"/api/assignments?candidate_id={jordan['id']}&page_size=1")[1]["total"] == total   # all jobs and history went along
+    opage.goto(BASE + "/member/candidates")
+    opage.locator('[data-slot="candidate-card"]').filter(has_text="Jordan Rivera").wait_for(timeout=15000)
+    assert omar.dashboard_kpi("/member/dashboard", "Total Assigned") == jordan["stats"]["assigned"]
+    # And back again, so the seeded picture is restored: Maya regains everything, Omar holds nothing.
+    move_candidate(lead, jordan["id"], "Jordan Rivera", "Maya Chen", "Move to Another Member")
+    assert omar.api(f"/api/candidates/{jordan['id']}")[0] == 404 and omar.api(f"/api/assignments/{jordan_job}")[0] == 403
+    assert omar.api("/api/assignments")[1]["total"] == 0
+    assert maya.api(f"/api/candidates/{jordan['id']}")[0] == 200
+    assert maya.api(f"/api/assignments?candidate_id={jordan['id']}&page_size=1")[1]["total"] == total
+    for session in (maya, omar, lead):
+        session.close()
 
 
-def test_scenario_7_a_search_continues_when_the_popup_is_closed_and_the_person_moves_on(browser, problems):
+def test_scenario_7_a_review_search_continues_when_the_popup_is_closed_and_assigns_only_what_is_chosen(browser, problems):
     lead = Session(browser, problems)
     page = lead.login("lead.alpha@example.com", DEMO_PASSWORD, "/tl/dashboard")
-    status, people = lead.api("/api/users?role=MEMBER&page_size=50")
-    noah = next(u for u in people["items"] if u["email"] == "noah@example.com")
-    before = lead.api(f"/api/assignments?member_id={noah['id']}&page_size=1")[1]["total"]
+    status, records = lead.api("/api/candidates?page_size=50")
+    samuel = next(c for c in records["items"] if c["name"] == "Samuel Okafor")       # Noah Patel's candidate
+    count = lambda: lead.api(f"/api/assignments?candidate_id={samuel['id']}&page_size=1")[1]["total"]
+    before = count()
     known = {r["id"] for r in lead.api("/api/searches?page_size=50")[1]["items"]}
-    page.goto(BASE + "/tl/search")
-    page.wait_for_load_state("networkidle")
-    group = page.get_by_role("group", name="Members")
-    group.wait_for(timeout=15000)
-    group.get_by_role("checkbox", name=re.compile("Noah Patel")).check()
-    titles = page.get_by_label(re.compile("^Job titles"))
-    titles.fill("LLM Engineer")
-    titles.press("Enter")
-    page.get_by_label("Results per member").fill("4")
-    page.get_by_role("button", name="Start Search").click()
-    window = page.get_by_role("dialog", name="AI Job Search Started")
-    window.wait_for(timeout=15000)
+    window = start_search(lead, "Samuel Okafor", "LLM Engineer", "4", "Search first, review, then assign")
     window.get_by_role("button", name="Minimize", exact=True).last.click()            # the Team Lead puts the popup away at once ...
     page.locator('[data-slot="search-indicator"]').wait_for(timeout=5000)
     page.goto(BASE + "/tl/dashboard")                                                 # ... and goes to the dashboard
@@ -451,12 +641,29 @@ def test_scenario_7_a_search_continues_when_the_popup_is_closed_and_the_person_m
             break
         page.wait_for_timeout(500)
     assert run["status"] == "completed" and run["matched_count"] > 0
+    assert run["mode"] == "review" and run["assigned_count"] == 0 and count() == before          # review mode: nothing is assigned by itself
     page.goto(BASE + f"/tl/searches/{run_id}")
     page.get_by_role("heading", name="Results", exact=True).wait_for(timeout=20000)
-    rows = page.get_by_role("checkbox", name=re.compile("^Select .* for Noah Patel"))
+    rows = page.get_by_role("checkbox", name=re.compile("^Select .* for Samuel Okafor"))
     rows.first.wait_for(timeout=15000)
     status, results = lead.api(f"/api/searches/{run_id}/results?page_size=50")
     assert results["total"] == run["matched_count"] and rows.count() == results["total"]          # the results were kept
-    after = lead.api(f"/api/assignments?member_id={noah['id']}&page_size=1")[1]["total"]
-    assert after == before + run["assigned_count"]                                    # and so were the assignments
+    assert all(r["candidate"]["id"] == samuel["id"] for r in results["items"])
+    free = [r for r in results["items"] if not r["assignment_id"]]
+    assert free, "every result of the review search is already one of Samuel's jobs"
+    chosen = free[:2]
+    for r in chosen:                                                                  # the Team Lead assigns the ones they choose
+        page.get_by_role("checkbox", name=f"Select {r['job']['title']} at {r['job']['company']} for Samuel Okafor").check()
+    page.get_by_role("button", name=f"Assign Selected ({len(chosen)})").click()
+    confirm = page.get_by_role("alertdialog").or_(page.get_by_role("dialog")).filter(has_text="Samuel Okafor").last
+    confirm.get_by_role("button", name=re.compile(rf"^Assign {len(chosen)} Jobs?$")).click()
+    lead.toast("Jobs assigned")
+    assert count() == before + len(chosen)                                            # exactly those, and nothing else
+    # Noah Patel, the responsible member, has them in his list.
+    noah = Session(browser, problems)
+    noah.login("noah@example.com", DEMO_PASSWORD, "/member/dashboard")
+    mine = noah.api(f"/api/assignments?candidate_id={samuel['id']}&page_size=200")[1]
+    assert mine["total"] == before + len(chosen)
+    assert {r["job"]["id"] for r in chosen} <= {item["job"]["id"] for item in mine["items"]}
+    noah.close()
     lead.close()

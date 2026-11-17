@@ -114,7 +114,7 @@ function ProgressBody({ run, skipped }: { run: SearchRun; skipped: SearchSkipped
           <RunAttempts run={run} />
         </div>
         <p className="text-2sm text-muted-foreground">
-          {MODE_LABELS[run.mode]}. Up to {run.target_count} jobs per member, minimum match score {run.min_match_score}.
+          {MODE_LABELS[run.mode]}. Up to {run.target_count} jobs per candidate, minimum match score {run.min_match_score}.
         </p>
       </div>
 
@@ -125,7 +125,7 @@ function ProgressBody({ run, skipped }: { run: SearchRun; skipped: SearchSkipped
 
       <section className="flex flex-col gap-2">
         <h3 className="font-label text-sm">
-          Selected members <span className="font-normal text-muted-foreground tabular-nums">({run.targets.length})</span>
+          Selected candidates <span className="font-normal text-muted-foreground tabular-nums">({run.targets.length})</span>
         </h3>
         <RunTargets targets={run.targets} />
       </section>

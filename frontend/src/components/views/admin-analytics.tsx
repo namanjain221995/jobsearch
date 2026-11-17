@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Search, UserCog, Users, UsersRound, type LucideIcon } from "lucide-react";
+import { Contact, Search, UserCog, Users, UsersRound, type LucideIcon } from "lucide-react";
 
-import { MemberDistributionChart, SearchUsageChart } from "@/components/charts/admin-charts";
+import { CandidateDistributionChart, MemberDistributionChart, SearchUsageChart } from "@/components/charts/admin-charts";
 import { PendingVsAppliedChart, StatusDistributionChart } from "@/components/charts/distribution";
 import { PipelineFunnel } from "@/components/charts/pipeline-funnel";
 import { ApplicationsOverTimeChart, WeeklyActivityChart } from "@/components/charts/time-series";
@@ -17,12 +17,12 @@ import { ErrorState } from "@/components/shared/states";
 import { AssignmentKpis, MetricDefinitions } from "@/components/views/dashboard-kit";
 import { useToday } from "@/hooks/use-now";
 import { resolveRange } from "@/lib/date-range";
-import { useAdminAnalytics, useTeams, useUsers } from "@/lib/queries";
+import { useAdminAnalytics, useCandidates, useTeams, useUsers } from "@/lib/queries";
 import { isAssignmentStatus, STATUS_META, STATUS_ORDER } from "@/lib/status";
 import type { AdminAnalyticsParams, NameValue } from "@/lib/types";
 import { useUrlState } from "@/lib/url-state";
 
-const DEFAULTS = { range: "all", from: "", to: "", team: "", member: "", status: "", company: "", role: "" };
+const DEFAULTS = { range: "all", from: "", to: "", team: "", member: "", candidate: "", status: "", company: "", role: "" };
 
 const number = (value: unknown): number | undefined => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
 
@@ -47,7 +47,7 @@ function OrgTile({ icon: Icon, value, label, href }: { icon: LucideIcon; value: 
  *
  * Job postings and assignments are different things and are shown apart: a
  * posting is one vacancy, counted once; an assignment is that posting given to
- * one member, so one posting can be many assignments.
+ * one candidate, so one posting can be many assignments.
  */
 export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analytics" }) {
   const today = useToday();
@@ -57,6 +57,7 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
     ...range,
     team_id: state.team || undefined,
     member_id: state.member || undefined,
+    candidate_id: state.candidate || undefined,
     status: isAssignmentStatus(state.status) ? state.status : undefined,
     company: state.company || undefined,
     role: state.role || undefined,
@@ -64,6 +65,11 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
   const analytics = useAdminAnalytics(params, ready);
   const teams = useTeams(true);
   const members = useUsers({ role: "MEMBER", team_id: state.team || undefined, sort: "name", page: 1, page_size: 200 }, { refetchInterval: false });
+  // The first 200 by name, narrowed by the team and member chosen beside it.
+  const candidates = useCandidates(
+    { team_id: state.team || undefined, assigned_member_id: state.member || undefined, sort: "name", page: 1, page_size: 200 },
+    { live: false },
+  );
 
   const data = analytics.data;
   const loading = analytics.isPending;
@@ -95,15 +101,22 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
           label="Team"
           allLabel="All teams"
           value={state.team}
-          onChange={(team) => setState({ team, member: "" })}
+          onChange={(team) => setState({ team, member: "", candidate: "" })}
           options={(teams.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
         />
         <FilterSelect
-          label="Member"
-          allLabel="All members"
+          label="Responsible member"
+          allLabel="Any responsible member"
           value={state.member}
-          onChange={(member) => setState({ member })}
+          onChange={(member) => setState({ member, candidate: "" })}
           options={(members.data?.items ?? []).map((user) => ({ value: user.id, label: user.name }))}
+        />
+        <FilterSelect
+          label="Candidate"
+          allLabel="All candidates"
+          value={state.candidate}
+          onChange={(candidate) => setState({ candidate })}
+          options={(candidates.data?.items ?? []).map((candidate) => ({ value: candidate.id, label: candidate.name }))}
         />
         <FilterSelect
           label="Status"
@@ -123,7 +136,7 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
       ) : (
         <div className="flex flex-col gap-7">
           {variant === "dashboard" && (
-            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <li>
                 <OrgTile icon={UsersRound} value={number(totals.teams)} label={totals.teams === 1 ? "team" : "teams"} href="/admin/teams" />
               </li>
@@ -132,6 +145,20 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
               </li>
               <li>
                 <OrgTile icon={Users} value={number(totals.members)} label={totals.members === 1 ? "member" : "members"} href="/admin/members" />
+              </li>
+              <li>
+                <OrgTile
+                  icon={Contact}
+                  value={number(totals.candidates)}
+                  label={
+                    number(totals.unassigned_candidates)
+                      ? `${totals.candidates === 1 ? "candidate" : "candidates"}, ${number(totals.unassigned_candidates)} unassigned`
+                      : totals.candidates === 1
+                        ? "candidate"
+                        : "candidates"
+                  }
+                  href="/admin/candidates"
+                />
               </li>
               <li>
                 <OrgTile
@@ -146,7 +173,7 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
 
           <Section
             title="Job postings"
-            description="Unique postings. Each vacancy is counted once, however many members it was given to. These three figures do not change with the filters above."
+            description="Unique postings. Each vacancy is counted once, however many candidates it was given to. These three figures do not change with the filters above."
           >
             <KpiStrip label="Job postings" className="md:grid-cols-3 xl:grid-cols-3">
               <KPIStatCard
@@ -173,7 +200,7 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
 
           <Section
             title="Assignments"
-            description="One assignment is one posting given to one member. A posting assigned to three members counts three times here."
+            description="One assignment is one posting given to one candidate. A posting assigned to three candidates counts three times here."
           >
             <div className="flex flex-col gap-5">
               <AssignmentKpis label="Assignment figures for the organisation" stats={data?.stats} loading={loading} />
@@ -193,8 +220,9 @@ export function AdminAnalyticsView({ variant }: { variant: "dashboard" | "analyt
                     <StatusDistributionChart data={data?.status_distribution} {...chart} />
                     <WeeklyActivityChart data={data?.weekly_activity} {...chart} />
                   </div>
-                  <div className="grid gap-5 lg:grid-cols-3">
-                    <SearchUsageChart data={data?.search_usage} className="lg:col-span-2" {...chart} />
+                  <SearchUsageChart data={data?.search_usage} {...chart} />
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    <CandidateDistributionChart data={data?.candidate_distribution} {...chart} />
                     <MemberDistributionChart data={data?.member_distribution} {...chart} />
                   </div>
                 </>

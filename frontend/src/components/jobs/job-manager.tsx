@@ -24,7 +24,7 @@ function Links({ job }: { job: JobManagerView }) {
     { label: "Company site", url: job.company_url },
   ].filter((entry) => /^https?:\/\//i.test(entry.url ?? ""));
   const unique = entries.filter((entry, index) => entries.findIndex((other) => other.url === entry.url) === index);
-  if (unique.length === 0) return <p className="text-sm text-muted-foreground">This job has no stored link, so members cannot open it.</p>;
+  if (unique.length === 0) return <p className="text-sm text-muted-foreground">This job has no stored link, so nobody can open it from the portal.</p>;
   return (
     <ul className="flex flex-col gap-2">
       {unique.map((entry) => (
@@ -83,16 +83,17 @@ export function JobManagerInfo({ job, onOpenAssignment }: { job: JobManagerView;
           Assigned to <span className="font-normal text-muted-foreground tabular-nums">({job.assignment_count})</span>
         </h4>
         {job.assignees.length === 0 ? (
-          <EmptyState compact icon={Users} title="Nobody has this job yet" description="Assign it to members, or send it to a team's queue." />
+          <EmptyState compact icon={Users} title="Nobody has this job yet" description="Assign it to candidates, or send it to a team's queue." />
         ) : (
           <ul className="flex flex-col divide-y">
             {job.assignees.map((assignee) => (
               <li key={assignee.assignment_id} className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
                 <span className="flex min-w-0 flex-col">
-                  <Link href={`${area}/members/${assignee.member.id}`} className="w-fit rounded-sm text-sm font-medium underline-offset-4 hover:underline">
-                    {assignee.member.name}
+                  <Link href={`${area}/candidates/${assignee.candidate.id}`} className="w-fit rounded-sm text-sm font-medium underline-offset-4 hover:underline">
+                    {assignee.candidate.name}
                   </Link>
                   <span className="text-xs text-muted-foreground">
+                    {assignee.member ? `Handled by ${assignee.member.name}, ` : "No responsible member, "}
                     {assignee.team ? `${assignee.team.name}, ` : ""}assigned {formatDate(assignee.assigned_at)}
                     {assignee.applied_at ? `, applied ${formatDate(assignee.applied_at)}` : ""}
                   </span>
@@ -102,7 +103,7 @@ export function JobManagerInfo({ job, onOpenAssignment }: { job: JobManagerView;
                     type="button"
                     onClick={() => onOpenAssignment(assignee.assignment_id)}
                     className="rounded-[5px]"
-                    aria-label={`Open ${assignee.member.name}'s assignment`}
+                    aria-label={`Open ${assignee.candidate.name}'s assignment`}
                   >
                     <ApplicationStatusBadge status={assignee.status} />
                   </button>
@@ -120,7 +121,7 @@ export function JobManagerInfo({ job, onOpenAssignment }: { job: JobManagerView;
 
 /**
  * A posting in a side drawer, for managers looking through a list of jobs or
- * search results. When a match is passed (a search result for one member) it
+ * search results. When a match is passed (a search result for one candidate) it
  * gets its own tab.
  */
 export function JobDrawer({
@@ -131,7 +132,7 @@ export function JobDrawer({
   /** The drawer is open while an id is set. */
   jobId: string | null;
   onOpenChange: (open: boolean) => void;
-  match?: { explanation: MatchExplanation; score: number; memberName: string };
+  match?: { explanation: MatchExplanation; score: number; candidateName: string };
 }) {
   const job = useJob(jobId ?? undefined);
   const data = job.data;
@@ -166,7 +167,7 @@ export function JobDrawer({
           ) : match ? (
             <Tabs defaultValue="match" className="gap-4">
               <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b">
-                <TabsTrigger value="match" className="flex-none">Match for {match.memberName}</TabsTrigger>
+                <TabsTrigger value="match" className="flex-none">Match for {match.candidateName}</TabsTrigger>
                 <TabsTrigger value="job" className="flex-none">Job</TabsTrigger>
                 <TabsTrigger value="manage" className="flex-none">Assignments</TabsTrigger>
               </TabsList>

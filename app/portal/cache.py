@@ -25,7 +25,7 @@ T = TypeVar("T", bound=BaseModel)
 # Tables whose rows show up in dashboard numbers, names or activity lists.
 TRACKED_TABLES = frozenset({
     "job_assignments", "application_events", "job_postings", "users", "teams", "team_lead_assignments",
-    "member_profiles", "resumes", "search_runs", "search_targets", "search_results", "team_job_queue",
+    "candidates", "candidate_profiles", "resumes", "search_runs", "search_targets", "search_results", "team_job_queue",
 })
 
 
