@@ -1,0 +1,9499 @@
+{
+ "components": {
+  "schemas": {
+   "ActivityItem": {
+    "properties": {
+     "actor": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "assignment_id": {
+      "format": "uuid",
+      "title": "Assignment Id",
+      "type": "string"
+     },
+     "company": {
+      "title": "Company",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "event_type": {
+      "title": "Event Type",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "job_title": {
+      "title": "Job Title",
+      "type": "string"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "new_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "New Status"
+     },
+     "old_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Old Status"
+     }
+    },
+    "required": [
+     "id",
+     "event_type",
+     "created_at",
+     "assignment_id",
+     "job_title",
+     "company",
+     "member"
+    ],
+    "title": "ActivityItem",
+    "type": "object"
+   },
+   "AdminAnalytics": {
+    "properties": {
+     "applications_over_time": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Applications Over Time",
+      "type": "array"
+     },
+     "funnel": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Funnel",
+      "type": "array"
+     },
+     "member_distribution": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Member Distribution",
+      "type": "array"
+     },
+     "range": {
+      "additionalProperties": true,
+      "title": "Range",
+      "type": "object"
+     },
+     "search_usage": {
+      "items": {
+       "$ref": "#/components/schemas/SearchUsagePoint"
+      },
+      "title": "Search Usage",
+      "type": "array"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats"
+     },
+     "status_distribution": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Status Distribution",
+      "type": "array"
+     },
+     "teams": {
+      "items": {
+       "$ref": "#/components/schemas/TeamRow"
+      },
+      "title": "Teams",
+      "type": "array"
+     },
+     "totals": {
+      "additionalProperties": true,
+      "title": "Totals",
+      "type": "object"
+     },
+     "weekly_activity": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Weekly Activity",
+      "type": "array"
+     }
+    },
+    "required": [
+     "range",
+     "totals",
+     "stats",
+     "funnel",
+     "status_distribution",
+     "applications_over_time",
+     "weekly_activity",
+     "teams",
+     "search_usage",
+     "member_distribution"
+    ],
+    "title": "AdminAnalytics",
+    "type": "object"
+   },
+   "AssignCreate": {
+    "properties": {
+     "job_id": {
+      "format": "uuid",
+      "title": "Job Id",
+      "type": "string"
+     },
+     "member_id": {
+      "format": "uuid",
+      "title": "Member Id",
+      "type": "string"
+     },
+     "search_run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Search Run Id"
+     }
+    },
+    "required": [
+     "job_id",
+     "member_id"
+    ],
+    "title": "AssignCreate",
+    "type": "object"
+   },
+   "AssignItem": {
+    "properties": {
+     "job_id": {
+      "format": "uuid",
+      "title": "Job Id",
+      "type": "string"
+     },
+     "member_id": {
+      "format": "uuid",
+      "title": "Member Id",
+      "type": "string"
+     },
+     "search_run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Search Run Id"
+     }
+    },
+    "required": [
+     "job_id",
+     "member_id"
+    ],
+    "title": "AssignItem",
+    "type": "object"
+   },
+   "AssignmentDetail": {
+    "properties": {
+     "allowed_statuses": {
+      "default": [],
+      "items": {
+       "enum": [
+        "ASSIGNED",
+        "VIEWED",
+        "APPLYING",
+        "APPLIED",
+        "INTERVIEWING",
+        "OFFER",
+        "REJECTED",
+        "WITHDRAWN",
+        "SKIPPED"
+       ],
+       "type": "string"
+      },
+      "title": "Allowed Statuses",
+      "type": "array"
+     },
+     "application_reference": {
+      "default": "",
+      "title": "Application Reference",
+      "type": "string"
+     },
+     "applied_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Applied At"
+     },
+     "assigned_at": {
+      "format": "date-time",
+      "title": "Assigned At",
+      "type": "string"
+     },
+     "assigned_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "closed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Closed At"
+     },
+     "events": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/EventOut"
+      },
+      "title": "Events",
+      "type": "array"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "interviewed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Interviewed At"
+     },
+     "is_active": {
+      "default": true,
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "job": {
+      "$ref": "#/components/schemas/JobDetail"
+     },
+     "job_urls": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Job Urls"
+     },
+     "last_link_open_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Link Open At"
+     },
+     "link_opens": {
+      "default": 0,
+      "title": "Link Opens",
+      "type": "integer"
+     },
+     "match": {
+      "$ref": "#/components/schemas/MatchExplanation",
+      "default": {
+       "authorization_status": "Unknown",
+       "eligibility_note": "Not specified",
+       "experience_comparison": "",
+       "matching_skills": [],
+       "missing_skills": [],
+       "reason": "",
+       "score_breakdown": {},
+       "score_source": ""
+      }
+     },
+     "match_score": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Match Score"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "note_count": {
+      "default": 0,
+      "title": "Note Count",
+      "type": "integer"
+     },
+     "notes": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/NoteOut"
+      },
+      "title": "Notes",
+      "type": "array"
+     },
+     "offer_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Offer At"
+     },
+     "other_assignees": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/JobAssignee"
+      },
+      "title": "Other Assignees",
+      "type": "array"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "ASSIGNED",
+       "VIEWED",
+       "APPLYING",
+       "APPLIED",
+       "INTERVIEWING",
+       "OFFER",
+       "REJECTED",
+       "WITHDRAWN",
+       "SKIPPED"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "viewed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Viewed At"
+     }
+    },
+    "required": [
+     "id",
+     "job",
+     "member",
+     "status",
+     "source",
+     "assigned_at"
+    ],
+    "title": "AssignmentDetail",
+    "type": "object"
+   },
+   "AssignmentOut": {
+    "properties": {
+     "applied_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Applied At"
+     },
+     "assigned_at": {
+      "format": "date-time",
+      "title": "Assigned At",
+      "type": "string"
+     },
+     "assigned_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "is_active": {
+      "default": true,
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "job": {
+      "$ref": "#/components/schemas/JobSummary"
+     },
+     "last_link_open_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Link Open At"
+     },
+     "link_opens": {
+      "default": 0,
+      "title": "Link Opens",
+      "type": "integer"
+     },
+     "match_score": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Match Score"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "note_count": {
+      "default": 0,
+      "title": "Note Count",
+      "type": "integer"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "ASSIGNED",
+       "VIEWED",
+       "APPLYING",
+       "APPLIED",
+       "INTERVIEWING",
+       "OFFER",
+       "REJECTED",
+       "WITHDRAWN",
+       "SKIPPED"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "viewed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Viewed At"
+     }
+    },
+    "required": [
+     "id",
+     "job",
+     "member",
+     "status",
+     "source",
+     "assigned_at"
+    ],
+    "title": "AssignmentOut",
+    "type": "object"
+   },
+   "AssignmentStats": {
+    "description": "Definitions (also shown in the UI):\nassigned = active assignments; applied = assignments with a confirmed submission (applied_at set), whatever\nhappened later; not_applied = active assignments without a confirmed submission, excluding skipped/withdrawn;\ninterviews / offers = assignments that reached that stage; closed = REJECTED + WITHDRAWN + SKIPPED;\ncompletion_rate = applied / (assigned - skipped - withdrawn-before-applying), 0..100; link_opens = how many\ntimes \"Open Job\" was used (never counted as applied).",
+    "properties": {
+     "applied": {
+      "default": 0,
+      "title": "Applied",
+      "type": "integer"
+     },
+     "assigned": {
+      "default": 0,
+      "title": "Assigned",
+      "type": "integer"
+     },
+     "closed": {
+      "default": 0,
+      "title": "Closed",
+      "type": "integer"
+     },
+     "completion_rate": {
+      "default": 0.0,
+      "title": "Completion Rate",
+      "type": "number"
+     },
+     "interviews": {
+      "default": 0,
+      "title": "Interviews",
+      "type": "integer"
+     },
+     "link_opens": {
+      "default": 0,
+      "title": "Link Opens",
+      "type": "integer"
+     },
+     "not_applied": {
+      "default": 0,
+      "title": "Not Applied",
+      "type": "integer"
+     },
+     "offers": {
+      "default": 0,
+      "title": "Offers",
+      "type": "integer"
+     },
+     "viewed": {
+      "default": 0,
+      "title": "Viewed",
+      "type": "integer"
+     }
+    },
+    "title": "AssignmentStats",
+    "type": "object"
+   },
+   "AuditOut": {
+    "properties": {
+     "action": {
+      "title": "Action",
+      "type": "string"
+     },
+     "actor": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "ip": {
+      "default": "",
+      "title": "Ip",
+      "type": "string"
+     },
+     "metadata": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Metadata",
+      "type": "object"
+     },
+     "target_id": {
+      "title": "Target Id",
+      "type": "string"
+     },
+     "target_type": {
+      "title": "Target Type",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "action",
+     "target_type",
+     "target_id",
+     "created_at"
+    ],
+    "title": "AuditOut",
+    "type": "object"
+   },
+   "Body_import_csv_api_jobs_import_csv_post": {
+    "properties": {
+     "file": {
+      "contentMediaType": "application/octet-stream",
+      "title": "File",
+      "type": "string"
+     }
+    },
+    "required": [
+     "file"
+    ],
+    "title": "Body_import_csv_api_jobs_import_csv_post",
+    "type": "object"
+   },
+   "Body_upload_resume_api_resumes_upload_post": {
+    "properties": {
+     "file": {
+      "contentMediaType": "application/octet-stream",
+      "title": "File",
+      "type": "string"
+     },
+     "member_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Member Id"
+     }
+    },
+    "required": [
+     "file"
+    ],
+    "title": "Body_upload_resume_api_resumes_upload_post",
+    "type": "object"
+   },
+   "BulkAssign": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AssignItem"
+      },
+      "maxItems": 1000,
+      "title": "Items",
+      "type": "array"
+     },
+     "job_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Job Ids",
+      "type": "array"
+     },
+     "member_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Member Ids",
+      "type": "array"
+     },
+     "queue_item_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Queue Item Ids",
+      "type": "array"
+     },
+     "search_run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Search Run Id"
+     }
+    },
+    "title": "BulkAssign",
+    "type": "object"
+   },
+   "BulkAssignResult": {
+    "properties": {
+     "already_assigned": {
+      "title": "Already Assigned",
+      "type": "integer"
+     },
+     "assignment_ids": {
+      "default": [],
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "title": "Assignment Ids",
+      "type": "array"
+     },
+     "created": {
+      "title": "Created",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "created",
+     "already_assigned"
+    ],
+    "title": "BulkAssignResult",
+    "type": "object"
+   },
+   "ChangePasswordIn": {
+    "properties": {
+     "current_password": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Current Password",
+      "type": "string"
+     },
+     "new_password": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "New Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "current_password",
+     "new_password"
+    ],
+    "title": "ChangePasswordIn",
+    "type": "object"
+   },
+   "CsvImportResult": {
+    "properties": {
+     "created": {
+      "title": "Created",
+      "type": "integer"
+     },
+     "errors": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Errors",
+      "type": "array"
+     },
+     "skipped": {
+      "title": "Skipped",
+      "type": "integer"
+     },
+     "updated": {
+      "title": "Updated",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "created",
+     "updated",
+     "skipped"
+    ],
+    "title": "CsvImportResult",
+    "type": "object"
+   },
+   "EventOut": {
+    "properties": {
+     "actor": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "event_type": {
+      "title": "Event Type",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "metadata": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Metadata",
+      "type": "object"
+     },
+     "new_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "New Status"
+     },
+     "old_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Old Status"
+     }
+    },
+    "required": [
+     "id",
+     "event_type",
+     "created_at"
+    ],
+    "title": "EventOut",
+    "type": "object"
+   },
+   "ForgotPasswordIn": {
+    "properties": {
+     "email": {
+      "format": "email",
+      "title": "Email",
+      "type": "string"
+     }
+    },
+    "required": [
+     "email"
+    ],
+    "title": "ForgotPasswordIn",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "HealthOut": {
+    "properties": {
+     "database": {
+      "title": "Database",
+      "type": "boolean"
+     },
+     "redis": {
+      "title": "Redis",
+      "type": "boolean"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "worker_online": {
+      "title": "Worker Online",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "status",
+     "database",
+     "redis",
+     "worker_online"
+    ],
+    "title": "HealthOut",
+    "type": "object"
+   },
+   "IntegrationsOut": {
+    "properties": {
+     "ai_providers": {
+      "additionalProperties": true,
+      "title": "Ai Providers",
+      "type": "object"
+     },
+     "email": {
+      "additionalProperties": true,
+      "title": "Email",
+      "type": "object"
+     },
+     "index": {
+      "additionalProperties": true,
+      "title": "Index",
+      "type": "object"
+     },
+     "queue": {
+      "additionalProperties": true,
+      "title": "Queue",
+      "type": "object"
+     },
+     "sources": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "worker": {
+      "additionalProperties": true,
+      "title": "Worker",
+      "type": "object"
+     }
+    },
+    "required": [
+     "ai_providers",
+     "sources",
+     "index",
+     "worker",
+     "email",
+     "queue"
+    ],
+    "title": "IntegrationsOut",
+    "type": "object"
+   },
+   "InvitationAccept": {
+    "properties": {
+     "password": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     },
+     "token": {
+      "maxLength": 200,
+      "minLength": 20,
+      "title": "Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "token",
+     "password"
+    ],
+    "title": "InvitationAccept",
+    "type": "object"
+   },
+   "InvitationCreate": {
+    "properties": {
+     "email": {
+      "format": "email",
+      "title": "Email",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 160,
+      "minLength": 2,
+      "title": "Name",
+      "type": "string"
+     },
+     "role": {
+      "default": "MEMBER",
+      "enum": [
+       "TEAM_LEAD",
+       "MEMBER"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "team_description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Team Description",
+      "type": "string"
+     },
+     "team_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Id"
+     },
+     "team_name": {
+      "anyOf": [
+       {
+        "maxLength": 120,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Name"
+     }
+    },
+    "required": [
+     "name",
+     "email"
+    ],
+    "title": "InvitationCreate",
+    "type": "object"
+   },
+   "InvitationCreated": {
+    "properties": {
+     "accepted_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Accepted At"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "delivery": {
+      "enum": [
+       "email",
+       "manual"
+      ],
+      "title": "Delivery",
+      "type": "string"
+     },
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "email_sent": {
+      "title": "Email Sent",
+      "type": "boolean"
+     },
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "invite_url": {
+      "title": "Invite Url",
+      "type": "string"
+     },
+     "invited_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "role": {
+      "enum": [
+       "TEAM_LEAD",
+       "MEMBER"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "accepted",
+       "expired",
+       "revoked"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "email",
+     "name",
+     "role",
+     "status",
+     "delivery",
+     "expires_at",
+     "created_at",
+     "invite_url",
+     "email_sent"
+    ],
+    "title": "InvitationCreated",
+    "type": "object"
+   },
+   "InvitationOut": {
+    "properties": {
+     "accepted_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Accepted At"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "delivery": {
+      "enum": [
+       "email",
+       "manual"
+      ],
+      "title": "Delivery",
+      "type": "string"
+     },
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "invited_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "role": {
+      "enum": [
+       "TEAM_LEAD",
+       "MEMBER"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "accepted",
+       "expired",
+       "revoked"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "email",
+     "name",
+     "role",
+     "status",
+     "delivery",
+     "expires_at",
+     "created_at"
+    ],
+    "title": "InvitationOut",
+    "type": "object"
+   },
+   "InvitationPreview": {
+    "properties": {
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "password_min_length": {
+      "title": "Password Min Length",
+      "type": "integer"
+     },
+     "role": {
+      "enum": [
+       "TEAM_LEAD",
+       "MEMBER"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "team_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Name"
+     }
+    },
+    "required": [
+     "email",
+     "name",
+     "role",
+     "expires_at",
+     "password_min_length"
+    ],
+    "title": "InvitationPreview",
+    "type": "object"
+   },
+   "JobAssignee": {
+    "properties": {
+     "applied_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Applied At"
+     },
+     "assigned_at": {
+      "format": "date-time",
+      "title": "Assigned At",
+      "type": "string"
+     },
+     "assignment_id": {
+      "format": "uuid",
+      "title": "Assignment Id",
+      "type": "string"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "status": {
+      "enum": [
+       "ASSIGNED",
+       "VIEWED",
+       "APPLYING",
+       "APPLIED",
+       "INTERVIEWING",
+       "OFFER",
+       "REJECTED",
+       "WITHDRAWN",
+       "SKIPPED"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "assignment_id",
+     "member",
+     "status",
+     "assigned_at"
+    ],
+    "title": "JobAssignee",
+    "type": "object"
+   },
+   "JobCreate": {
+    "properties": {
+     "apply_url": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Apply Url",
+      "type": "string"
+     },
+     "canonical_url": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Canonical Url",
+      "type": "string"
+     },
+     "citizenship_requirement": {
+      "default": "Not stated",
+      "enum": [
+       "Required",
+       "Not required",
+       "Not stated"
+      ],
+      "title": "Citizenship Requirement",
+      "type": "string"
+     },
+     "city": {
+      "default": "",
+      "maxLength": 120,
+      "title": "City",
+      "type": "string"
+     },
+     "clearance_required": {
+      "default": false,
+      "title": "Clearance Required",
+      "type": "boolean"
+     },
+     "company": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Company",
+      "type": "string"
+     },
+     "company_url": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Company Url",
+      "type": "string"
+     },
+     "country": {
+      "default": "United States",
+      "maxLength": 60,
+      "title": "Country",
+      "type": "string"
+     },
+     "description": {
+      "default": "",
+      "maxLength": 60000,
+      "title": "Description",
+      "type": "string"
+     },
+     "employment_type": {
+      "default": "",
+      "maxLength": 40,
+      "title": "Employment Type",
+      "type": "string"
+     },
+     "experience_max": {
+      "anyOf": [
+       {
+        "maximum": 60.0,
+        "minimum": 0.0,
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Experience Max"
+     },
+     "experience_min": {
+      "anyOf": [
+       {
+        "maximum": 60.0,
+        "minimum": 0.0,
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Experience Min"
+     },
+     "experience_text": {
+      "default": "",
+      "maxLength": 80,
+      "title": "Experience Text",
+      "type": "string"
+     },
+     "posted_at": {
+      "anyOf": [
+       {
+        "format": "date",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Posted At"
+     },
+     "requirements": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 80,
+      "title": "Requirements",
+      "type": "array"
+     },
+     "salary_currency": {
+      "default": "",
+      "maxLength": 8,
+      "title": "Salary Currency",
+      "type": "string"
+     },
+     "salary_max": {
+      "anyOf": [
+       {
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Max"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "salary_text": {
+      "default": "",
+      "maxLength": 160,
+      "title": "Salary Text",
+      "type": "string"
+     },
+     "seniority": {
+      "default": "",
+      "maxLength": 40,
+      "title": "Seniority",
+      "type": "string"
+     },
+     "sponsorship_status": {
+      "default": "Not stated",
+      "enum": [
+       "Available",
+       "Not available",
+       "Not stated"
+      ],
+      "title": "Sponsorship Status",
+      "type": "string"
+     },
+     "state": {
+      "default": "",
+      "maxLength": 60,
+      "title": "State",
+      "type": "string"
+     },
+     "title": {
+      "maxLength": 300,
+      "minLength": 2,
+      "title": "Title",
+      "type": "string"
+     },
+     "work_mode": {
+      "default": "Not listed",
+      "enum": [
+       "Remote",
+       "Hybrid",
+       "On-site",
+       "Not listed"
+      ],
+      "title": "Work Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "company",
+     "title"
+    ],
+    "title": "JobCreate",
+    "type": "object"
+   },
+   "JobDetail": {
+    "properties": {
+     "citizenship_requirement": {
+      "title": "Citizenship Requirement",
+      "type": "string"
+     },
+     "city": {
+      "title": "City",
+      "type": "string"
+     },
+     "clearance_required": {
+      "default": false,
+      "title": "Clearance Required",
+      "type": "boolean"
+     },
+     "company": {
+      "title": "Company",
+      "type": "string"
+     },
+     "country": {
+      "title": "Country",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+     },
+     "employment_type": {
+      "title": "Employment Type",
+      "type": "string"
+     },
+     "experience_text": {
+      "title": "Experience Text",
+      "type": "string"
+     },
+     "has_apply_link": {
+      "default": false,
+      "title": "Has Apply Link",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "last_verified_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Verified At"
+     },
+     "location_text": {
+      "title": "Location Text",
+      "type": "string"
+     },
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "posted_at": {
+      "anyOf": [
+       {
+        "format": "date",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Posted At"
+     },
+     "requirements": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Requirements",
+      "type": "array"
+     },
+     "salary_currency": {
+      "default": "",
+      "title": "Salary Currency",
+      "type": "string"
+     },
+     "salary_max": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Max"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "salary_text": {
+      "title": "Salary Text",
+      "type": "string"
+     },
+     "seniority": {
+      "title": "Seniority",
+      "type": "string"
+     },
+     "source_label": {
+      "title": "Source Label",
+      "type": "string"
+     },
+     "sources": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "sponsorship_status": {
+      "title": "Sponsorship Status",
+      "type": "string"
+     },
+     "state": {
+      "title": "State",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "verification_note": {
+      "default": "",
+      "title": "Verification Note",
+      "type": "string"
+     },
+     "verification_status": {
+      "title": "Verification Status",
+      "type": "string"
+     },
+     "work_mode": {
+      "title": "Work Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "company",
+     "title",
+     "country",
+     "state",
+     "city",
+     "location_text",
+     "work_mode",
+     "employment_type",
+     "seniority",
+     "salary_text",
+     "experience_text",
+     "citizenship_requirement",
+     "sponsorship_status",
+     "verification_status",
+     "source_label",
+     "origin",
+     "created_at"
+    ],
+    "title": "JobDetail",
+    "type": "object"
+   },
+   "JobImportDraft": {
+    "description": "Details read from a posting URL for the Admin to review before saving. Nothing is stored yet.",
+    "properties": {
+     "job": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/JobCreate"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "verified": {
+      "title": "Verified",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "verified",
+     "note"
+    ],
+    "title": "JobImportDraft",
+    "type": "object"
+   },
+   "JobImportIn": {
+    "properties": {
+     "url": {
+      "maxLength": 2000,
+      "minLength": 10,
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "title": "JobImportIn",
+    "type": "object"
+   },
+   "JobListItem": {
+    "description": "Row of the manager job list.",
+    "properties": {
+     "applied_count": {
+      "default": 0,
+      "title": "Applied Count",
+      "type": "integer"
+     },
+     "assignment_count": {
+      "default": 0,
+      "title": "Assignment Count",
+      "type": "integer"
+     },
+     "canonical_url": {
+      "default": "",
+      "title": "Canonical Url",
+      "type": "string"
+     },
+     "citizenship_requirement": {
+      "title": "Citizenship Requirement",
+      "type": "string"
+     },
+     "city": {
+      "title": "City",
+      "type": "string"
+     },
+     "clearance_required": {
+      "default": false,
+      "title": "Clearance Required",
+      "type": "boolean"
+     },
+     "company": {
+      "title": "Company",
+      "type": "string"
+     },
+     "country": {
+      "title": "Country",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "employment_type": {
+      "title": "Employment Type",
+      "type": "string"
+     },
+     "experience_text": {
+      "title": "Experience Text",
+      "type": "string"
+     },
+     "has_apply_link": {
+      "default": false,
+      "title": "Has Apply Link",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "last_verified_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Verified At"
+     },
+     "location_text": {
+      "title": "Location Text",
+      "type": "string"
+     },
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "posted_at": {
+      "anyOf": [
+       {
+        "format": "date",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Posted At"
+     },
+     "requirements": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Requirements",
+      "type": "array"
+     },
+     "salary_currency": {
+      "default": "",
+      "title": "Salary Currency",
+      "type": "string"
+     },
+     "salary_max": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Max"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "salary_text": {
+      "title": "Salary Text",
+      "type": "string"
+     },
+     "seniority": {
+      "title": "Seniority",
+      "type": "string"
+     },
+     "source_label": {
+      "title": "Source Label",
+      "type": "string"
+     },
+     "sponsorship_status": {
+      "title": "Sponsorship Status",
+      "type": "string"
+     },
+     "state": {
+      "title": "State",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "verification_status": {
+      "title": "Verification Status",
+      "type": "string"
+     },
+     "work_mode": {
+      "title": "Work Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "company",
+     "title",
+     "country",
+     "state",
+     "city",
+     "location_text",
+     "work_mode",
+     "employment_type",
+     "seniority",
+     "salary_text",
+     "experience_text",
+     "citizenship_requirement",
+     "sponsorship_status",
+     "verification_status",
+     "source_label",
+     "origin",
+     "created_at"
+    ],
+    "title": "JobListItem",
+    "type": "object"
+   },
+   "JobManagerView": {
+    "description": "Admin / Team Lead view: includes the posting URLs and who has the job.",
+    "properties": {
+     "apply_url": {
+      "default": "",
+      "title": "Apply Url",
+      "type": "string"
+     },
+     "assignees": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/JobAssignee"
+      },
+      "title": "Assignees",
+      "type": "array"
+     },
+     "assignment_count": {
+      "default": 0,
+      "title": "Assignment Count",
+      "type": "integer"
+     },
+     "canonical_url": {
+      "default": "",
+      "title": "Canonical Url",
+      "type": "string"
+     },
+     "citizenship_requirement": {
+      "title": "Citizenship Requirement",
+      "type": "string"
+     },
+     "city": {
+      "title": "City",
+      "type": "string"
+     },
+     "clearance_required": {
+      "default": false,
+      "title": "Clearance Required",
+      "type": "boolean"
+     },
+     "company": {
+      "title": "Company",
+      "type": "string"
+     },
+     "company_url": {
+      "default": "",
+      "title": "Company Url",
+      "type": "string"
+     },
+     "country": {
+      "title": "Country",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+     },
+     "employment_type": {
+      "title": "Employment Type",
+      "type": "string"
+     },
+     "experience_text": {
+      "title": "Experience Text",
+      "type": "string"
+     },
+     "external_job_id": {
+      "default": "",
+      "title": "External Job Id",
+      "type": "string"
+     },
+     "external_source": {
+      "default": "",
+      "title": "External Source",
+      "type": "string"
+     },
+     "has_apply_link": {
+      "default": false,
+      "title": "Has Apply Link",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "last_verified_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Verified At"
+     },
+     "location_text": {
+      "title": "Location Text",
+      "type": "string"
+     },
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "posted_at": {
+      "anyOf": [
+       {
+        "format": "date",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Posted At"
+     },
+     "queue_teams": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TeamRef"
+      },
+      "title": "Queue Teams",
+      "type": "array"
+     },
+     "requirements": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Requirements",
+      "type": "array"
+     },
+     "salary_currency": {
+      "default": "",
+      "title": "Salary Currency",
+      "type": "string"
+     },
+     "salary_max": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Max"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "salary_text": {
+      "title": "Salary Text",
+      "type": "string"
+     },
+     "seniority": {
+      "title": "Seniority",
+      "type": "string"
+     },
+     "source_label": {
+      "title": "Source Label",
+      "type": "string"
+     },
+     "sources": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "sponsorship_status": {
+      "title": "Sponsorship Status",
+      "type": "string"
+     },
+     "state": {
+      "title": "State",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "verification_note": {
+      "default": "",
+      "title": "Verification Note",
+      "type": "string"
+     },
+     "verification_status": {
+      "title": "Verification Status",
+      "type": "string"
+     },
+     "work_mode": {
+      "title": "Work Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "company",
+     "title",
+     "country",
+     "state",
+     "city",
+     "location_text",
+     "work_mode",
+     "employment_type",
+     "seniority",
+     "salary_text",
+     "experience_text",
+     "citizenship_requirement",
+     "sponsorship_status",
+     "verification_status",
+     "source_label",
+     "origin",
+     "created_at"
+    ],
+    "title": "JobManagerView",
+    "type": "object"
+   },
+   "JobSummary": {
+    "description": "Fields safe for every role. Raw posting URLs are deliberately absent: members reach the posting only\nthrough the audited /api/assignments/{id}/open-job redirect.",
+    "properties": {
+     "citizenship_requirement": {
+      "title": "Citizenship Requirement",
+      "type": "string"
+     },
+     "city": {
+      "title": "City",
+      "type": "string"
+     },
+     "clearance_required": {
+      "default": false,
+      "title": "Clearance Required",
+      "type": "boolean"
+     },
+     "company": {
+      "title": "Company",
+      "type": "string"
+     },
+     "country": {
+      "title": "Country",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "employment_type": {
+      "title": "Employment Type",
+      "type": "string"
+     },
+     "experience_text": {
+      "title": "Experience Text",
+      "type": "string"
+     },
+     "has_apply_link": {
+      "default": false,
+      "title": "Has Apply Link",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "last_verified_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Verified At"
+     },
+     "location_text": {
+      "title": "Location Text",
+      "type": "string"
+     },
+     "origin": {
+      "title": "Origin",
+      "type": "string"
+     },
+     "posted_at": {
+      "anyOf": [
+       {
+        "format": "date",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Posted At"
+     },
+     "requirements": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Requirements",
+      "type": "array"
+     },
+     "salary_currency": {
+      "default": "",
+      "title": "Salary Currency",
+      "type": "string"
+     },
+     "salary_max": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Max"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "salary_text": {
+      "title": "Salary Text",
+      "type": "string"
+     },
+     "seniority": {
+      "title": "Seniority",
+      "type": "string"
+     },
+     "source_label": {
+      "title": "Source Label",
+      "type": "string"
+     },
+     "sponsorship_status": {
+      "title": "Sponsorship Status",
+      "type": "string"
+     },
+     "state": {
+      "title": "State",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "verification_status": {
+      "title": "Verification Status",
+      "type": "string"
+     },
+     "work_mode": {
+      "title": "Work Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "company",
+     "title",
+     "country",
+     "state",
+     "city",
+     "location_text",
+     "work_mode",
+     "employment_type",
+     "seniority",
+     "salary_text",
+     "experience_text",
+     "citizenship_requirement",
+     "sponsorship_status",
+     "verification_status",
+     "source_label",
+     "origin",
+     "created_at"
+    ],
+    "title": "JobSummary",
+    "type": "object"
+   },
+   "JobUpdate": {
+    "properties": {
+     "apply_url": {
+      "anyOf": [
+       {
+        "maxLength": 2000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Apply Url"
+     },
+     "canonical_url": {
+      "anyOf": [
+       {
+        "maxLength": 2000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Canonical Url"
+     },
+     "citizenship_requirement": {
+      "anyOf": [
+       {
+        "enum": [
+         "Required",
+         "Not required",
+         "Not stated"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Citizenship Requirement"
+     },
+     "city": {
+      "anyOf": [
+       {
+        "maxLength": 120,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "City"
+     },
+     "company": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Company"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "maxLength": 60000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "employment_type": {
+      "anyOf": [
+       {
+        "maxLength": 40,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Employment Type"
+     },
+     "experience_text": {
+      "anyOf": [
+       {
+        "maxLength": 80,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Experience Text"
+     },
+     "posted_at": {
+      "anyOf": [
+       {
+        "format": "date",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Posted At"
+     },
+     "requirements": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Requirements"
+     },
+     "salary_currency": {
+      "anyOf": [
+       {
+        "maxLength": 8,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Currency"
+     },
+     "salary_max": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Max"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "salary_text": {
+      "anyOf": [
+       {
+        "maxLength": 160,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Text"
+     },
+     "seniority": {
+      "anyOf": [
+       {
+        "maxLength": 40,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Seniority"
+     },
+     "sponsorship_status": {
+      "anyOf": [
+       {
+        "enum": [
+         "Available",
+         "Not available",
+         "Not stated"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sponsorship Status"
+     },
+     "state": {
+      "anyOf": [
+       {
+        "maxLength": 60,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "State"
+     },
+     "title": {
+      "anyOf": [
+       {
+        "maxLength": 300,
+        "minLength": 2,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "work_mode": {
+      "anyOf": [
+       {
+        "enum": [
+         "Remote",
+         "Hybrid",
+         "On-site",
+         "Not listed"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Work Mode"
+     }
+    },
+    "title": "JobUpdate",
+    "type": "object"
+   },
+   "LoginIn": {
+    "properties": {
+     "email": {
+      "format": "email",
+      "title": "Email",
+      "type": "string"
+     },
+     "password": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     },
+     "remember": {
+      "default": false,
+      "title": "Remember",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "email",
+     "password"
+    ],
+    "title": "LoginIn",
+    "type": "object"
+   },
+   "MatchExplanation": {
+    "properties": {
+     "authorization_status": {
+      "default": "Unknown",
+      "title": "Authorization Status",
+      "type": "string"
+     },
+     "eligibility_note": {
+      "default": "Not specified",
+      "title": "Eligibility Note",
+      "type": "string"
+     },
+     "experience_comparison": {
+      "default": "",
+      "title": "Experience Comparison",
+      "type": "string"
+     },
+     "matching_skills": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Matching Skills",
+      "type": "array"
+     },
+     "missing_skills": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing Skills",
+      "type": "array"
+     },
+     "reason": {
+      "default": "",
+      "title": "Reason",
+      "type": "string"
+     },
+     "score_breakdown": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Score Breakdown",
+      "type": "object"
+     },
+     "score_source": {
+      "default": "",
+      "title": "Score Source",
+      "type": "string"
+     }
+    },
+    "title": "MatchExplanation",
+    "type": "object"
+   },
+   "MeOut": {
+    "properties": {
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "home": {
+      "title": "Home",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "role": {
+      "enum": [
+       "ADMIN",
+       "TEAM_LEAD",
+       "MEMBER"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "settings": {
+      "$ref": "#/components/schemas/UiSettings"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "unread_notifications": {
+      "default": 0,
+      "title": "Unread Notifications",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "email",
+     "role",
+     "home",
+     "settings"
+    ],
+    "title": "MeOut",
+    "type": "object"
+   },
+   "MemberAnalytics": {
+    "properties": {
+     "applications_over_time": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Applications Over Time",
+      "type": "array"
+     },
+     "funnel": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Funnel",
+      "type": "array"
+     },
+     "interview_outcomes": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Interview Outcomes",
+      "type": "array"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "pending_vs_applied": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Pending Vs Applied",
+      "type": "array"
+     },
+     "range": {
+      "additionalProperties": true,
+      "title": "Range",
+      "type": "object"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats"
+     },
+     "status_distribution": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Status Distribution",
+      "type": "array"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "weekly_activity": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Weekly Activity",
+      "type": "array"
+     }
+    },
+    "required": [
+     "member",
+     "range",
+     "stats",
+     "funnel",
+     "status_distribution",
+     "applications_over_time",
+     "weekly_activity",
+     "pending_vs_applied",
+     "interview_outcomes"
+    ],
+    "title": "MemberAnalytics",
+    "type": "object"
+   },
+   "MemberRow": {
+    "properties": {
+     "has_resume": {
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "last_activity_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Activity At"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "member",
+     "status",
+     "has_resume",
+     "stats"
+    ],
+    "title": "MemberRow",
+    "type": "object"
+   },
+   "Message": {
+    "properties": {
+     "message": {
+      "title": "Message",
+      "type": "string"
+     }
+    },
+    "required": [
+     "message"
+    ],
+    "title": "Message",
+    "type": "object"
+   },
+   "NameValue": {
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "value": {
+      "title": "Value",
+      "type": "number"
+     }
+    },
+    "required": [
+     "name",
+     "value"
+    ],
+    "title": "NameValue",
+    "type": "object"
+   },
+   "NoteIn": {
+    "properties": {
+     "is_private": {
+      "default": false,
+      "title": "Is Private",
+      "type": "boolean"
+     },
+     "note": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "note"
+    ],
+    "title": "NoteIn",
+    "type": "object"
+   },
+   "NoteOut": {
+    "properties": {
+     "author": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "is_private": {
+      "title": "Is Private",
+      "type": "boolean"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "note",
+     "is_private",
+     "created_at"
+    ],
+    "title": "NoteOut",
+    "type": "object"
+   },
+   "NotificationOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+     },
+     "read_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Read At"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "payload",
+     "created_at"
+    ],
+    "title": "NotificationOut",
+    "type": "object"
+   },
+   "Page_ActivityItem_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ActivityItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[ActivityItem]",
+    "type": "object"
+   },
+   "Page_AssignmentOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AssignmentOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[AssignmentOut]",
+    "type": "object"
+   },
+   "Page_AuditOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AuditOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[AuditOut]",
+    "type": "object"
+   },
+   "Page_InvitationOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/InvitationOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[InvitationOut]",
+    "type": "object"
+   },
+   "Page_JobListItem_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/JobListItem"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[JobListItem]",
+    "type": "object"
+   },
+   "Page_NotificationOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/NotificationOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[NotificationOut]",
+    "type": "object"
+   },
+   "Page_QueueItemOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/QueueItemOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[QueueItemOut]",
+    "type": "object"
+   },
+   "Page_SearchResultOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SearchResultOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[SearchResultOut]",
+    "type": "object"
+   },
+   "Page_SearchRunOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SearchRunOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[SearchRunOut]",
+    "type": "object"
+   },
+   "Page_UserOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/UserOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[UserOut]",
+    "type": "object"
+   },
+   "PresetIn": {
+    "properties": {
+     "filters": {
+      "additionalProperties": true,
+      "title": "Filters",
+      "type": "object"
+     },
+     "name": {
+      "maxLength": 120,
+      "minLength": 2,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "filters"
+    ],
+    "title": "PresetIn",
+    "type": "object"
+   },
+   "PresetOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "filters": {
+      "additionalProperties": true,
+      "title": "Filters",
+      "type": "object"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "filters",
+     "created_at"
+    ],
+    "title": "PresetOut",
+    "type": "object"
+   },
+   "ProfileIn": {
+    "properties": {
+     "desired_titles": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 8,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Desired Titles"
+     },
+     "exclude_citizenship_required": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Exclude Citizenship Required"
+     },
+     "excluded_companies": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 100,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Excluded Companies"
+     },
+     "extra": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Extra"
+     },
+     "preferred_cities": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 30,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preferred Cities"
+     },
+     "preferred_states": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 30,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preferred States"
+     },
+     "required_keywords": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 30,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Required Keywords"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "maximum": 5000000.0,
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "seniority": {
+      "anyOf": [
+       {
+        "maxLength": 40,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Seniority"
+     },
+     "skills": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 120,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Skills"
+     },
+     "sponsorship_needed": {
+      "anyOf": [
+       {
+        "enum": [
+         "Yes",
+         "No",
+         "Unknown"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sponsorship Needed"
+     },
+     "work_authorization": {
+      "anyOf": [
+       {
+        "enum": [
+         "US Citizen",
+         "Green Card / US Permanent Resident",
+         "Current Work Visa",
+         "Employment Authorization Document (EAD)",
+         "Require Visa Sponsorship",
+         "Other / Prefer Not to Say"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Work Authorization"
+     },
+     "work_mode": {
+      "anyOf": [
+       {
+        "enum": [
+         "All",
+         "Remote",
+         "Hybrid",
+         "On-site"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Work Mode"
+     },
+     "years_experience": {
+      "anyOf": [
+       {
+        "maximum": 40.0,
+        "minimum": 0.0,
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Years Experience"
+     }
+    },
+    "title": "ProfileIn",
+    "type": "object"
+   },
+   "ProfileOut": {
+    "properties": {
+     "completion": {
+      "default": 0,
+      "title": "Completion",
+      "type": "integer"
+     },
+     "desired_titles": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Desired Titles",
+      "type": "array"
+     },
+     "exclude_citizenship_required": {
+      "default": false,
+      "title": "Exclude Citizenship Required",
+      "type": "boolean"
+     },
+     "excluded_companies": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Excluded Companies",
+      "type": "array"
+     },
+     "extra": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Extra",
+      "type": "object"
+     },
+     "missing": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+     },
+     "preferred_cities": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Preferred Cities",
+      "type": "array"
+     },
+     "preferred_states": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Preferred States",
+      "type": "array"
+     },
+     "required_keywords": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Required Keywords",
+      "type": "array"
+     },
+     "salary_min": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Salary Min"
+     },
+     "seniority": {
+      "default": "",
+      "title": "Seniority",
+      "type": "string"
+     },
+     "skills": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Skills",
+      "type": "array"
+     },
+     "sponsorship_needed": {
+      "default": "Unknown",
+      "title": "Sponsorship Needed",
+      "type": "string"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     },
+     "user_id": {
+      "format": "uuid",
+      "title": "User Id",
+      "type": "string"
+     },
+     "work_authorization": {
+      "default": "Other / Prefer Not to Say",
+      "title": "Work Authorization",
+      "type": "string"
+     },
+     "work_mode": {
+      "default": "All",
+      "title": "Work Mode",
+      "type": "string"
+     },
+     "years_experience": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Years Experience"
+     }
+    },
+    "required": [
+     "user_id"
+    ],
+    "title": "ProfileOut",
+    "type": "object"
+   },
+   "QueueDelegate": {
+    "properties": {
+     "job_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Job Ids",
+      "type": "array"
+     },
+     "note": {
+      "default": "",
+      "maxLength": 500,
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "job_ids"
+    ],
+    "title": "QueueDelegate",
+    "type": "object"
+   },
+   "QueueItemOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "delegated_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "job": {
+      "$ref": "#/components/schemas/JobListItem"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "assigned",
+       "dismissed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "$ref": "#/components/schemas/TeamRef"
+     }
+    },
+    "required": [
+     "id",
+     "team",
+     "job",
+     "status",
+     "note",
+     "created_at"
+    ],
+    "title": "QueueItemOut",
+    "type": "object"
+   },
+   "QueueUpdate": {
+    "properties": {
+     "status": {
+      "enum": [
+       "pending",
+       "dismissed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "QueueUpdate",
+    "type": "object"
+   },
+   "ResetLinkOut": {
+    "properties": {
+     "email_sent": {
+      "title": "Email Sent",
+      "type": "boolean"
+     },
+     "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+     },
+     "reset_url": {
+      "title": "Reset Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reset_url",
+     "expires_at",
+     "email_sent"
+    ],
+    "title": "ResetLinkOut",
+    "type": "object"
+   },
+   "ResetPasswordIn": {
+    "properties": {
+     "password": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Password",
+      "type": "string"
+     },
+     "token": {
+      "maxLength": 200,
+      "minLength": 20,
+      "title": "Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "token",
+     "password"
+    ],
+    "title": "ResetPasswordIn",
+    "type": "object"
+   },
+   "ResumeOut": {
+    "properties": {
+     "ai_processing_notice": {
+      "default": "Resume text is sent to the configured AI providers (OpenAI, Anthropic) when a job search runs for this member.",
+      "title": "Ai Processing Notice",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "parsed_profile": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Parsed Profile",
+      "type": "object"
+     },
+     "size_bytes": {
+      "title": "Size Bytes",
+      "type": "integer"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     },
+     "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
+     },
+     "uploaded_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "user_id": {
+      "format": "uuid",
+      "title": "User Id",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "user_id",
+     "filename",
+     "size_bytes",
+     "version",
+     "created_at"
+    ],
+    "title": "ResumeOut",
+    "type": "object"
+   },
+   "SearchCreate": {
+    "properties": {
+     "deep_search": {
+      "default": true,
+      "title": "Deep Search",
+      "type": "boolean"
+     },
+     "filters": {
+      "$ref": "#/components/schemas/SearchFilters",
+      "default": {}
+     },
+     "member_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Member Ids",
+      "type": "array"
+     },
+     "min_match_score": {
+      "anyOf": [
+       {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Min Match Score"
+     },
+     "mode": {
+      "default": "auto_assign",
+      "enum": [
+       "auto_assign",
+       "review"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "target_count": {
+      "default": 50,
+      "maximum": 500.0,
+      "minimum": 1.0,
+      "title": "Target Count",
+      "type": "integer"
+     },
+     "team_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Id"
+     }
+    },
+    "title": "SearchCreate",
+    "type": "object"
+   },
+   "SearchCreated": {
+    "properties": {
+     "search": {
+      "$ref": "#/components/schemas/SearchRunOut"
+     },
+     "skipped": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchSkipped"
+      },
+      "title": "Skipped",
+      "type": "array"
+     }
+    },
+    "required": [
+     "search"
+    ],
+    "title": "SearchCreated",
+    "type": "object"
+   },
+   "SearchFilters": {
+    "description": "Shared overrides for one run. A field left out (null) means: use each member's own saved value.",
+    "properties": {
+     "exclude_citizenship_required": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Exclude Citizenship Required"
+     },
+     "excluded_companies": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 100,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Excluded Companies"
+     },
+     "job_titles": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 8,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Job Titles"
+     },
+     "preferred_states": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 30,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preferred States"
+     },
+     "remote_only": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Remote Only"
+     },
+     "sponsorship_needed": {
+      "anyOf": [
+       {
+        "enum": [
+         "Yes",
+         "No",
+         "Unknown"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sponsorship Needed"
+     },
+     "work_authorization": {
+      "anyOf": [
+       {
+        "enum": [
+         "US Citizen",
+         "Green Card / US Permanent Resident",
+         "Current Work Visa",
+         "Employment Authorization Document (EAD)",
+         "Require Visa Sponsorship",
+         "Other / Prefer Not to Say"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Work Authorization"
+     },
+     "work_mode": {
+      "anyOf": [
+       {
+        "enum": [
+         "All",
+         "Remote",
+         "Hybrid",
+         "On-site"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Work Mode"
+     },
+     "years_experience": {
+      "anyOf": [
+       {
+        "maximum": 40.0,
+        "minimum": 0.0,
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Years Experience"
+     }
+    },
+    "title": "SearchFilters",
+    "type": "object"
+   },
+   "SearchOptions": {
+    "properties": {
+     "ai_providers": {
+      "additionalProperties": true,
+      "title": "Ai Providers",
+      "type": "object"
+     },
+     "authorizations": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Authorizations",
+      "type": "array"
+     },
+     "limits": {
+      "$ref": "#/components/schemas/UiSettings"
+     },
+     "queue_available": {
+      "title": "Queue Available",
+      "type": "boolean"
+     },
+     "sources": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Sources",
+      "type": "array"
+     },
+     "work_modes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Work Modes",
+      "type": "array"
+     }
+    },
+    "required": [
+     "sources",
+     "ai_providers",
+     "limits",
+     "authorizations",
+     "work_modes",
+     "queue_available"
+    ],
+    "title": "SearchOptions",
+    "type": "object"
+   },
+   "SearchResultOut": {
+    "properties": {
+     "assignment_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assignment Id"
+     },
+     "assignment_status": {
+      "anyOf": [
+       {
+        "enum": [
+         "ASSIGNED",
+         "VIEWED",
+         "APPLYING",
+         "APPLIED",
+         "INTERVIEWING",
+         "OFFER",
+         "REJECTED",
+         "WITHDRAWN",
+         "SKIPPED"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assignment Status"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "job": {
+      "$ref": "#/components/schemas/JobListItem"
+     },
+     "match": {
+      "$ref": "#/components/schemas/MatchExplanation"
+     },
+     "match_score": {
+      "title": "Match Score",
+      "type": "integer"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "rank": {
+      "title": "Rank",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "member",
+     "job",
+     "rank",
+     "match_score",
+     "match"
+    ],
+    "title": "SearchResultOut",
+    "type": "object"
+   },
+   "SearchRunOut": {
+    "properties": {
+     "assigned_count": {
+      "default": 0,
+      "title": "Assigned Count",
+      "type": "integer"
+     },
+     "attempts": {
+      "default": 0,
+      "title": "Attempts",
+      "type": "integer"
+     },
+     "cancel_requested": {
+      "default": false,
+      "title": "Cancel Requested",
+      "type": "boolean"
+     },
+     "completed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Completed At"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "deep_search": {
+      "title": "Deep Search",
+      "type": "boolean"
+     },
+     "discovered_count": {
+      "default": 0,
+      "title": "Discovered Count",
+      "type": "integer"
+     },
+     "duplicate_count": {
+      "default": 0,
+      "title": "Duplicate Count",
+      "type": "integer"
+     },
+     "error_summary": {
+      "default": "",
+      "title": "Error Summary",
+      "type": "string"
+     },
+     "filters": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Filters",
+      "type": "object"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "initiated_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "matched_count": {
+      "default": 0,
+      "title": "Matched Count",
+      "type": "integer"
+     },
+     "member_count": {
+      "default": 0,
+      "title": "Member Count",
+      "type": "integer"
+     },
+     "min_match_score": {
+      "title": "Min Match Score",
+      "type": "integer"
+     },
+     "mode": {
+      "enum": [
+       "auto_assign",
+       "review"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "sources": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Sources",
+      "type": "object"
+     },
+     "stage": {
+      "default": "",
+      "title": "Stage",
+      "type": "string"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "running",
+       "completed",
+       "partial",
+       "failed",
+       "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "target_count": {
+      "title": "Target Count",
+      "type": "integer"
+     },
+     "targets": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchTargetOut"
+      },
+      "title": "Targets",
+      "type": "array"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "verified_count": {
+      "default": 0,
+      "title": "Verified Count",
+      "type": "integer"
+     },
+     "warnings": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+     }
+    },
+    "required": [
+     "id",
+     "mode",
+     "status",
+     "target_count",
+     "deep_search",
+     "min_match_score",
+     "created_at"
+    ],
+    "title": "SearchRunOut",
+    "type": "object"
+   },
+   "SearchSkipped": {
+    "properties": {
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "member",
+     "reason"
+    ],
+    "title": "SearchSkipped",
+    "type": "object"
+   },
+   "SearchTargetOut": {
+    "properties": {
+     "assigned": {
+      "default": 0,
+      "title": "Assigned",
+      "type": "integer"
+     },
+     "discovered": {
+      "default": 0,
+      "title": "Discovered",
+      "type": "integer"
+     },
+     "duplicates": {
+      "default": 0,
+      "title": "Duplicates",
+      "type": "integer"
+     },
+     "filters": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Filters",
+      "type": "object"
+     },
+     "matched": {
+      "default": 0,
+      "title": "Matched",
+      "type": "integer"
+     },
+     "member": {
+      "$ref": "#/components/schemas/UserRef"
+     },
+     "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+     },
+     "stage": {
+      "default": "",
+      "title": "Stage",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "verified": {
+      "default": 0,
+      "title": "Verified",
+      "type": "integer"
+     },
+     "warnings": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+     }
+    },
+    "required": [
+     "member",
+     "status"
+    ],
+    "title": "SearchTargetOut",
+    "type": "object"
+   },
+   "SearchUsagePoint": {
+    "properties": {
+     "assigned": {
+      "default": 0,
+      "title": "Assigned",
+      "type": "integer"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "matched": {
+      "default": 0,
+      "title": "Matched",
+      "type": "integer"
+     },
+     "runs": {
+      "default": 0,
+      "title": "Runs",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "label"
+    ],
+    "title": "SearchUsagePoint",
+    "type": "object"
+   },
+   "SeriesPoint": {
+    "properties": {
+     "applied": {
+      "default": 0,
+      "title": "Applied",
+      "type": "integer"
+     },
+     "assigned": {
+      "default": 0,
+      "title": "Assigned",
+      "type": "integer"
+     },
+     "interviews": {
+      "default": 0,
+      "title": "Interviews",
+      "type": "integer"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "link_opens": {
+      "default": 0,
+      "title": "Link Opens",
+      "type": "integer"
+     },
+     "offers": {
+      "default": 0,
+      "title": "Offers",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "label"
+    ],
+    "title": "SeriesPoint",
+    "type": "object"
+   },
+   "SettingsOut": {
+    "properties": {
+     "deep_search_default": {
+      "default": true,
+      "title": "Deep Search Default",
+      "type": "boolean"
+     },
+     "default_min_match_score": {
+      "default": 50,
+      "title": "Default Min Match Score",
+      "type": "integer"
+     },
+     "default_target_count": {
+      "default": 50,
+      "title": "Default Target Count",
+      "type": "integer"
+     },
+     "disabled_sources": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Disabled Sources",
+      "type": "array"
+     },
+     "invitation_hours": {
+      "default": 48,
+      "title": "Invitation Hours",
+      "type": "integer"
+     },
+     "max_members_per_search": {
+      "default": 10,
+      "title": "Max Members Per Search",
+      "type": "integer"
+     },
+     "max_results_per_search_run": {
+      "default": 500,
+      "title": "Max Results Per Search Run",
+      "type": "integer"
+     },
+     "profile_extra_fields": {
+      "default": [],
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "title": "Profile Extra Fields",
+      "type": "array"
+     },
+     "watermark_enabled": {
+      "default": true,
+      "title": "Watermark Enabled",
+      "type": "boolean"
+     }
+    },
+    "title": "SettingsOut",
+    "type": "object"
+   },
+   "SettingsUpdate": {
+    "properties": {
+     "deep_search_default": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Deep Search Default"
+     },
+     "default_min_match_score": {
+      "anyOf": [
+       {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Default Min Match Score"
+     },
+     "default_target_count": {
+      "anyOf": [
+       {
+        "maximum": 500.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Default Target Count"
+     },
+     "disabled_sources": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Disabled Sources"
+     },
+     "invitation_hours": {
+      "anyOf": [
+       {
+        "maximum": 720.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Invitation Hours"
+     },
+     "max_members_per_search": {
+      "anyOf": [
+       {
+        "maximum": 50.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Max Members Per Search"
+     },
+     "max_results_per_search_run": {
+      "anyOf": [
+       {
+        "maximum": 5000.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Max Results Per Search Run"
+     },
+     "profile_extra_fields": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "maxItems": 20,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Profile Extra Fields"
+     },
+     "watermark_enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Watermark Enabled"
+     }
+    },
+    "title": "SettingsUpdate",
+    "type": "object"
+   },
+   "StatusUpdate": {
+    "properties": {
+     "applied_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Applied At"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "maxLength": 4000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "reference": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reference"
+     },
+     "status": {
+      "enum": [
+       "ASSIGNED",
+       "VIEWED",
+       "APPLYING",
+       "APPLIED",
+       "INTERVIEWING",
+       "OFFER",
+       "REJECTED",
+       "WITHDRAWN",
+       "SKIPPED"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "StatusUpdate",
+    "type": "object"
+   },
+   "TeamAnalytics": {
+    "properties": {
+     "active_searches": {
+      "title": "Active Searches",
+      "type": "integer"
+     },
+     "applications_over_time": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Applications Over Time",
+      "type": "array"
+     },
+     "funnel": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Funnel",
+      "type": "array"
+     },
+     "member_count": {
+      "title": "Member Count",
+      "type": "integer"
+     },
+     "members": {
+      "items": {
+       "$ref": "#/components/schemas/MemberRow"
+      },
+      "title": "Members",
+      "type": "array"
+     },
+     "pending_vs_applied": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Pending Vs Applied",
+      "type": "array"
+     },
+     "queue_pending": {
+      "title": "Queue Pending",
+      "type": "integer"
+     },
+     "range": {
+      "additionalProperties": true,
+      "title": "Range",
+      "type": "object"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats"
+     },
+     "status_distribution": {
+      "items": {
+       "$ref": "#/components/schemas/NameValue"
+      },
+      "title": "Status Distribution",
+      "type": "array"
+     },
+     "team": {
+      "$ref": "#/components/schemas/TeamRef"
+     },
+     "team_lead": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "weekly_activity": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesPoint"
+      },
+      "title": "Weekly Activity",
+      "type": "array"
+     }
+    },
+    "required": [
+     "team",
+     "range",
+     "member_count",
+     "active_searches",
+     "queue_pending",
+     "stats",
+     "funnel",
+     "status_distribution",
+     "applications_over_time",
+     "weekly_activity",
+     "pending_vs_applied",
+     "members"
+    ],
+    "title": "TeamAnalytics",
+    "type": "object"
+   },
+   "TeamCreate": {
+    "properties": {
+     "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 120,
+      "minLength": 2,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "TeamCreate",
+    "type": "object"
+   },
+   "TeamOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "is_active": {
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "member_count": {
+      "default": 0,
+      "title": "Member Count",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "queue_pending": {
+      "default": 0,
+      "title": "Queue Pending",
+      "type": "integer"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats",
+      "default": {
+       "applied": 0,
+       "assigned": 0,
+       "closed": 0,
+       "completion_rate": 0.0,
+       "interviews": 0,
+       "link_opens": 0,
+       "not_applied": 0,
+       "offers": 0,
+       "viewed": 0
+      }
+     },
+     "team_lead": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "team_lead_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Lead Status"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "description",
+     "is_active",
+     "created_at"
+    ],
+    "title": "TeamOut",
+    "type": "object"
+   },
+   "TeamRef": {
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "TeamRef",
+    "type": "object"
+   },
+   "TeamRow": {
+    "properties": {
+     "is_active": {
+      "default": true,
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "members": {
+      "default": 0,
+      "title": "Members",
+      "type": "integer"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/AssignmentStats"
+     },
+     "team": {
+      "$ref": "#/components/schemas/TeamRef"
+     },
+     "team_lead": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "team",
+     "stats"
+    ],
+    "title": "TeamRow",
+    "type": "object"
+   },
+   "TeamUpdate": {
+    "properties": {
+     "description": {
+      "anyOf": [
+       {
+        "maxLength": 2000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "is_active": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Active"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "maxLength": 120,
+        "minLength": 2,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "remove_team_lead": {
+      "default": false,
+      "title": "Remove Team Lead",
+      "type": "boolean"
+     },
+     "team_lead_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Lead Id"
+     }
+    },
+    "title": "TeamUpdate",
+    "type": "object"
+   },
+   "UiSettings": {
+    "properties": {
+     "default_min_match_score": {
+      "default": 50,
+      "title": "Default Min Match Score",
+      "type": "integer"
+     },
+     "default_target_count": {
+      "default": 50,
+      "title": "Default Target Count",
+      "type": "integer"
+     },
+     "max_members_per_search": {
+      "default": 10,
+      "title": "Max Members Per Search",
+      "type": "integer"
+     },
+     "max_results_per_search_run": {
+      "default": 500,
+      "title": "Max Results Per Search Run",
+      "type": "integer"
+     },
+     "watermark_enabled": {
+      "default": true,
+      "title": "Watermark Enabled",
+      "type": "boolean"
+     }
+    },
+    "title": "UiSettings",
+    "type": "object"
+   },
+   "UserOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "has_resume": {
+      "default": false,
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "is_active": {
+      "title": "Is Active",
+      "type": "boolean"
+     },
+     "last_activity_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Activity At"
+     },
+     "last_login_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Login At"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "profile_completion": {
+      "default": 0,
+      "title": "Profile Completion",
+      "type": "integer"
+     },
+     "role": {
+      "enum": [
+       "ADMIN",
+       "TEAM_LEAD",
+       "MEMBER"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "stats": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AssignmentStats"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "status": {
+      "enum": [
+       "invited",
+       "active",
+       "deactivated"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "team": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TeamRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "email",
+     "role",
+     "status",
+     "is_active",
+     "created_at"
+    ],
+    "title": "UserOut",
+    "type": "object"
+   },
+   "UserRef": {
+    "properties": {
+     "email": {
+      "default": "",
+      "title": "Email",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "UserRef",
+    "type": "object"
+   },
+   "UserUpdate": {
+    "properties": {
+     "is_active": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Active"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "maxLength": 160,
+        "minLength": 2,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "team_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Team Id"
+     }
+    },
+    "title": "UserUpdate",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   }
+  }
+ },
+ "info": {
+  "title": "AI Job Finder Portal API",
+  "version": "2.0"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/api/analytics/admin": {
+   "get": {
+    "operationId": "admin_analytics_api_analytics_admin_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "member_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Member Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(ASSIGNED|VIEWED|APPLYING|APPLIED|INTERVIEWING|OFFER|REJECTED|WITHDRAWN|SKIPPED)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "company",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Company"
+      }
+     },
+     {
+      "in": "query",
+      "name": "role",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Role"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AdminAnalytics"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Admin Analytics",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/analytics/member/{member_id}": {
+   "get": {
+    "operationId": "member_analytics_api_analytics_member__member_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "member_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Member Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MemberAnalytics"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Member Analytics",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/analytics/team/{team_id}": {
+   "get": {
+    "operationId": "team_analytics_by_analytics_path",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "team_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Team Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TeamAnalytics"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Team Analytics",
+    "tags": [
+     "teams"
+    ]
+   }
+  },
+  "/api/assignments": {
+   "get": {
+    "operationId": "list_assignments_api_assignments_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "member_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Member Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "applied",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Applied"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "company",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Company"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     },
+     {
+      "in": "query",
+      "name": "search_run_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Search Run Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "include_inactive",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Include Inactive",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "default": "recent",
+       "title": "Sort",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_AssignmentOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Assignments",
+    "tags": [
+     "assignments"
+    ]
+   },
+   "post": {
+    "operationId": "create_assignment_api_assignments_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AssignCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BulkAssignResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Assignment",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/assignments/bulk": {
+   "post": {
+    "operationId": "bulk_assign_api_assignments_bulk_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BulkAssign"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BulkAssignResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Bulk Assign",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/assignments/export.csv": {
+   "get": {
+    "description": "Report of the caller's scope (Admin: organization, Team Lead: own team). Posting URLs are included for managers only.",
+    "operationId": "export_assignments_api_assignments_export_csv_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "member_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Member Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "applied",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Applied"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Assignments",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/assignments/{assignment_id}": {
+   "delete": {
+    "operationId": "withdraw_assignment_api_assignments__assignment_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "assignment_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Assignment Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Withdraw Assignment",
+    "tags": [
+     "assignments"
+    ]
+   },
+   "get": {
+    "operationId": "get_assignment_api_assignments__assignment_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "assignment_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Assignment Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AssignmentDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Assignment",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/assignments/{assignment_id}/notes": {
+   "post": {
+    "operationId": "add_note_api_assignments__assignment_id__notes_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "assignment_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Assignment Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NoteIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NoteOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Note",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/assignments/{assignment_id}/open-job": {
+   "get": {
+    "description": "Audited redirect to the posting. The destination is read from the stored job record only (nothing from the\nrequest), must be a public http(s) address, and opening it is logged without changing the applied state.",
+    "operationId": "open_job_api_assignments__assignment_id__open_job_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "assignment_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Assignment Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Open Job",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/assignments/{assignment_id}/status": {
+   "patch": {
+    "operationId": "update_status_api_assignments__assignment_id__status_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "assignment_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Assignment Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/StatusUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AssignmentDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Status",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/audit-logs": {
+   "get": {
+    "operationId": "audit_logs_api_audit_logs_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "action",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 60,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Action"
+      }
+     },
+     {
+      "in": "query",
+      "name": "actor_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Actor Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_AuditOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Audit Logs",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/auth/change-password": {
+   "post": {
+    "operationId": "change_password_api_auth_change_password_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ChangePasswordIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Change Password",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/api/auth/forgot-password": {
+   "post": {
+    "operationId": "forgot_password_api_auth_forgot_password_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ForgotPasswordIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Forgot Password",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/api/auth/login": {
+   "post": {
+    "operationId": "login_api_auth_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MeOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Login",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/api/auth/logout": {
+   "post": {
+    "operationId": "logout_api_auth_logout_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Logout",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/api/auth/me": {
+   "get": {
+    "operationId": "me_api_auth_me_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MeOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Me",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/api/auth/reset-password": {
+   "post": {
+    "operationId": "reset_password_api_auth_reset_password_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResetPasswordIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Reset Password",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
+  "/api/health": {
+   "get": {
+    "description": "Liveness for load balancers and Docker. Reveals no configuration.",
+    "operationId": "health_api_health_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Health",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/integrations": {
+   "get": {
+    "operationId": "integrations_api_integrations_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/IntegrationsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Integrations",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/invitations": {
+   "get": {
+    "operationId": "list_invitations_api_invitations_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(pending|accepted|expired|revoked)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_InvitationOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Invitations",
+    "tags": [
+     "invitations"
+    ]
+   },
+   "post": {
+    "operationId": "create_invitation_api_invitations_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InvitationCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/api/invitations/accept": {
+   "post": {
+    "operationId": "accept_invitation_api_invitations_accept_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InvitationAccept"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Accept Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/api/invitations/validate": {
+   "get": {
+    "operationId": "validate_invitation_api_invitations_validate_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "token",
+      "required": true,
+      "schema": {
+       "maxLength": 200,
+       "minLength": 20,
+       "title": "Token",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Validate Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/api/invitations/{invitation_id}/resend": {
+   "post": {
+    "operationId": "resend_invitation_api_invitations__invitation_id__resend_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "invitation_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Invitation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Resend Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/api/invitations/{invitation_id}/revoke": {
+   "post": {
+    "operationId": "revoke_invitation_api_invitations__invitation_id__revoke_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "invitation_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Invitation Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revoke Invitation",
+    "tags": [
+     "invitations"
+    ]
+   }
+  },
+  "/api/jobs": {
+   "get": {
+    "operationId": "list_jobs_api_jobs_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "company",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Company"
+      }
+     },
+     {
+      "in": "query",
+      "name": "origin",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(search|manual|import)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Origin"
+      }
+     },
+     {
+      "in": "query",
+      "name": "verification",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(verified|unverified|failed|closed)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Verification"
+      }
+     },
+     {
+      "in": "query",
+      "name": "work_mode",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Work Mode"
+      }
+     },
+     {
+      "in": "query",
+      "name": "assigned",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Assigned"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_JobListItem_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Jobs",
+    "tags": [
+     "jobs"
+    ]
+   },
+   "post": {
+    "operationId": "create_job_api_jobs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JobCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobManagerView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Job",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/jobs/import-csv": {
+   "post": {
+    "operationId": "import_csv_api_jobs_import_csv_post",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_import_csv_api_jobs_import_csv_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CsvImportResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Import Csv",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/jobs/import-url": {
+   "post": {
+    "description": "Read a posting page and return its details for review. Nothing is saved by this call.",
+    "operationId": "import_url_api_jobs_import_url_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JobImportIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobImportDraft"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Import Url",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/jobs/{job_id}": {
+   "get": {
+    "operationId": "get_job_api_jobs__job_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobManagerView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Job",
+    "tags": [
+     "jobs"
+    ]
+   },
+   "patch": {
+    "operationId": "update_job_api_jobs__job_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JobUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobManagerView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Job",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/jobs/{job_id}/verify": {
+   "post": {
+    "operationId": "verify_job_api_jobs__job_id__verify_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobManagerView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Verify Job",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/members/{member_id}/resume": {
+   "get": {
+    "operationId": "member_resume_api_members__member_id__resume_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "member_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Member Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/ResumeOut"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "title": "Response Member Resume Api Members  Member Id  Resume Get"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Member Resume",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/notifications": {
+   "get": {
+    "operationId": "list_notifications_api_notifications_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "unread_only",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Unread Only",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_NotificationOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Notifications",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/notifications/read-all": {
+   "post": {
+    "operationId": "read_all_notifications_api_notifications_read_all_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Read All Notifications",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/notifications/{notification_id}/read": {
+   "post": {
+    "operationId": "read_notification_api_notifications__notification_id__read_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "notification_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Notification Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotificationOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Read Notification",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/resumes/upload": {
+   "post": {
+    "description": "A member uploads their own resume; a Team Lead or Admin may upload one for a member in their scope.",
+    "operationId": "upload_resume_api_resumes_upload_post",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_upload_resume_api_resumes_upload_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResumeOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Upload Resume",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/resumes/{resume_id}": {
+   "delete": {
+    "operationId": "delete_resume_api_resumes__resume_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "resume_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Resume Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Resume",
+    "tags": [
+     "users"
+    ]
+   },
+   "get": {
+    "operationId": "get_resume_api_resumes__resume_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "resume_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Resume Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResumeOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Resume",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/search-presets": {
+   "get": {
+    "operationId": "list_presets_api_search_presets_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/PresetOut"
+         },
+         "title": "Response List Presets Api Search Presets Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Presets",
+    "tags": [
+     "searches"
+    ]
+   },
+   "post": {
+    "operationId": "create_preset_api_search_presets_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PresetIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PresetOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Preset",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/search-presets/{preset_id}": {
+   "delete": {
+    "operationId": "delete_preset_api_search_presets__preset_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "preset_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Preset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Message"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Preset",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/searches": {
+   "get": {
+    "operationId": "list_searches_api_searches_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(active|queued|running|completed|partial|failed|cancelled)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "member_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Member Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "mine",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Mine",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 25,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_SearchRunOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Searches",
+    "tags": [
+     "searches"
+    ]
+   },
+   "post": {
+    "operationId": "create_search_api_searches_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SearchCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Search",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/searches/options": {
+   "get": {
+    "operationId": "search_options_api_searches_options_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchOptions"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Search Options",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/searches/{search_id}": {
+   "get": {
+    "operationId": "get_search_api_searches__search_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "search_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Search Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchRunOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Search",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/searches/{search_id}/cancel": {
+   "post": {
+    "operationId": "cancel_search_api_searches__search_id__cancel_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "search_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Search Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SearchRunOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cancel Search",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/searches/{search_id}/events": {
+   "get": {
+    "description": "Server-Sent Events: a snapshot of the run whenever it changes, until it finishes.",
+    "operationId": "search_events_api_searches__search_id__events_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "search_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Search Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Events",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/searches/{search_id}/results": {
+   "get": {
+    "operationId": "search_results_api_searches__search_id__results_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "search_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Search Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "member_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Member Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "min_score",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "maximum": 100,
+       "minimum": 0,
+       "title": "Min Score",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "unassigned_only",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Unassigned Only",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_SearchResultOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Search Results",
+    "tags": [
+     "searches"
+    ]
+   }
+  },
+  "/api/settings": {
+   "get": {
+    "operationId": "get_portal_settings_api_settings_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Portal Settings",
+    "tags": [
+     "admin"
+    ]
+   },
+   "patch": {
+    "operationId": "update_portal_settings_api_settings_patch",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SettingsUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Portal Settings",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/team-queue/{item_id}": {
+   "patch": {
+    "operationId": "update_queue_item_api_team_queue__item_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "item_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QueueItemOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Queue Item",
+    "tags": [
+     "teams"
+    ]
+   }
+  },
+  "/api/teams": {
+   "get": {
+    "operationId": "list_teams_api_teams_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "include_inactive",
+      "required": false,
+      "schema": {
+       "default": true,
+       "title": "Include Inactive",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/TeamOut"
+         },
+         "title": "Response List Teams Api Teams Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Teams",
+    "tags": [
+     "teams"
+    ]
+   },
+   "post": {
+    "operationId": "create_team_api_teams_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TeamCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TeamOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Team",
+    "tags": [
+     "teams"
+    ]
+   }
+  },
+  "/api/teams/{team_id}": {
+   "get": {
+    "operationId": "get_team_api_teams__team_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "team_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Team Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TeamOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Team",
+    "tags": [
+     "teams"
+    ]
+   },
+   "patch": {
+    "operationId": "update_team_api_teams__team_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "team_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Team Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TeamUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TeamOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Team",
+    "tags": [
+     "teams"
+    ]
+   }
+  },
+  "/api/teams/{team_id}/analytics": {
+   "get": {
+    "operationId": "team_analytics_api_teams__team_id__analytics_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "team_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Team Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TeamAnalytics"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Team Analytics",
+    "tags": [
+     "teams"
+    ]
+   }
+  },
+  "/api/teams/{team_id}/members": {
+   "get": {
+    "operationId": "team_members_api_teams__team_id__members_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "team_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Team Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/UserOut"
+         },
+         "title": "Response Team Members Api Teams  Team Id  Members Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Team Members",
+    "tags": [
+     "teams"
+    ]
+   }
+  },
+  "/api/teams/{team_id}/queue": {
+   "get": {
+    "operationId": "team_queue_api_teams__team_id__queue_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "team_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Team Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "default": "pending",
+       "title": "Status",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_QueueItemOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Team Queue",
+    "tags": [
+     "teams"
+    ]
+   },
+   "post": {
+    "description": "Admin hands jobs to a team; its Team Lead distributes them to members.",
+    "operationId": "delegate_jobs_api_teams__team_id__queue_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "team_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Team Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QueueDelegate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/QueueItemOut"
+         },
+         "title": "Response Delegate Jobs Api Teams  Team Id  Queue Post",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delegate Jobs",
+    "tags": [
+     "teams"
+    ]
+   }
+  },
+  "/api/users": {
+   "get": {
+    "operationId": "list_users_api_users_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "role",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(ADMIN|TEAM_LEAD|MEMBER)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Role"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(invited|active|deactivated)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 100,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "default": "name",
+       "title": "Sort",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_UserOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Users",
+    "tags": [
+     "users"
+    ]
+   },
+   "post": {
+    "description": "Create an account. Nobody ever chooses another person's password: the account is created in the\n\"invited\" state and the invitation is returned, exactly as POST /api/invitations does (same rules:\na Team Lead can only add members to their own team).",
+    "operationId": "create_user_api_users_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InvitationCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create User",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/users/{user_id}": {
+   "get": {
+    "operationId": "get_user_api_users__user_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get User",
+    "tags": [
+     "users"
+    ]
+   },
+   "patch": {
+    "operationId": "update_user_api_users__user_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update User",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/users/{user_id}/activity": {
+   "get": {
+    "operationId": "member_activity_api_users__user_id__activity_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "User Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_ActivityItem_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Member Activity",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/users/{user_id}/dashboard": {
+   "get": {
+    "operationId": "member_dashboard_api_users__user_id__dashboard_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "User Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_from",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date From"
+      }
+     },
+     {
+      "in": "query",
+      "name": "date_to",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Date To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MemberAnalytics"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Member Dashboard",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/users/{user_id}/profile": {
+   "get": {
+    "operationId": "get_profile_api_users__user_id__profile_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProfileOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Profile",
+    "tags": [
+     "users"
+    ]
+   },
+   "patch": {
+    "operationId": "update_profile_api_users__user_id__profile_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProfileIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProfileOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Profile",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/users/{user_id}/reset-link": {
+   "post": {
+    "description": "A manager creates a one-time password reset link for a user in their scope (used when e-mail is not configured).",
+    "operationId": "create_reset_link_api_users__user_id__reset_link_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "user_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "User Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResetLinkOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Reset Link",
+    "tags": [
+     "users"
+    ]
+   }
+  }
+ }
+}

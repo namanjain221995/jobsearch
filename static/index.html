@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Job Finder — United States</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>AI Job Finder — United States</h1>
+    <p class="sub">Real, verified US job postings matched to your resume.</p>
+    <p id="provider-status" class="status-line" aria-live="polite"></p>
+  </header>
+
+  <main>
+    <form id="search-form" class="panel" novalidate>
+      <div class="field">
+        <label for="resume-input">Upload Resume</label>
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-describedby="resume-help">
+          <span id="dropzone-text">Drag and drop a PDF, DOCX or TXT file here, or click to choose</span>
+          <input id="resume-input" type="file" accept=".pdf,.docx,.txt" hidden>
+        </div>
+        <p id="resume-help" class="hint">Maximum 10 MB. Resume text is held in memory only and may be processed by the configured AI providers (OpenAI, Anthropic).</p>
+        <p id="resume-status" class="hint" aria-live="polite"></p>
+      </div>
+
+      <div class="grid">
+        <div class="field wide">
+          <label for="titles">Desired Job Title</label>
+          <input id="titles" type="text" maxlength="300" placeholder="AI Engineer, Machine Learning Engineer" required>
+          <p class="hint">Separate multiple titles with commas.</p>
+        </div>
+        <div class="field">
+          <label for="years">Years of Experience</label>
+          <input id="years" type="number" min="0" max="40" step="1" value="3" required>
+          <p class="hint">0 = entry level.</p>
+        </div>
+        <div class="field">
+          <label for="count">Number of Job Results</label>
+          <input id="count" type="number" min="0" max="500" step="1" value="50" required>
+          <p class="hint">0 = as many as available (max 500).</p>
+        </div>
+        <div class="field">
+          <label for="authorization">Work Authorization</label>
+          <select id="authorization">
+            <option>US Citizen</option>
+            <option>Green Card / US Permanent Resident</option>
+            <option>Current Work Visa</option>
+            <option>Employment Authorization Document (EAD)</option>
+            <option>Require Visa Sponsorship</option>
+            <option selected>Other / Prefer Not to Say</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="sponsorship">Visa sponsorship needed?</label>
+          <select id="sponsorship">
+            <option>Yes</option>
+            <option>No</option>
+            <option selected>Unknown</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="work-mode">Work arrangement</label>
+          <select id="work-mode">
+            <option selected>All</option>
+            <option>Remote</option>
+            <option>Hybrid</option>
+            <option>On-site</option>
+          </select>
+        </div>
+        <div class="field check wide">
+          <label><input id="exclude-citizenship" type="checkbox"> Exclude positions requiring US citizenship.</label>
+        </div>
+        <div class="field check wide">
+          <label><input id="deep-search" type="checkbox" checked> Deep search: AI web search + browser crawler (wider coverage, about a minute longer).</label>
+        </div>
+      </div>
+
+      <p id="form-error" class="error" role="alert" hidden></p>
+      <div class="actions">
+        <button id="submit-btn" type="submit" class="primary">Find Matching USA Jobs</button>
+        <button id="cancel-btn" type="button" hidden>Cancel search</button>
+      </div>
+    </form>
+
+    <section id="progress" class="panel" hidden aria-live="polite">
+      <h2>Search progress</h2>
+      <ol id="stage-list" class="stages"></ol>
+      <dl id="counters" class="counters"></dl>
+      <table id="sources" class="sources" hidden>
+        <caption>Sources read in parallel</caption>
+        <thead><tr><th scope="col">Source</th><th scope="col">Reads OK</th><th scope="col">Loading</th><th scope="col">Failed</th><th scope="col">Postings</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <ul id="warnings" class="warnings"></ul>
+    </section>
+
+    <section id="results" hidden>
+      <div class="panel">
+        <h2 id="results-heading">Results</h2>
+        <p id="results-message"></p>
+        <p id="partial-banner" class="banner" hidden>Preliminary matches from sources already read, scored by keywords. The search is still running; this list will be replaced by the final ranking.</p>
+        <div class="toolbar">
+          <label>Sort
+            <select id="sort">
+              <option value="score">Match score</option>
+              <option value="date">Posting date</option>
+            </select>
+          </label>
+          <label>Min score <input id="min-score" type="number" min="0" max="100" value="0"></label>
+          <label>Authorization
+            <select id="auth-filter">
+              <option value="">Any</option>
+              <option>Eligible</option>
+              <option>Potential mismatch</option>
+              <option>Unknown</option>
+            </select>
+          </label>
+          <label class="inline"><input id="remote-only" type="checkbox"> Remote only</label>
+          <span class="spacer"></span>
+          <a id="csv-link" class="btn" href="#" download>Download CSV</a>
+          <a id="json-link" class="btn" href="#" download>Download JSON</a>
+        </div>
+        <p id="shown-count" class="hint"></p>
+      </div>
+      <div id="cards" class="cards"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Match scores are estimates from resume and posting text. They do not predict hiring outcomes. Confirm eligibility details with the employer.</p>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

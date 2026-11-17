@@ -1,0 +1,128 @@
+"""Sign-in, sign-out, current user, password reset."""
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ...config import Settings
+from .. import security
+from ..deps import (CSRF_COOKIE, SESSION_COOKIE, Principal, authenticated, client_ip, get_db, get_settings, same_origin)
+from ..models import Notification, User
+from ..schemas import ChangePasswordIn, ForgotPasswordIn, LoginIn, MeOut, Message, ResetPasswordIn
+from ..security import utcnow
+from ..services import invitations as invitation_service
+from ..services import settings as settings_service
+from ..services.audit import audit
+from ..services.common import team_ref
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+HOME = {"ADMIN": "/admin/dashboard", "TEAM_LEAD": "/tl/dashboard", "MEMBER": "/member/dashboard"}
+GENERIC_RESET = "If an account exists for this address, a password reset link has been sent."
+
+
+async def me_out(db: AsyncSession, settings: Settings, user: User) -> MeOut:
+    unread = (await db.execute(select(func.count()).select_from(Notification).where(
+        Notification.user_id == user.id, Notification.read_at.is_(None)))).scalar_one()
+    portal = await settings_service.load(db, settings)
+    return MeOut(id=user.id, name=user.name, email=user.email, role=user.role, team=team_ref(user.team), home=HOME[user.role],
+                 unread_notifications=unread, settings=settings_service.ui(portal))
+
+
+def set_cookies(response: Response, settings: Settings, token: str, csrf: str, remember: bool) -> None:
+    max_age = settings.remember_days * 86400 if remember else None       # no max-age = ends with the browser session
+    common = dict(secure=settings.secure_cookies, samesite="lax", path="/", max_age=max_age)
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, **common)
+    response.set_cookie(CSRF_COOKIE, csrf, httponly=False, **common)     # readable by the page so it can echo it in a header
+
+
+def clear_cookies(response: Response, settings: Settings) -> None:
+    for name in (SESSION_COOKIE, CSRF_COOKIE):
+        response.delete_cookie(name, path="/", secure=settings.secure_cookies, samesite="lax")
+
+
+@router.post("/login", response_model=MeOut, dependencies=[Depends(same_origin)])
+async def login(data: LoginIn, request: Request, response: Response, db: AsyncSession = Depends(get_db),
+                settings: Settings = Depends(get_settings)):
+    limiter = request.app.state.limiter
+    email, ip = data.email.strip().lower(), client_ip(request)
+    window = settings.login_window_minutes * 60
+    key_pair, key_ip = f"jf:login:{email}|{ip}", f"jf:login-ip:{ip}"
+    if await limiter.count(key_pair, window) >= settings.login_max_failures \
+            or await limiter.count(key_ip, window) >= settings.login_max_failures * 6:
+        audit(db, None, "auth.login_throttled", "user", None, None, {"email": email}, ip)
+        await db.commit()
+        raise HTTPException(429, "Too many failed sign-in attempts. Wait a few minutes and try again.")
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    valid = security.verify_password(user.password_hash if user else None, data.password)
+    if not valid or user is None or not user.is_active:
+        await limiter.hit(key_pair, window)
+        await limiter.hit(key_ip, window)
+        audit(db, user, "auth.login_failed", "user", user.id if user else None, user.team_id if user else None, {"email": email}, ip)
+        await db.commit()
+        raise HTTPException(401, "Invalid e-mail or password.")       # same answer whether or not the account exists
+    await limiter.clear(key_pair)
+    if security.needs_rehash(user.password_hash):
+        user.password_hash = security.hash_password(data.password)
+    token, csrf, _ = await security.create_session(db, user, settings, data.remember, ip, request.headers.get("user-agent", ""))
+    user.last_login_at = utcnow()
+    audit(db, user, "auth.login", "user", user.id, user.team_id, {"remember": data.remember}, ip)
+    out = await me_out(db, settings, user)
+    await db.commit()
+    set_cookies(response, settings, token, csrf, data.remember)
+    return out
+
+
+@router.post("/logout", response_model=Message)
+async def logout(request: Request, response: Response, principal: Principal = Depends(authenticated),
+                 db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
+    await security.revoke_session(db, principal.session.id)
+    audit(db, principal.user, "auth.logout", "user", principal.user.id, principal.user.team_id, {}, client_ip(request))
+    await db.commit()
+    clear_cookies(response, settings)
+    return Message(message="Signed out")
+
+
+@router.get("/me", response_model=MeOut)
+async def me(principal: Principal = Depends(authenticated), db: AsyncSession = Depends(get_db),
+             settings: Settings = Depends(get_settings)):
+    return await me_out(db, settings, principal.user)
+
+
+@router.post("/forgot-password", response_model=Message, dependencies=[Depends(same_origin)])
+async def forgot_password(data: ForgotPasswordIn, request: Request, db: AsyncSession = Depends(get_db),
+                          settings: Settings = Depends(get_settings)):
+    limiter = request.app.state.limiter
+    email, ip = data.email.strip().lower(), client_ip(request)
+    if await limiter.count(f"jf:forgot-ip:{ip}", 3600) >= 10 or await limiter.count(f"jf:forgot:{email}", 3600) >= 3:
+        return Message(message=GENERIC_RESET)                         # throttled silently: no signal about the account
+    await limiter.hit(f"jf:forgot-ip:{ip}", 3600)
+    await limiter.hit(f"jf:forgot:{email}", 3600)
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if user is not None and user.is_active and user.password_hash:
+        await invitation_service.issue_reset(db, settings, request.app.state.emailer, user, None)
+        audit(db, user, "auth.password_reset_requested", "user", user.id, user.team_id, {}, ip)
+        await db.commit()
+    return Message(message=GENERIC_RESET)
+
+
+@router.post("/reset-password", response_model=Message, dependencies=[Depends(same_origin)])
+async def reset_password(data: ResetPasswordIn, request: Request, db: AsyncSession = Depends(get_db),
+                         settings: Settings = Depends(get_settings)):
+    await invitation_service.reset_password(db, settings, data.token, data.password, client_ip(request))
+    await db.commit()
+    return Message(message="Password updated. Sign in with your new password.")
+
+
+@router.post("/change-password", response_model=Message)
+async def change_password(data: ChangePasswordIn, request: Request, principal: Principal = Depends(authenticated),
+                          db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
+    user = principal.user
+    if not security.verify_password(user.password_hash, data.current_password):
+        raise HTTPException(403, "Current password is incorrect.")
+    problem = security.password_problem(data.new_password, settings, user.email, user.name)
+    if problem:
+        raise HTTPException(422, problem)
+    user.password_hash = security.hash_password(data.new_password)
+    await security.revoke_user_sessions(db, user.id, keep=principal.session.id)      # other devices are signed out
+    audit(db, user, "auth.password_changed", "user", user.id, user.team_id, {}, client_ip(request))
+    await db.commit()
+    return Message(message="Password changed.")
