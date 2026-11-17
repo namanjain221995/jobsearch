@@ -151,10 +151,10 @@ export function CandidatePicker({
               Clear all
             </Button>
           )}
-          {onAdd && (
+          {onAdd && !grouped && (
             <Button type="button" variant="outline" size="sm" onClick={onAdd}>
               <Plus data-icon="inline-start" />
-              {grouped ? "Add Manually" : "Add Candidate"}
+              Add Candidate
             </Button>
           )}
         </div>

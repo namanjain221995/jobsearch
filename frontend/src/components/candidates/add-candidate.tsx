@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/button";
 import { useSalesforceStatus } from "@/lib/salesforce";
 
 /**
- * The buttons that add a candidate, with their dialogs. Where the portal is connected to Salesforce
- * the main one is "Add from Salesforce" and typing a candidate in by hand is the second choice;
- * without Salesforce there is only "Add Candidate", as before. A new candidate opens on their own
+ * The button that adds a candidate, with its dialogs. Where the portal is connected to Salesforce
+ * candidates come from there only ("Add from Salesforce"): the owner does not want them typed in by
+ * hand. Without Salesforce there is "Add Candidate", as before. A new candidate opens on their own
  * page, where the profile is checked; one that was in the portal already opens as it is.
  */
 export function useAddCandidate({ teamId, disabledReason }: { teamId?: string; disabledReason?: string } = {}) {
@@ -26,16 +26,10 @@ export function useAddCandidate({ teamId, disabledReason }: { teamId?: string; d
   const disabled = Boolean(disabledReason);
 
   const buttons = salesforce ? (
-    <>
-      <Button variant="outline" onClick={() => setOpen("manual")} disabled={disabled} title={disabledReason}>
-        <Plus data-icon="inline-start" />
-        Add Manually
-      </Button>
-      <Button onClick={() => setOpen("salesforce")} disabled={disabled} title={disabledReason}>
-        <CloudDownload data-icon="inline-start" />
-        Add from Salesforce
-      </Button>
-    </>
+    <Button onClick={() => setOpen("salesforce")} disabled={disabled} title={disabledReason}>
+      <CloudDownload data-icon="inline-start" />
+      Add from Salesforce
+    </Button>
   ) : (
     <Button onClick={() => setOpen("manual")} disabled={disabled} title={disabledReason}>
       <Plus data-icon="inline-start" />
@@ -49,7 +43,6 @@ export function useAddCandidate({ teamId, disabledReason }: { teamId?: string; d
         open={open === "salesforce"}
         onOpenChange={(next) => setOpen(next ? "salesforce" : null)}
         teamId={teamId}
-        onManual={() => setOpen("manual")}
         onChosen={(candidate, how) => router.push(`${area}/candidates/${candidate.id}${how === "imported" ? "?tab=profile" : ""}`)}
       />
       <AddCandidateDialog
