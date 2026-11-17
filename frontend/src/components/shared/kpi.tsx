@@ -49,12 +49,12 @@ export function KPIStatCard({
 }) {
   const figure = typeof value === "number" ? formatCompact(value) : (value ?? "—");
   const body = (
-    <span className="font-figure text-4xl leading-none text-foreground">
+    <span data-slot="kpi-value" className="font-figure text-4xl leading-none text-foreground">
       {loading ? <span className="inline-block h-8 w-12 animate-pulse rounded-sm bg-muted align-bottom" /> : figure}
     </span>
   );
   return (
-    <div className={cn("flex min-w-0 flex-col gap-2.5 bg-card px-4 py-3.5", className)}>
+    <div data-slot="kpi" data-label={label} className={cn("flex min-w-0 flex-col gap-2.5 bg-card px-4 py-3.5", className)}>
       <dt className="flex items-start justify-between gap-1 text-2sm text-muted-foreground">
         <span className="flex min-w-0 items-center gap-1.5">
           {color && (

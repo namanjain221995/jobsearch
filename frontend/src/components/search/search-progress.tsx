@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import {
   MODE_LABELS,
+  RunAttempts,
   RunCounters,
   RunSources,
   RunTargets,
@@ -110,6 +111,7 @@ function ProgressBody({ run, skipped }: { run: SearchRun; skipped: SearchSkipped
             {active ? run.stage || "Waiting for the background worker" : `Search ${searchStatusLabel(run.status).toLowerCase()}`}
           </span>
           {active && <span aria-hidden="true" className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse-dot" />}
+          <RunAttempts run={run} />
         </div>
         <p className="text-2sm text-muted-foreground">
           {MODE_LABELS[run.mode]}. Up to {run.target_count} jobs per member, minimum match score {run.min_match_score}.
@@ -143,7 +145,7 @@ function ProgressBody({ run, skipped }: { run: SearchRun; skipped: SearchSkipped
  * focus is not trapped, so the rest of the app keeps working underneath; Escape
  * or Minimize folds it into the floating indicator.
  */
-function ProgressWindow({
+export function SearchProgressModal({
   run,
   loading,
   error,
@@ -298,7 +300,16 @@ function ProgressIndicator({
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium">
-            {!run ? "Search" : active ? (run.cancel_requested ? "Cancelling search" : "Search running") : `Search ${searchStatusLabel(run.status).toLowerCase()}`}
+            {!run
+              ? "Search"
+              : !active
+                ? `Search ${searchStatusLabel(run.status).toLowerCase()}`
+                : run.cancel_requested
+                  ? "Cancelling search"
+                  : // Queued is also where a run waits after the worker restarted: it continues by itself.
+                    run.status === "queued"
+                    ? "Search queued"
+                    : "Search running"}
           </span>
           <span className="truncate text-xs text-muted-foreground tabular-nums">
             {run
@@ -383,7 +394,7 @@ export function SearchProgressHost() {
   const othersActive = (activeMine.data?.items ?? []).filter((item) => item.id !== tracked.runId).length;
 
   return tracked.view === "modal" ? (
-    <ProgressWindow
+    <SearchProgressModal
       run={run}
       loading={search.isPending}
       error={search.error}

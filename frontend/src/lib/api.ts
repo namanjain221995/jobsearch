@@ -37,6 +37,11 @@ export class ApiError extends Error {
     return this.status === 404;
   }
 
+  /** It was this person's and has been taken away on purpose (410: a job a manager took back). */
+  get isGone(): boolean {
+    return this.status === 410;
+  }
+
   /** The request never reached the API (offline, or the API server is down). */
   get isNetwork(): boolean {
     return this.status === 0 || this.status === 502 || this.status === 503 || this.status === 504;
@@ -96,6 +101,16 @@ export function safeNextPath(value: string | null | undefined): string | null {
 }
 
 let redirecting = false;
+let stopped = false;
+
+/**
+ * Called once the session has been ended on purpose (sign-out). From then on no
+ * request leaves this page, so nothing that was polling can ask the API again
+ * with a session that no longer exists while the browser moves to the sign-in screen.
+ */
+export function stopApi(): void {
+  stopped = true;
+}
 
 function redirectToLogin(): void {
   if (typeof window === "undefined" || redirecting) return;
@@ -110,6 +125,7 @@ function fallbackMessage(status: number): string {
   if (status === 401) return "Your session has ended. Sign in again.";
   if (status === 403) return "You do not have access to this resource";
   if (status === 404) return "Not found";
+  if (status === 410) return "This is no longer available.";
   if (status === 413) return "The file is too large.";
   if (status === 429) return "Too many requests. Wait a moment and try again.";
   if (status === 502 || status === 503 || status === 504) {
@@ -144,6 +160,8 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  // The page is on its way to the sign-in screen: settle nothing and send nothing.
+  if (stopped || redirecting) return new Promise<T>(() => undefined);
   const method = options.method ?? "GET";
   const headers: Record<string, string> = { Accept: "application/json" };
   let body: BodyInit | undefined;

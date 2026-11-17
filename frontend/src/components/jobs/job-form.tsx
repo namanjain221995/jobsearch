@@ -5,7 +5,7 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { BadgeCheck, FileSpreadsheet, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { FormField, FormMessage, TextareaField, TextField } from "@/components/shared/form-fields";
 import { TagInput } from "@/components/shared/tag-input";
@@ -25,7 +25,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, errorMessage } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
-import { applyServerErrors } from "@/lib/forms";
+import { applyServerErrors, isGeneralError } from "@/lib/forms";
 import { CITIZENSHIP_REQUIREMENTS, JOB_WORK_MODES, normalizeState, SPONSORSHIP_STATUSES } from "@/lib/options";
 import { useCreateJob, useImportJobUrl, useImportJobsCsv, useUpdateJob } from "@/lib/queries";
 import type { CsvImportResult, JobCreate, JobImportDraft, JobManagerView, JobUpdate } from "@/lib/types";
@@ -208,7 +208,7 @@ function JobFields({
   const clearanceId = useId();
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial });
   const { errors } = form.formState;
-  const failure = error && !(error instanceof ApiError && Object.keys(error.fields).length > 0);
+  const failure = isGeneralError(form, error);
 
   return (
     <form onSubmit={form.handleSubmit((values) => onSubmit(values, form))} noValidate className="flex min-h-0 flex-col gap-4">

@@ -4,12 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck, FolderInput, Inbox, SearchCheck, UserCheck, type LucideIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { useMe } from "@/components/shell/me-context";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/shared/states";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useNow } from "@/hooks/use-now";
+import { errorMessage } from "@/lib/api";
 import { formatRelative, humanize, plural, roleLabel } from "@/lib/format";
 import { ROLE_AREA } from "@/lib/nav";
 import {
@@ -116,7 +118,7 @@ function NotificationList({ onNavigate }: { onNavigate: () => void }) {
           variant="ghost"
           size="xs"
           disabled={unread === 0 || readAll.isPending}
-          onClick={() => readAll.mutate()}
+          onClick={() => readAll.mutate(undefined, { onError: (error) => toast.error(errorMessage(error)) })}
         >
           <CheckCheck data-icon="inline-start" />
           Mark all as read

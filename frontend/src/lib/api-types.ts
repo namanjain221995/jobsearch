@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/team/{team_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Team Analytics */
+        get: operations["team_analytics_by_analytics_path"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assignments": {
         parameters: {
             query?: never;
@@ -260,6 +277,26 @@ export interface paths {
         };
         /** Me */
         get: operations["me_api_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/password-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Password Policy
+         * @description The rules a new password has to meet, for the screens that ask for one before anyone is signed in.
+         */
+        get: operations["password_policy_api_auth_password_policy_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -881,7 +918,13 @@ export interface paths {
         /** List Users */
         get: operations["list_users_api_users_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create User
+         * @description Create an account. Nobody ever chooses another person's password: the account is created in the
+         *     "invited" state and the invitation is returned, exactly as POST /api/invitations does (same rules:
+         *     a Team Lead can only add members to their own team).
+         */
+        post: operations["create_user_api_users_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1383,6 +1426,24 @@ export interface components {
             new_status?: string | null;
             /** Old Status */
             old_status?: string | null;
+        };
+        /**
+         * ExtraField
+         * @description An optional profile field the Admin added. Members fill it in; it is shown with the profile.
+         */
+        ExtraField: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Options */
+            options?: string[];
+            /**
+             * Type
+             * @default text
+             * @enum {string}
+             */
+            type: "text" | "number" | "yes_no" | "choice";
         };
         /** ForgotPasswordIn */
         ForgotPasswordIn: {
@@ -2433,6 +2494,21 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PasswordPolicy */
+        PasswordPolicy: {
+            /**
+             * Character Kinds Required
+             * @default 3
+             */
+            character_kinds_required: number;
+            /**
+             * Max Length
+             * @default 128
+             */
+            max_length: number;
+            /** Min Length */
+            min_length: number;
+        };
         /** PresetIn */
         PresetIn: {
             /** Filters */
@@ -2643,11 +2719,6 @@ export interface components {
         /** ResumeOut */
         ResumeOut: {
             /**
-             * Ai Processing Notice
-             * @default Resume text is sent to the configured AI providers (OpenAI, Anthropic) when a job search runs for this member.
-             */
-            ai_processing_notice: string;
-            /**
              * Created At
              * Format: date-time
              */
@@ -2788,6 +2859,11 @@ export interface components {
              * @default 0
              */
             assigned_count: number;
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
             /**
              * Cancel Requested
              * @default false
@@ -3032,12 +3108,15 @@ export interface components {
              */
             max_results_per_search_run: number;
             /**
+             * Password Min Length
+             * @default 10
+             */
+            password_min_length: number;
+            /**
              * Profile Extra Fields
              * @default []
              */
-            profile_extra_fields: {
-                [key: string]: unknown;
-            }[];
+            profile_extra_fields: components["schemas"]["ExtraField"][];
             /**
              * Watermark Enabled
              * @default true
@@ -3061,9 +3140,7 @@ export interface components {
             /** Max Results Per Search Run */
             max_results_per_search_run?: number | null;
             /** Profile Extra Fields */
-            profile_extra_fields?: {
-                [key: string]: unknown;
-            }[] | null;
+            profile_extra_fields?: components["schemas"]["ExtraField"][] | null;
             /** Watermark Enabled */
             watermark_enabled?: boolean | null;
         };
@@ -3210,6 +3287,16 @@ export interface components {
         /** UiSettings */
         UiSettings: {
             /**
+             * Ai Providers
+             * @default []
+             */
+            ai_providers: string[];
+            /**
+             * Deep Search Default
+             * @default true
+             */
+            deep_search_default: boolean;
+            /**
              * Default Min Match Score
              * @default 50
              */
@@ -3230,6 +3317,16 @@ export interface components {
              */
             max_results_per_search_run: number;
             /**
+             * Password Min Length
+             * @default 10
+             */
+            password_min_length: number;
+            /**
+             * Profile Extra Fields
+             * @default []
+             */
+            profile_extra_fields: components["schemas"]["ExtraField"][];
+            /**
              * Watermark Enabled
              * @default true
              */
@@ -3242,6 +3339,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Deactivated By Admin
+             * @default false
+             */
+            deactivated_by_admin: boolean;
             /** Email */
             email: string;
             /**
@@ -3384,6 +3486,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberAnalytics"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    team_analytics_by_analytics_path: {
+        parameters: {
+            query?: {
+                date_from?: string | null;
+                date_to?: string | null;
+            };
+            header?: never;
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamAnalytics"];
                 };
             };
             /** @description Validation Error */
@@ -3877,6 +4013,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeOut"];
+                };
+            };
+        };
+    };
+    password_policy_api_auth_password_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordPolicy"];
                 };
             };
         };
@@ -5271,6 +5427,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_UserOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_user_api_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationCreated"];
                 };
             };
             /** @description Validation Error */

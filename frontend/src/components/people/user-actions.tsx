@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Ellipsis, KeyRound, MailWarning, MailCheck, Pencil, Repeat2, UserCheck, UserX } from "lucide-react";
+import { useId, useState } from "react";
+import { Ellipsis, KeyRound, MailWarning, MailCheck, Pencil, Repeat2, ShieldAlert, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -22,14 +22,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { errorMessage } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { isPersonName, PERSON_NAME_RULE } from "@/lib/forms";
 import { useCreateResetLink, useTeams, useUpdateUser } from "@/lib/queries";
 import type { ResetLink, User, UserStatus } from "@/lib/types";
 
@@ -60,22 +62,32 @@ function ResetLinkDialog({ user, onClose }: { user: User; onClose: () => void })
           </DialogDescription>
         </DialogHeader>
         {link ? (
+          // A link that went out by e-mail is not shown here as well (`reset_url` is empty then):
+          // whoever holds it can set the password.
           <div className="flex flex-col gap-4">
-            <FormMessage tone={link.email_sent ? "success" : "info"}>
-              <span className="flex items-start gap-2">
-                {link.email_sent ? (
+            {link.email_sent ? (
+              <FormMessage tone="success">
+                <span className="flex items-start gap-2">
                   <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                ) : (
-                  <MailWarning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                )}
-                <span>
-                  {link.email_sent
-                    ? `The link was e-mailed to ${user.email}.`
-                    : `No e-mail was sent. Copy the link and give it to ${user.name} yourself. It will not be shown again.`}
+                  <span>
+                    The reset link was sent by e-mail to <span className="font-medium break-all">{user.email}</span>.
+                    {link.reset_url === "" && " The link is in that e-mail only and is not shown here."}
+                  </span>
                 </span>
-              </span>
-            </FormMessage>
-            <CopyField label="Reset link" value={link.reset_url} />
+              </FormMessage>
+            ) : link.reset_url !== "" ? (
+              <FormMessage tone="info">
+                <span className="flex items-start gap-2">
+                  <MailWarning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                  <span>
+                    No e-mail was sent. Copy the link and give it to {user.name} yourself. It will not be shown again.
+                  </span>
+                </span>
+              </FormMessage>
+            ) : (
+              <FormMessage>No e-mail was sent and the server returned no link. Create the reset link again.</FormMessage>
+            )}
+            {link.reset_url !== "" && <CopyField label="Reset link" value={link.reset_url} />}
             <p className="text-2sm text-muted-foreground">Valid until {formatDateTime(link.expires_at)}.</p>
           </div>
         ) : (
@@ -164,7 +176,10 @@ function RenameDialog({ user, onClose }: { user: User; onClose: () => void }) {
   const update = useUpdateUser();
   const [name, setName] = useState(user.name);
   const trimmed = name.trim();
-  const valid = trimmed.length >= 2 && trimmed.length <= 160;
+  const valid = isPersonName(trimmed);
+  // The API's own verdict on the name (422 with fields.name) belongs on the field, not above the form.
+  const refused = update.error instanceof ApiError ? update.error.fields.name : undefined;
+  const failure = update.error && !refused;
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -188,10 +203,21 @@ function RenameDialog({ user, onClose }: { user: User; onClose: () => void }) {
             <DialogTitle className="text-lg">Rename</DialogTitle>
             <DialogDescription>The name shown across the portal for {user.email}.</DialogDescription>
           </DialogHeader>
-          {update.error && <FormMessage>{errorMessage(update.error)}</FormMessage>}
-          <FormField label="Name" error={!valid && name !== user.name ? "Enter between 2 and 160 characters." : undefined}>
-            {({ id, invalid }) => (
-              <Input id={id} value={name} aria-invalid={invalid || undefined} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+          {failure && <FormMessage>{errorMessage(update.error)}</FormMessage>}
+          <FormField label="Name" error={!valid && name !== user.name ? PERSON_NAME_RULE : refused}>
+            {({ id, invalid, describedBy }) => (
+              <Input
+                id={id}
+                value={name}
+                maxLength={100}
+                aria-invalid={invalid || undefined}
+                aria-describedby={describedBy}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  if (update.error) update.reset();
+                }}
+                autoComplete="off"
+              />
             )}
           </FormField>
           <DialogFooter>
@@ -221,6 +247,9 @@ export function UserActions({ user, variant = "menu" }: { user: User; variant?: 
   const isSelf = user.id === me.id;
   const canReset = user.status === "active";
   const canTransfer = me.role === "ADMIN" && user.role === "MEMBER";
+  // An account an Admin deactivated can only be reactivated by an Admin (the API answers a Team Lead 403).
+  const lockedByAdmin = me.role === "TEAM_LEAD" && !user.is_active && user.deactivated_by_admin;
+  const lockedNoteId = useId();
   const close = () => setAction(null);
 
   const setActive = (active: boolean) =>
@@ -231,7 +260,12 @@ export function UserActions({ user, variant = "menu" }: { user: User; variant?: 
           toast.success(active ? `${saved.name} can sign in again` : `${saved.name} was deactivated`);
           close();
         },
-        onError: (error) => toast.error(errorMessage(error)),
+        // For example 403: a Team Lead cannot reactivate an account an Admin deactivated. That is not offered
+        // (see `lockedByAdmin`), but this screen may not have heard of the Admin's decision yet. Asking again would not help.
+        onError: (error) => {
+          toast.error(errorMessage(error));
+          close();
+        },
       },
     );
 
@@ -261,6 +295,16 @@ export function UserActions({ user, variant = "menu" }: { user: User; variant?: 
               <UserX />
               Deactivate
             </DropdownMenuItem>
+          ) : lockedByAdmin ? (
+            // Said in place of the action, not offered and then refused. It is no menu item, so the menu
+            // is described by it: a screen reader says it when the menu opens.
+            <DropdownMenuLabel id={lockedNoteId} className="flex items-start gap-1.5 text-sm font-normal">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-foreground">Deactivated by an administrator</span>
+                <span className="text-xs">Only an administrator can reactivate this account.</span>
+              </span>
+            </DropdownMenuLabel>
           ) : (
             <DropdownMenuItem onSelect={() => setAction("activate")}>
               <UserCheck />
@@ -287,7 +331,11 @@ export function UserActions({ user, variant = "menu" }: { user: User; variant?: 
             </Button>
           )}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-52">
+        <DropdownMenuContent
+          align="end"
+          className={lockedByAdmin ? "min-w-64" : "min-w-52"}
+          aria-describedby={lockedByAdmin ? lockedNoteId : undefined}
+        >
           {items}
         </DropdownMenuContent>
       </DropdownMenu>

@@ -36,7 +36,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/api";
 import { formatDate, formatDateTime, humanize, plural } from "@/lib/format";
-import { invalidateWork, qk, useWithdrawAssignment } from "@/lib/queries";
+import { invalidateWork, useWithdrawAssignment } from "@/lib/queries";
 import { STATUS_META, STATUS_ORDER } from "@/lib/status";
 import type { AssignmentDetail, AssignmentStatus, JobAssignee, JobDetail } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -181,9 +181,9 @@ export function AssignmentActions({ assignment, className }: { assignment: Assig
   const openJob = () => {
     // The API logs the visit and redirects to the posting. The address of the posting is never put on this page.
     window.open(`/api/assignments/${assignment.id}/open-job`, "_blank", "noopener,noreferrer");
-    // The visit is recorded by the time the new tab has loaded: refresh the open count, status and history.
+    // The visit is recorded by the time the new tab has loaded: refresh the open count, status and history
+    // (this assignment is among the queries that invalidateWork refreshes).
     window.setTimeout(() => {
-      void client.invalidateQueries({ queryKey: qk.assignment(assignment.id) });
       void invalidateWork(client);
     }, 1500);
   };
@@ -279,9 +279,9 @@ export function AssignmentActions({ assignment, className }: { assignment: Assig
         onConfirm={() =>
           withdraw.mutate(assignment.id, {
             onSuccess: (result) => {
+              // The hook has already refreshed everything assignments feed, this one included.
               toast.success(result.message);
               setWithdrawing(false);
-              void client.invalidateQueries({ queryKey: qk.assignment(assignment.id) });
             },
             onError: (error) => toast.error(errorMessage(error)),
           })

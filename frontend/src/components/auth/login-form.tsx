@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useId } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { AuthHeading } from "@/components/auth/auth-heading";
 import { FormMessage, PasswordField, TextField } from "@/components/shared/form-fields";
@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, safeNextPath } from "@/lib/api";
-import { applyServerErrors } from "@/lib/forms";
+import { applyServerErrors, isGeneralError } from "@/lib/forms";
 import { useLogin } from "@/lib/queries";
 import type { Me } from "@/lib/types";
 
@@ -58,7 +58,7 @@ export function LoginForm() {
     });
   });
 
-  const failure = login.error && !(login.error instanceof ApiError && Object.keys(login.error.fields).length > 0);
+  const failure = isGeneralError(form, login.error);
 
   return (
     <>

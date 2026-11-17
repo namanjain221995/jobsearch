@@ -17,7 +17,17 @@ function shiftDay(day: string, deltaDays: number): string {
   return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`;
 }
 
-const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+/** The API accepts date filters from 2000-01-01 to 2100-12-31 and answers 422 for anything else. */
+export const DAY_MIN = "2000-01-01";
+export const DAY_MAX = "2100-12-31";
+
+/** A real calendar day (YYYY-MM-DD) that the API accepts as a date filter. */
+export function isApiDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < DAY_MIN || value > DAY_MAX) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
 
 /**
  * The API parameters for a chosen range. `today` is null until the browser has
@@ -31,7 +41,7 @@ export function resolveRange(
   today: string | null,
 ): { range: DateRange; ready: boolean } {
   if (preset === "custom") {
-    return { range: { date_from: isDay(from) ? from : undefined, date_to: isDay(to) ? to : undefined }, ready: true };
+    return { range: { date_from: isApiDay(from) ? from : undefined, date_to: isApiDay(to) ? to : undefined }, ready: true };
   }
   const days = RANGE_PRESETS.find((item) => item.value === preset)?.days;
   if (!days) return { range: {}, ready: true };

@@ -2,31 +2,42 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleCheck, Link2Off } from "lucide-react";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { AuthHeading } from "@/components/auth/auth-heading";
 import { PasswordRules } from "@/components/auth/password-rules";
 import { FormMessage, PasswordField } from "@/components/shared/form-fields";
+import { LoadingSkeleton } from "@/components/shared/states";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, errorMessage } from "@/lib/api";
-import { passwordProblem } from "@/lib/password";
-import { useResetPassword } from "@/lib/queries";
+import { passwordProblem, type PasswordLimits } from "@/lib/password";
+import { usePasswordPolicy, useResetPassword } from "@/lib/queries";
+import type { PasswordPolicy } from "@/lib/types";
 
-const schema = z
-  .object({ password: z.string(), confirm: z.string() })
-  .superRefine((values, context) => {
-    // The minimum length is the server's to state; here only the character rule is known for sure.
-    const problem = values.password ? passwordProblem(values.password, 1) : "Choose a new password.";
+/** The policy's numbers other than the minimum length, in the shape the password checks take. */
+const limitsOf = (policy: PasswordPolicy | undefined): PasswordLimits | undefined =>
+  policy && { maxLength: policy.max_length, requiredClasses: policy.character_kinds_required };
+
+/**
+ * `policy` is missing only when it could not be loaded. The minimum length is then the server's to
+ * state in its answer; here only the character rule is known for sure.
+ */
+const makeSchema = (policy: PasswordPolicy | undefined) =>
+  z.object({ password: z.string(), confirm: z.string() }).superRefine((values, context) => {
+    const problem = values.password
+      ? passwordProblem(values.password, policy?.min_length ?? 1, limitsOf(policy))
+      : "Choose a new password.";
     if (problem) context.addIssue({ code: "custom", path: ["password"], message: problem });
     if (values.confirm !== values.password) {
       context.addIssue({ code: "custom", path: ["confirm"], message: "The two passwords do not match." });
     }
   });
-type Values = z.infer<typeof schema>;
+type Values = z.infer<ReturnType<typeof makeSchema>>;
 
 function InvalidLink({ message }: { message: string }) {
   return (
@@ -50,9 +61,9 @@ function InvalidLink({ message }: { message: string }) {
   );
 }
 
-export function ResetPasswordForm() {
-  const token = useSearchParams().get("token") ?? "";
+function NewPasswordForm({ token, policy }: { token: string; policy: PasswordPolicy | undefined }) {
   const reset = useResetPassword();
+  const schema = useMemo(() => makeSchema(policy), [policy]);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: { password: "", confirm: "" },
@@ -60,10 +71,6 @@ export function ResetPasswordForm() {
   });
   const password = useWatch({ control: form.control, name: "password" });
   const { errors } = form.formState;
-
-  if (token.length < 20) {
-    return <InvalidLink message="The reset link is incomplete. Open the link from the e-mail again, or request a new one." />;
-  }
 
   if (reset.isSuccess) {
     return (
@@ -117,7 +124,7 @@ export function ResetPasswordForm() {
           error={errors.password?.message}
           {...form.register("password")}
         />
-        <PasswordRules password={password} />
+        <PasswordRules password={password} minLength={policy?.min_length} limits={limitsOf(policy)} />
         <PasswordField
           label="Repeat the new password"
           autoComplete="new-password"
@@ -131,4 +138,18 @@ export function ResetPasswordForm() {
       </form>
     </>
   );
+}
+
+export function ResetPasswordForm() {
+  const token = useSearchParams().get("token") ?? "";
+  const usable = token.length >= 20;
+  const policy = usePasswordPolicy(usable);
+
+  if (!usable) {
+    return <InvalidLink message="The reset link is incomplete. Open the link from the e-mail again, or request a new one." />;
+  }
+  // The rules are fetched before the form is shown, so the list states the minimum length before
+  // anything is typed. If they cannot be loaded the form still works: the API checks the password.
+  if (policy.isPending) return <LoadingSkeleton variant="form" count={3} />;
+  return <NewPasswordForm token={token} policy={policy.data} />;
 }

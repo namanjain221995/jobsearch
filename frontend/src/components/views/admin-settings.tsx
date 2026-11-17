@@ -1,27 +1,37 @@
 "use client";
 
-import { useId } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Controller, useFieldArray, useForm, useWatch, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleCheck, CircleX, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleCheck, CircleX, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
-import { FormMessage, TextField } from "@/components/shared/form-fields";
+import { FormField, FormMessage, TextareaField, TextField } from "@/components/shared/form-fields";
 import { PageHeader, Panel } from "@/components/shared/page-header";
 import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
 import { Tag } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountPanels } from "@/components/views/account-settings";
 import { ApiError, errorMessage } from "@/lib/api";
 import { formatDateTime, humanize } from "@/lib/format";
-import { applyServerErrors } from "@/lib/forms";
+import {
+  applyServerErrors,
+  EXTRA_FIELDS_MAX,
+  EXTRA_OPTIONS_MAX,
+  EXTRA_OPTIONS_MIN,
+  extraFieldKey,
+  extraFieldsSchema,
+  isGeneralError,
+} from "@/lib/forms";
+import { EXTRA_FIELD_TYPE_LABELS, EXTRA_FIELD_TYPES } from "@/lib/options";
 import { useHealth, useIntegrations, usePortalSettings, useUpdatePortalSettings } from "@/lib/queries";
-import type { Integrations, PortalSettings } from "@/lib/types";
+import type { ExtraField, Integrations, PortalSettings } from "@/lib/types";
 import { useUrlState } from "@/lib/url-state";
 
 const whole = (min: number, max: number) =>
@@ -33,26 +43,97 @@ const whole = (min: number, max: number) =>
       return value !== "" && Number.isInteger(number) && number >= min && number <= max;
     }, `Enter a whole number between ${min.toLocaleString()} and ${max.toLocaleString()}.`);
 
-const schema = z
-  .object({
-    watermark_enabled: z.boolean(),
-    deep_search_default: z.boolean(),
-    default_target_count: whole(1, 500),
-    default_min_match_score: whole(0, 100),
-    max_members_per_search: whole(1, 50),
-    max_results_per_search_run: whole(1, 5000),
-    invitation_hours: whole(1, 720),
-  })
-  .superRefine((values, context) => {
-    if (Number(values.default_target_count) > Number(values.max_results_per_search_run)) {
-      context.addIssue({
-        code: "custom",
-        path: ["default_target_count"],
-        message: "The default cannot be higher than the limit of results per search.",
-      });
+/** One extra profile field as this form holds it. */
+const fieldRow = z.object({
+  /** Empty until the field has been saved once. After that it is never changed. */
+  key: z.string(),
+  label: z.string(),
+  type: z.enum(EXTRA_FIELD_TYPES),
+  /** The options of a choice, one per line. */
+  options: z.string(),
+});
+type FieldRow = z.infer<typeof fieldRow>;
+
+/** The lines of an options box: trimmed, without empty lines and without repeats. */
+const optionLines = (text: string) => [
+  ...new Set(
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+  ),
+];
+
+const toRow = (field: ExtraField): FieldRow => ({
+  key: field.key,
+  label: field.label,
+  type: field.type,
+  options: (field.options ?? []).join("\n"),
+});
+
+/**
+ * The rows as PATCH /api/settings takes them. A row that has not been saved yet gets its key here,
+ * from its label; a row that exists keeps the key it has, whatever its label says now, because the
+ * members' answers are stored under it. Options only travel with a choice.
+ *
+ * `saved` is the list the API gave. A field that was not touched goes back exactly as it came, so
+ * that saving something else never rewrites it.
+ */
+function toExtraFields(rows: FieldRow[], saved: ExtraField[]): ExtraField[] {
+  const stored = new Map(saved.map((field) => [field.key, field]));
+  const taken = new Set(rows.map((row) => row.key).filter(Boolean));
+  return rows.map((row) => {
+    const before = stored.get(row.key);
+    if (before) {
+      const untouched = toRow(before);
+      if (untouched.label === row.label && untouched.type === row.type && untouched.options === row.options) {
+        return { key: before.key, label: before.label, type: before.type, options: before.options ?? [] };
+      }
     }
+    const label = row.label.trim();
+    const key = row.key || extraFieldKey(label, taken);
+    taken.add(key);
+    return { key, label, type: row.type, options: row.type === "choice" ? optionLines(row.options) : [] };
   });
-type Values = z.infer<typeof schema>;
+}
+
+/** `saved` is the list of extra fields as the API gave it (see `toExtraFields`). */
+const makeSchema = (saved: ExtraField[]) =>
+  z
+    .object({
+      watermark_enabled: z.boolean(),
+      deep_search_default: z.boolean(),
+      default_target_count: whole(1, 500),
+      default_min_match_score: whole(0, 100),
+      max_members_per_search: whole(1, 50),
+      max_results_per_search_run: whole(1, 5000),
+      invitation_hours: whole(1, 720),
+      profile_extra_fields: z.array(fieldRow),
+    })
+    .superRefine((values, context) => {
+      if (Number(values.default_target_count) > Number(values.max_results_per_search_run)) {
+        context.addIssue({
+          code: "custom",
+          path: ["default_target_count"],
+          message: "The default cannot be higher than the limit of results per search.",
+        });
+      }
+      // The extra fields are checked in the shape they are sent in, by the rules the API applies to them.
+      // A problem with a key is shown at the label, which is what a key is made from.
+      const checked = extraFieldsSchema.safeParse(toExtraFields(values.profile_extra_fields, saved));
+      for (const issue of checked.success ? [] : checked.error.issues) {
+        const [index, part] = issue.path;
+        context.addIssue({
+          code: "custom",
+          path:
+            typeof index === "number"
+              ? ["profile_extra_fields", index, part === "options" ? "options" : "label"]
+              : ["profile_extra_fields"],
+          message: issue.message,
+        });
+      }
+    });
+type Values = z.infer<ReturnType<typeof makeSchema>>;
 
 const toValues = (settings: PortalSettings): Values => ({
   watermark_enabled: settings.watermark_enabled,
@@ -62,7 +143,25 @@ const toValues = (settings: PortalSettings): Values => ({
   max_members_per_search: String(settings.max_members_per_search),
   max_results_per_search_run: String(settings.max_results_per_search_run),
   invitation_hours: String(settings.invitation_hours),
+  profile_extra_fields: settings.profile_extra_fields.map(toRow),
 });
+
+/**
+ * What the API itself refused about the extra fields (422 `fields`), each with the field it is about.
+ * The form checks the same rules before sending, so this is only seen if the two ever disagree. It is
+ * listed in one place because a refusal can be about a whole field, or the whole list, and then no
+ * input would show it.
+ */
+function extraFieldRefusals(error: unknown): string[] {
+  if (!(error instanceof ApiError)) return [];
+  const refusals = Object.entries(error.fields).flatMap(([name, message]) => {
+    const match = /^profile_extra_fields(?:\.(\d+)(?:\.([a-z]+))?)?(?:\.|$)/.exec(name);
+    if (!match) return [];
+    if (match[1] === undefined) return [message];
+    return [`Field ${Number(match[1]) + 1}${match[2] ? `, ${match[2]}` : ""}: ${message}`];
+  });
+  return [...new Set(refusals)];
+}
 
 function SwitchRow({
   checked,
@@ -91,8 +190,205 @@ function SwitchRow({
   );
 }
 
+const NEW_FIELD: FieldRow = { key: "", label: "", type: "text", options: "" };
+
+/**
+ * The extra profile fields: add, rename, change the kind, put in order, remove. Nothing is stored
+ * until the settings are saved, so a removal can still be discarded.
+ */
+function ExtraFieldsPanel({
+  form,
+  saved,
+  refusals,
+}: {
+  form: UseFormReturn<Values>;
+  /** The fields as they are stored now. */
+  saved: ExtraField[];
+  refusals: string[];
+}) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
+  /** The row a move button was pressed in: the row is re-inserted elsewhere, which would drop the focus. */
+  const moved = useRef<{ id: string; direction: "up" | "down" } | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const { fields: rows, append, remove, move } = useFieldArray({ control: form.control, name: "profile_extra_fields" });
+  const values = useWatch({ control: form.control, name: "profile_extra_fields" });
+  const keys = toExtraFields(values, saved).map((field) => field.key);
+  const errors = form.formState.errors.profile_extra_fields;
+  const full = rows.length >= EXTRA_FIELDS_MAX;
+
+  useLayoutEffect(() => {
+    const target = moved.current;
+    if (!target) return;
+    moved.current = null;
+    const row = listRef.current?.querySelector(`[data-row="${target.id}"]`);
+    const button =
+      row?.querySelector<HTMLButtonElement>(`[data-move="${target.direction}"]:enabled`) ??
+      row?.querySelector<HTMLButtonElement>("[data-move]:enabled");
+    button?.focus();
+  });
+
+  const nameOf = (index: number) => values[index]?.label.trim() || `Field ${index + 1}`;
+
+  const shift = (index: number, direction: "up" | "down") => {
+    const to = direction === "up" ? index - 1 : index + 1;
+    moved.current = { id: rows[index].id, direction };
+    setAnnouncement(`${nameOf(index)} is now field ${to + 1} of ${rows.length}.`);
+    move(index, to);
+  };
+
+  const drop = (index: number) => {
+    setAnnouncement(`${nameOf(index)} removed.`);
+    remove(index);
+    addRef.current?.focus();
+  };
+
+  return (
+    <Panel
+      title="Extra profile fields"
+      description="Questions added to every member's profile, under Additional information. Members answer them; their Team Lead and Admins see the answers on the member's page and can fill them in too."
+    >
+      <div className="flex flex-col gap-4">
+        {refusals.length > 0 && (
+          <FormMessage>
+            <ul className="flex flex-col gap-1">
+              {refusals.map((refusal) => (
+                <li key={refusal}>{refusal}</li>
+              ))}
+            </ul>
+          </FormMessage>
+        )}
+        {errors?.root?.message && <FormMessage>{errors.root.message}</FormMessage>}
+
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No extra fields yet. Members see the built-in profile fields only.</p>
+        ) : (
+          <ol ref={listRef} aria-label="Extra profile fields" className="flex flex-col gap-3">
+            {rows.map((row, index) => {
+              const current = values[index] ?? row;
+              const rowErrors = errors?.[index];
+              const name = nameOf(index);
+              return (
+                <li key={row.id} data-row={row.id} data-slot="extra-field">
+                  {/* Every row has a "Label" and a "Type": the group says which field they belong to. */}
+                  <div
+                    role="group"
+                    aria-label={`Field ${index + 1}${current.label.trim() ? `: ${current.label.trim()}` : ""}`}
+                    className="flex flex-col gap-4 rounded-md border bg-muted/40 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-1 text-2sm text-muted-foreground">
+                        <span className="font-label text-foreground">Field {index + 1}</span>
+                        {(row.key || current.label.trim()) && (
+                          <span className="min-w-0">
+                            Key <code className="font-mono text-xs break-all text-foreground">{keys[index]}</code>
+                            {!row.key && ", set when you save"}
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          data-move="up"
+                          disabled={index === 0}
+                          aria-label={`Move ${name} up`}
+                          onClick={() => shift(index, "up")}
+                        >
+                          <ArrowUp />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          data-move="down"
+                          disabled={index === rows.length - 1}
+                          aria-label={`Move ${name} down`}
+                          onClick={() => shift(index, "down")}
+                        >
+                          <ArrowDown />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${name}`} onClick={() => drop(index)}>
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_13rem]">
+                      <TextField
+                        label="Label"
+                        autoComplete="off"
+                        placeholder="Shirt size"
+                        error={rowErrors?.label?.message}
+                        {...form.register(`profile_extra_fields.${index}.label`)}
+                      />
+                      <Controller
+                        control={form.control}
+                        name={`profile_extra_fields.${index}.type`}
+                        render={({ field }) => (
+                          <FormField label="Type">
+                            {({ id }) => (
+                              <Select value={field.value} onValueChange={field.onChange}>
+                                <SelectTrigger id={id} className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {EXTRA_FIELD_TYPES.map((type) => (
+                                    <SelectItem key={type} value={type}>
+                                      {EXTRA_FIELD_TYPE_LABELS[type]}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </FormField>
+                        )}
+                      />
+                    </div>
+                    {current.type === "choice" && (
+                      <TextareaField
+                        label="Options"
+                        rows={3}
+                        placeholder={"Small\nMedium\nLarge"}
+                        description={`One per line, ${EXTRA_OPTIONS_MIN} to ${EXTRA_OPTIONS_MAX} of them. A member chooses one.`}
+                        error={rowErrors?.options?.message}
+                        {...form.register(`profile_extra_fields.${index}.options`)}
+                      />
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Button type="button" variant="outline" ref={addRef} disabled={full} onClick={() => append(NEW_FIELD)}>
+            <Plus data-icon="inline-start" />
+            Add Field
+          </Button>
+          <span className="text-2sm text-muted-foreground tabular-nums">
+            {rows.length} of {EXTRA_FIELDS_MAX}
+            {full && ". Remove a field to add another."}
+          </span>
+        </div>
+        <p className="max-w-[72ch] text-2sm text-muted-foreground">
+          A field gets its key from its label when it is first saved, and keeps it: renaming a field keeps its answers.
+          Saving deletes the answers that no longer fit: every answer to a removed field, and answers that do not match
+          a changed type or a removed option. A field added again later starts empty.
+        </p>
+        <p role="status" className="sr-only">
+          {announcement}
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
 function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
   const save = useUpdatePortalSettings();
+  const savedFields = settings.profile_extra_fields;
+  const schema = useMemo(() => makeSchema(savedFields), [savedFields]);
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: toValues(settings) });
   const { errors, isDirty } = form.formState;
 
@@ -106,6 +402,7 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
         max_members_per_search: Number(values.max_members_per_search),
         max_results_per_search_run: Number(values.max_results_per_search_run),
         invitation_hours: Number(values.invitation_hours),
+        profile_extra_fields: toExtraFields(values.profile_extra_fields, savedFields),
       },
       {
         onSuccess: (saved) => {
@@ -118,7 +415,7 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
       },
     );
   });
-  const failure = save.error && !(save.error instanceof ApiError && Object.keys(save.error.fields).length > 0);
+  const failure = isGeneralError(form, save.error);
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
@@ -188,6 +485,8 @@ function PortalSettingsForm({ settings }: { settings: PortalSettings }) {
         </div>
       </Panel>
 
+      <ExtraFieldsPanel form={form} saved={savedFields} refusals={extraFieldRefusals(save.error)} />
+
       <Panel title="Invitations">
         <TextField
           label="Hours an invitation link stays valid"
@@ -241,6 +540,26 @@ interface Source {
   available?: boolean;
   units?: number;
   postings?: number;
+}
+
+/** The API types a source as a free-form object; keep only entries that have the fields this screen shows. */
+function toSources(raw: Array<Record<string, unknown>>): Source[] {
+  return raw.flatMap((item) =>
+    typeof item.name === "string" && typeof item.label === "string"
+      ? [
+          {
+            name: item.name,
+            label: item.label,
+            kind: typeof item.kind === "string" ? item.kind : undefined,
+            note: typeof item.note === "string" ? item.note : undefined,
+            enabled: typeof item.enabled === "boolean" ? item.enabled : undefined,
+            available: typeof item.available === "boolean" ? item.available : undefined,
+            units: typeof item.units === "number" ? item.units : undefined,
+            postings: typeof item.postings === "number" ? item.postings : undefined,
+          },
+        ]
+      : [],
+  );
 }
 
 function Sources({ sources, settings }: { sources: Source[]; settings: PortalSettings | undefined }) {
@@ -402,7 +721,7 @@ function IntegrationsPanels({ data, settings }: { data: Integrations; settings: 
         description="Where searches look for postings. Switching a source off takes effect for searches started from then on."
         className="lg:col-span-2"
       >
-        <Sources sources={data.sources as Source[]} settings={settings} />
+        <Sources sources={toSources(data.sources)} settings={settings} />
       </Panel>
     </div>
   );

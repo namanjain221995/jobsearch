@@ -54,6 +54,7 @@ import type {
   NoteIn,
   Notification,
   Page,
+  PasswordPolicy,
   PortalSettings,
   PortalSettingsUpdate,
   Preset,
@@ -93,6 +94,7 @@ const asQuery = (params: object | undefined): QueryParams => (params ?? {}) as Q
 
 export const qk = {
   me: ["me"] as const,
+  passwordPolicy: ["password-policy"] as const,
   notifications: ["notifications"] as const,
   notificationsUnread: ["notifications", "unread"] as const,
   notificationsList: (pageSize: number) => ["notifications", "list", pageSize] as const,
@@ -176,6 +178,22 @@ export function useResetPassword() {
   return useMutation({
     mutationFn: (body: ResetPasswordIn) =>
       api.post<Message>("/api/auth/reset-password", body, { redirectOn401: false }),
+  });
+}
+
+/**
+ * The rules a new password has to meet, for the reset screen: nobody is signed in there, so they
+ * cannot come from the signed-in user's settings. They are part of the server's configuration and
+ * do not change while a page is open.
+ */
+export function usePasswordPolicy(enabled = true) {
+  return useQuery({
+    queryKey: qk.passwordPolicy,
+    queryFn: ({ signal }) => apiPublicGet<PasswordPolicy>("/api/auth/password-policy", {}, signal),
+    enabled,
+    retry: false,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -722,7 +740,10 @@ export function useAssignments(
 export function useAssignment(id: string | null | undefined) {
   return useQuery({
     queryKey: qk.assignment(id ?? ""),
-    queryFn: ({ signal }) => api.get<AssignmentDetail>(`/api/assignments/${id}`, undefined, signal),
+    // No abort signal, on purpose. For a member this request records "viewed" on the server. A request
+    // that is cancelled and sent again (React does that to every effect in development) reaches the API
+    // twice at the same moment, and the view is then written to the history twice.
+    queryFn: () => api.get<AssignmentDetail>(`/api/assignments/${id}`),
     enabled: Boolean(id),
   });
 }

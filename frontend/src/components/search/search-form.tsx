@@ -1,12 +1,12 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Bookmark, Play, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { MemberPicker, toPicked, type PickedMember } from "@/components/search/member-picker";
 import { useSearchProgress } from "@/components/search/search-progress";
@@ -25,9 +25,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { ApiError, errorMessage } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
 import { plural } from "@/lib/format";
-import { applyServerErrors } from "@/lib/forms";
+import { applyServerErrors, isGeneralError } from "@/lib/forms";
 import { normalizeState, SPONSORSHIP, SPONSORSHIP_LABELS, WORK_MODE_LABELS } from "@/lib/options";
 import {
   useCreatePreset,
@@ -81,11 +81,12 @@ function buildSchema(limits: SearchOptions["limits"]) {
 }
 type Values = z.infer<ReturnType<typeof buildSchema>>;
 
-const defaultsFor = (limits: SearchOptions["limits"]): Values => ({
+/** `deepSearch` is the portal's "Deep search by default" setting, as the signed-in user's settings state it. */
+const defaultsFor = (limits: SearchOptions["limits"], deepSearch: boolean): Values => ({
   mode: "auto_assign",
   target_count: String(limits.default_target_count),
   min_match_score: String(limits.default_min_match_score),
-  deep_search: true,
+  deep_search: deepSearch,
   job_titles: [],
   years_experience: "",
   work_authorization: SAVED,
@@ -305,8 +306,20 @@ function Form({ options }: { options: SearchOptions }) {
     setSelected(new Map([[presetMember.data.id, toPicked(presetMember.data)]]));
   }
 
-  const form = useForm<Values>({ resolver: zodResolver(buildSchema(limits)), defaultValues: defaultsFor(limits) });
+  const deepSearchDefault = me.settings.deep_search_default;
+  const form = useForm<Values>({
+    resolver: zodResolver(buildSchema(limits)),
+    defaultValues: defaultsFor(limits, deepSearchDefault),
+  });
   const { errors } = form.formState;
+
+  // The switch starts at the portal's default. This form can be open, or kept alive behind another
+  // screen, when an Admin changes that default: follow it then too, until the person decides for
+  // themselves (by using the switch, or by applying a preset, which carries its own choice).
+  const deepSearchChosen = useRef(false);
+  useEffect(() => {
+    if (!deepSearchChosen.current) form.resetField("deep_search", { defaultValue: deepSearchDefault });
+  }, [form, deepSearchDefault]);
   const mode = useWatch({ control: form.control, name: "mode" });
   const targetText = useWatch({ control: form.control, name: "target_count" });
 
@@ -334,14 +347,22 @@ function Form({ options }: { options: SearchOptions }) {
       },
     });
   });
-  const failure = create.error && !(create.error instanceof ApiError && Object.keys(create.error.fields).length > 0);
+  const failure = isGeneralError(form, create.error);
 
   return (
     <form onSubmit={onSubmit} noValidate>
       <PageHeader
         title="Find Jobs"
         description="Search live job postings for one or more members and match them against each member's resume and profile."
-        actions={<Presets getValues={form.getValues} onApply={(preset) => form.reset(fromPreset(preset, form.getValues()))} />}
+        actions={
+          <Presets
+            getValues={form.getValues}
+            onApply={(preset) => {
+              deepSearchChosen.current = true;
+              form.reset(fromPreset(preset, form.getValues()));
+            }}
+          />
+        }
       />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
@@ -359,7 +380,7 @@ function Form({ options }: { options: SearchOptions }) {
                 <div className="flex flex-col gap-2">
                   <Label htmlFor={teamSelectId}>Whole team</Label>
                   <Select value={teamId || SAVED} onValueChange={(value) => setTeamId(value === SAVED ? "" : value)}>
-                    <SelectTrigger id={teamSelectId} className="w-full sm:w-80">
+                    <SelectTrigger id={teamSelectId} className="w-full sm:max-w-80">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -555,7 +576,16 @@ function Form({ options }: { options: SearchOptions }) {
                   control={form.control}
                   name="deep_search"
                   render={({ field }) => (
-                    <Switch id={deepId} checked={field.value} onCheckedChange={field.onChange} ref={field.ref} className="mt-0.5" />
+                    <Switch
+                      id={deepId}
+                      checked={field.value}
+                      onCheckedChange={(checked) => {
+                        deepSearchChosen.current = true;
+                        field.onChange(checked);
+                      }}
+                      ref={field.ref}
+                      className="mt-0.5"
+                    />
                   )}
                 />
                 <div className="flex flex-col gap-1">

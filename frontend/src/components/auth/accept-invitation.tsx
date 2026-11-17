@@ -6,7 +6,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link2Off } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { AuthHeading } from "@/components/auth/auth-heading";
 import { PasswordRules } from "@/components/auth/password-rules";

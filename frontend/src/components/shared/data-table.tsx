@@ -38,6 +38,7 @@ export interface TablePagination {
   onPageChange: (page: number) => void;
   onPageSizeChange?: (pageSize: number) => void;
   noun?: string;
+  summary?: (range: { first: number; last: number; total: number }) => string;
 }
 
 interface DataTableProps<T> {

@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { ClipboardList, Download, SearchX } from "lucide-react";
 
 import { JobFactLine, MatchScore } from "@/components/jobs/job-meta";
+import { DayInput } from "@/components/shared/day-input";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { FilterBar, FilterSelect, SegmentedFilter } from "@/components/shared/filters";
 import { PageHeader } from "@/components/shared/page-header";
@@ -12,7 +13,6 @@ import { EmptyState } from "@/components/shared/states";
 import { ApplicationStatusBadge, StageRail, Tag } from "@/components/shared/status-badge";
 import { useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AssignmentDrawer } from "@/components/views/assignment-detail";
 import { buildUrl } from "@/lib/api";
 import { useToday } from "@/hooks/use-now";
@@ -21,6 +21,7 @@ import type { ListState } from "@/lib/list-state";
 import { useAssignments, useTeams, useUsers } from "@/lib/queries";
 import { isAssignmentStatus, STATUS_META, STATUS_ORDER } from "@/lib/status";
 import type { Assignment, AssignmentListParams } from "@/lib/types";
+import { isApiDay } from "@/lib/date-range";
 import { toPositiveInt, useUrlState } from "@/lib/url-state";
 
 export const ASSIGNMENT_LIST_DEFAULTS = {
@@ -47,7 +48,6 @@ const SORTS = [
   { value: "status", label: "By status" },
 ];
 
-const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 function toParams(state: AssignmentListState, fixed: { teamId?: string; memberId?: string; searchRunId?: string }): AssignmentListParams {
   return {
@@ -57,8 +57,8 @@ function toParams(state: AssignmentListState, fixed: { teamId?: string; memberId
     applied: state.applied === "true" ? true : state.applied === "false" ? false : undefined,
     q: state.q || undefined,
     company: state.company || undefined,
-    date_from: isDay(state.from) ? state.from : undefined,
-    date_to: isDay(state.to) ? state.to : undefined,
+    date_from: isApiDay(state.from) ? state.from : undefined,
+    date_to: isApiDay(state.to) ? state.to : undefined,
     search_run_id: fixed.searchRunId,
     include_inactive: state.withdrawn === "1" ? true : undefined,
     sort: state.sort,
@@ -214,33 +214,8 @@ export function AssignmentsTable({
         )}
         {!compact && (
           <>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground" htmlFor={`${fieldId}-from`}>
-                Assigned from
-              </label>
-              <Input
-                id={`${fieldId}-from`}
-                type="date"
-                value={state.from}
-                max={state.to || today || undefined}
-                onChange={(event) => setState({ from: event.target.value })}
-                className="w-40"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground" htmlFor={`${fieldId}-to`}>
-                Assigned to
-              </label>
-              <Input
-                id={`${fieldId}-to`}
-                type="date"
-                value={state.to}
-                min={state.from || undefined}
-                max={today || undefined}
-                onChange={(event) => setState({ to: event.target.value })}
-                className="w-40"
-              />
-            </div>
+            <DayInput id={`${fieldId}-from`} label="Assigned from" value={state.from} max={state.to || today || undefined} onChange={(from) => setState({ from })} />
+            <DayInput id={`${fieldId}-to`} label="Assigned to" value={state.to} min={state.from || undefined} max={today || undefined} onChange={(to) => setState({ to })} />
             <FilterSelect
               label="Withdrawn assignments"
               value={state.withdrawn === "1" ? "1" : "0"}

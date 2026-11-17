@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, stopApi } from "@/lib/api";
 import { initials, roleLabel } from "@/lib/format";
 import { ACCOUNT_PATH } from "@/lib/nav";
 import { useLogout } from "@/lib/queries";
@@ -26,6 +26,7 @@ export function ProfileMenu() {
   const signOut = () => {
     logout.mutate(undefined, {
       onSuccess: () => {
+        stopApi();
         // A full page load on purpose: signing out must drop every cached screen and query of this
         // session, which a client-side navigation would keep (see the Next.js guide on preserving UI state).
         // eslint-disable-next-line @next/next/no-location-assign-relative-destination

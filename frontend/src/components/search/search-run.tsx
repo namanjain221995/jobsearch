@@ -44,11 +44,25 @@ export function searchStatusLabel(status: string): string {
   return STATUS_VIEW[status]?.label ?? humanize(status);
 }
 
+/**
+ * Shown only for a run that was started more than once: the background worker
+ * restarted while it ran, and the run went back to "queued" and continued with
+ * the members that were not finished. That is a normal course, not a failure.
+ */
+export function RunAttempts({ run }: { run: SearchRun }) {
+  if (run.attempts < 2) return null;
+  return (
+    <Tag data-attempts={run.attempts} title="The background worker restarted during this search. The search resumed by itself.">
+      Resumed, attempt {run.attempts}
+    </Tag>
+  );
+}
+
 /* ------------------------------------------------------------------ counters */
 
 function Counter({ label, value, definition, className }: { label: string; value: ReactNode; definition?: string; className?: string }) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1 bg-card px-3 py-2.5", className)}>
+    <div data-slot="run-counter" data-label={label} className={cn("flex min-w-0 flex-col gap-1 bg-card px-3 py-2.5", className)}>
       <dt className="flex items-center justify-between gap-1 text-xs text-muted-foreground">
         <span className="leading-tight">{label}</span>
         {definition && (
@@ -57,7 +71,9 @@ function Counter({ label, value, definition, className }: { label: string; value
           </InfoPopover>
         )}
       </dt>
-      <dd className="font-figure text-2xl leading-none">{value}</dd>
+      <dd data-slot="run-counter-value" className="font-figure text-2xl leading-none">
+        {value}
+      </dd>
     </div>
   );
 }
@@ -287,6 +303,15 @@ export function RunSettings({ run }: { run: SearchRun }) {
       <dd className="tabular-nums">{run.min_match_score}</dd>
       <dt className="text-muted-foreground">Deep search</dt>
       <dd>{run.deep_search ? "On" : "Off"}</dd>
+      {run.attempts > 1 && (
+        <>
+          <dt className="text-muted-foreground">Attempts</dt>
+          <dd>
+            {run.attempts}. The background worker restarted while this search ran, and it resumed with the members
+            that were not finished.
+          </dd>
+        </>
+      )}
       {overrides.length === 0 ? (
         <>
           <dt className="text-muted-foreground">Overrides</dt>

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { MailCheck } from "lucide-react";
-import { z } from "zod";
+import { KeyRound } from "lucide-react";
+import { z } from "@/lib/zod";
 
 import { AuthHeading } from "@/components/auth/auth-heading";
 import { FormMessage, TextField } from "@/components/shared/form-fields";
@@ -29,16 +29,17 @@ export function ForgotPasswordForm() {
     return (
       <div className="flex flex-col gap-5">
         <span className="grid size-10 place-items-center rounded-md border border-border-strong text-primary">
-          <MailCheck className="size-5" aria-hidden="true" />
+          <KeyRound className="size-5" aria-hidden="true" />
         </span>
-        <AuthHeading title="Check your inbox" />
-        {/* The API answers with the same sentence whether or not the address has an account. */}
+        <AuthHeading title="Reset your password" />
+        {/*
+          What happened is told by the API alone, in its own words. Its answer depends on how the server
+          delivers mail (sent by e-mail, written to the server log, or not sent at all because the server
+          cannot send mail), and it is the same whether or not the address has an account. So nothing on
+          this screen says that a message is on its way.
+        */}
         <p role="status" className="-mt-4 text-md text-foreground">
           {request.data.message}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          No message after a few minutes? Check the spelling, look in spam, or ask your Team Lead for a reset
-          link.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button asChild>
@@ -63,7 +64,7 @@ export function ForgotPasswordForm() {
   return (
     <>
       <AuthHeading title="Reset your password">
-        Enter your e-mail address and we will send a link to choose a new password.
+        Enter the e-mail address of your account to ask for a link to choose a new password.
       </AuthHeading>
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
         {failure && <FormMessage>{errorMessage(request.error)}</FormMessage>}
@@ -80,7 +81,7 @@ export function ForgotPasswordForm() {
         />
         <Button type="submit" size="lg" disabled={request.isPending}>
           {request.isPending && <Spinner data-icon="inline-start" />}
-          {request.isPending ? "Sending link" : "Send reset link"}
+          {request.isPending ? "Sending request" : "Send reset link"}
         </Button>
         <Link href="/login" className="self-start rounded-sm text-sm text-primary underline-offset-4 hover:underline">
           Back to sign in

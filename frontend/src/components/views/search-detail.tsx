@@ -10,6 +10,7 @@ import { JobFactLine, MatchScore } from "@/components/jobs/job-meta";
 import { useSearchProgress } from "@/components/search/search-progress";
 import {
   MODE_SHORT,
+  RunAttempts,
   RunCounters,
   RunSettings,
   RunSources,
@@ -269,6 +270,12 @@ function SearchResults({ run }: { run: SearchRun }) {
               pageSize: results.data.page_size,
               total: results.data.total,
               noun: "results",
+              // The API applies "not assigned yet" after paging, so a page can hold fewer rows than its range.
+              summary:
+                show === "unassigned"
+                  ? ({ first, last, total }) =>
+                      `${results.data.items.length} not assigned yet, among results ${first}–${last} of ${total}`
+                  : undefined,
               onPageChange: setPage,
               onPageSizeChange: (size) => {
                 setPageSize(size);
@@ -353,6 +360,7 @@ export function SearchDetailView({ searchId }: { searchId: string }) {
           <>
             <SearchStatusTag status={run.status} cancelling={run.cancel_requested} />
             <Tag>{MODE_SHORT[run.mode]}</Tag>
+            <RunAttempts run={run} />
           </>
         }
         description={

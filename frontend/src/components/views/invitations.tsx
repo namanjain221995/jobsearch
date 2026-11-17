@@ -59,6 +59,7 @@ function RowActions({
         variant="outline"
         size="sm"
         disabled={resend.isPending}
+        aria-label={`Resend the invitation for ${invitation.name}`}
         onClick={() =>
           resend.mutate(invitation.id, {
             onSuccess: onResent,
@@ -70,7 +71,7 @@ function RowActions({
         Resend
       </Button>
       {invitation.status === "pending" && (
-        <Button variant="destructive" size="sm" onClick={() => setConfirming(true)}>
+        <Button variant="destructive" size="sm" aria-label={`Revoke the invitation for ${invitation.name}`} onClick={() => setConfirming(true)}>
           <Ban data-icon="inline-start" />
           Revoke
         </Button>

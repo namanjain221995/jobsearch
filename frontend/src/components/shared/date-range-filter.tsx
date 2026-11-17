@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 
-import { Input } from "@/components/ui/input";
+import { DayInput } from "@/components/shared/day-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RANGE_PRESETS } from "@/lib/date-range";
 import { cn } from "@/lib/utils";
@@ -48,33 +48,8 @@ export function DateRangeFilter({
       </div>
       {preset === "custom" && (
         <>
-          <div className="flex flex-col gap-1">
-            <label htmlFor={`${id}-from`} className="text-xs text-muted-foreground">
-              From
-            </label>
-            <Input
-              id={`${id}-from`}
-              type="date"
-              value={from}
-              max={to || today || undefined}
-              onChange={(event) => onChange({ from: event.target.value })}
-              className="w-40"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor={`${id}-to`} className="text-xs text-muted-foreground">
-              To
-            </label>
-            <Input
-              id={`${id}-to`}
-              type="date"
-              value={to}
-              min={from || undefined}
-              max={today || undefined}
-              onChange={(event) => onChange({ to: event.target.value })}
-              className="w-40"
-            />
-          </div>
+          <DayInput id={`${id}-from`} label="From" value={from} max={to || today || undefined} onChange={(value) => onChange({ from: value })} />
+          <DayInput id={`${id}-to`} label="To" value={to} min={from || undefined} max={today || undefined} onChange={(value) => onChange({ to: value })} />
         </>
       )}
     </div>

@@ -18,6 +18,7 @@ export function Pagination({
   onPageSizeChange,
   pageSizes = PAGE_SIZES,
   noun = "rows",
+  summary,
   className,
 }: {
   page: number;
@@ -28,6 +29,8 @@ export function Pagination({
   pageSizes?: number[];
   /** What is being counted ("jobs", "members"). */
   noun?: string;
+  /** Replaces the "1 to 25 of 60" sentence, for lists whose page is filtered further after paging. */
+  summary?: (range: { first: number; last: number; total: number }) => string;
   className?: string;
 }) {
   const selectId = useId();
@@ -42,7 +45,11 @@ export function Pagination({
       className={cn("flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-2sm text-muted-foreground", className)}
     >
       <p aria-live="polite" className="tabular-nums">
-        {total === 0 ? `No ${noun}` : `${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()} ${noun}`}
+        {summary
+          ? summary({ first, last, total })
+          : total === 0
+            ? `No ${noun}`
+            : `${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()} ${noun}`}
       </p>
       <div className="flex items-center gap-3">
         {onPageSizeChange && (

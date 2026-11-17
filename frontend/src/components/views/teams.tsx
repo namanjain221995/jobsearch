@@ -6,7 +6,7 @@ import { Ellipsis, MailPlus, Pencil, Plus, Power, PowerOff, UserCog, UserMinus, 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { InvitationDialog, type InvitationPreset } from "@/components/people/invitation-dialog";
 import { CompletionMeter, MEMBER_LIST_DEFAULTS, MemberTable } from "@/components/people/member-table";
@@ -42,7 +42,7 @@ import { SEARCH_LIST_DEFAULTS, SearchHistoryTable } from "@/components/views/sea
 import { TeamAnalyticsPanels } from "@/components/views/team-analytics";
 import { ApiError, errorMessage } from "@/lib/api";
 import { formatDate, plural } from "@/lib/format";
-import { applyServerErrors } from "@/lib/forms";
+import { applyServerErrors, isGeneralError } from "@/lib/forms";
 import { useLocalListState } from "@/lib/list-state";
 import { useCreateTeam, useTeam, useTeams, useUpdateTeam, useUsers } from "@/lib/queries";
 import type { Team } from "@/lib/types";
@@ -98,8 +98,8 @@ function TeamForm({ team, onClose }: { team?: Team; onClose: () => void }) {
       });
     }
   });
-  const failure =
-    mutation.error && !(mutation.error instanceof ApiError && (mutation.error.status === 409 || Object.keys(mutation.error.fields).length > 0));
+  // A 409 (the name is taken) is shown on the name field.
+  const failure = isGeneralError(form, mutation.error) && !(mutation.error instanceof ApiError && mutation.error.status === 409);
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">

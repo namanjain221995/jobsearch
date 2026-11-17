@@ -3,7 +3,7 @@
  * checked against the generated contract types, so a value the API does not know
  * cannot be offered and a new one cannot be forgotten without a type error.
  */
-import type { JobCreate, ProfileIn } from "./types";
+import type { ExtraFieldType, JobCreate, ProfileIn } from "./types";
 
 type Authorization = NonNullable<ProfileIn["work_authorization"]>;
 type WorkMode = NonNullable<ProfileIn["work_mode"]>;
@@ -38,6 +38,15 @@ export const SPONSORSHIP_LABELS: Record<Sponsorship, string> = {
   Yes: "Yes, sponsorship is needed",
   No: "No sponsorship needed",
   Unknown: "Not sure",
+};
+
+/** The kinds of extra profile field an Admin can define, and what each is called on screen. */
+export const EXTRA_FIELD_TYPES = all<ExtraFieldType>()(["text", "number", "yes_no", "choice"]);
+export const EXTRA_FIELD_TYPE_LABELS: Record<ExtraFieldType, string> = {
+  text: "Text",
+  number: "Number",
+  yes_no: "Yes or no",
+  choice: "Choice from a list",
 };
 
 export const JOB_WORK_MODES = all<JobWorkMode>()(["Remote", "Hybrid", "On-site", "Not listed"]);

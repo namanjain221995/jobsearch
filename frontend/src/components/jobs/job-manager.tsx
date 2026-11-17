@@ -12,6 +12,7 @@ import { ApplicationStatusBadge, Tag } from "@/components/shared/status-badge";
 import { useArea } from "@/components/shell/me-context";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { closeOnInternalLink } from "@/lib/dom";
 import { formatDate } from "@/lib/format";
 import { useJob } from "@/lib/queries";
 import type { JobManagerView, MatchExplanation } from "@/lib/types";
@@ -136,7 +137,7 @@ export function JobDrawer({
   const data = job.data;
   return (
     <Sheet open={jobId !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-2xl!">
+      <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-2xl!" onClickCapture={closeOnInternalLink(onOpenChange)}>
         <SheetHeader className="border-b pr-12">
           {data ? (
             <>

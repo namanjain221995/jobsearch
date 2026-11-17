@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -9,7 +10,9 @@ import { Watermarked } from "@/components/jobs/watermark";
 import { PageHeader } from "@/components/shared/page-header";
 import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
 import { useMe } from "@/components/shell/me-context";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { closeOnInternalLink } from "@/lib/dom";
 import { useAssignment } from "@/lib/queries";
 
 /**
@@ -45,7 +48,25 @@ export function AssignmentDetailPage({ assignmentId, back }: { assignmentId: str
       <>
         <PageHeader title="Job" back={back} />
         <div className="rounded-lg border bg-card">
-          <ErrorState error={assignment.error} onRetry={() => assignment.refetch()} />
+          {/*
+            Two different answers end here, both with the way back to the list:
+            410, a job of this member's that a manager took back: the API's own sentence is shown as it is;
+            403 (or 404), a job that is not theirs or does not exist: the words below.
+          */}
+          <ErrorState
+            error={assignment.error}
+            onRetry={() => assignment.refetch()}
+            unavailable={{
+              title: "This job is not on your list",
+              description:
+                "The link may belong to a job that was never assigned to you. Everything assigned to you is under My Jobs.",
+            }}
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href={back.href}>Go to {back.label}</Link>
+              </Button>
+            }
+          />
         </div>
       </>
     );
@@ -81,7 +102,7 @@ export function AssignmentDrawer({
   const data = assignment.data;
   return (
     <Sheet open={assignmentId !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-2xl!">
+      <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-2xl!" onClickCapture={closeOnInternalLink(onOpenChange)}>
         <SheetHeader className="border-b pr-12">
           {data ? (
             <>

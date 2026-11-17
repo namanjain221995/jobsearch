@@ -1,9 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { PasswordRules } from "@/components/auth/password-rules";
 import { FormMessage, PasswordField, TextField } from "@/components/shared/form-fields";
@@ -12,31 +13,34 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, errorMessage } from "@/lib/api";
 import { roleLabel } from "@/lib/format";
-import { applyServerErrors } from "@/lib/forms";
+import { applyServerErrors, personNameSchema } from "@/lib/forms";
 import { passwordProblem } from "@/lib/password";
 import { useChangePassword, useUpdateUser } from "@/lib/queries";
 
-const passwordSchema = z
-  .object({ current_password: z.string().min(1, "Enter your current password."), new_password: z.string(), confirm: z.string() })
-  .superRefine((values, context) => {
-    // Only the character rule is known here; the API states its minimum length when it applies.
-    const problem = values.new_password ? passwordProblem(values.new_password, 1) : "Choose a new password.";
-    if (problem) context.addIssue({ code: "custom", path: ["new_password"], message: problem });
-    if (values.new_password && values.new_password === values.current_password) {
-      context.addIssue({ code: "custom", path: ["new_password"], message: "Choose a password you are not using now." });
-    }
-    if (values.confirm !== values.new_password) {
-      context.addIssue({ code: "custom", path: ["confirm"], message: "The two passwords do not match." });
-    }
-  });
-type PasswordValues = z.infer<typeof passwordSchema>;
+/** `minLength` is the API's own minimum, from the signed-in user's settings (`me.settings.password_min_length`). */
+const makePasswordSchema = (minLength: number) =>
+  z
+    .object({ current_password: z.string().min(1, "Enter your current password."), new_password: z.string(), confirm: z.string() })
+    .superRefine((values, context) => {
+      const problem = values.new_password ? passwordProblem(values.new_password, minLength) : "Choose a new password.";
+      if (problem) context.addIssue({ code: "custom", path: ["new_password"], message: problem });
+      if (values.new_password && values.new_password === values.current_password) {
+        context.addIssue({ code: "custom", path: ["new_password"], message: "Choose a password you are not using now." });
+      }
+      if (values.confirm !== values.new_password) {
+        context.addIssue({ code: "custom", path: ["confirm"], message: "The two passwords do not match." });
+      }
+    });
+type PasswordValues = z.infer<ReturnType<typeof makePasswordSchema>>;
 
 /** Change the signed-in person's own password. Other devices are signed out by the API when it succeeds. */
 export function ChangePasswordForm() {
   const me = useMe();
   const change = useChangePassword();
+  const minLength = me.settings.password_min_length;
+  const schema = useMemo(() => makePasswordSchema(minLength), [minLength]);
   const form = useForm<PasswordValues>({
-    resolver: zodResolver(passwordSchema),
+    resolver: zodResolver(schema),
     defaultValues: { current_password: "", new_password: "", confirm: "" },
     mode: "onTouched",
   });
@@ -82,7 +86,7 @@ export function ChangePasswordForm() {
         error={errors.new_password?.message}
         {...form.register("new_password")}
       />
-      <PasswordRules password={typed} />
+      <PasswordRules password={typed} minLength={minLength} />
       <PasswordField
         label="Repeat the new password"
         autoComplete="new-password"
@@ -97,7 +101,7 @@ export function ChangePasswordForm() {
   );
 }
 
-const nameSchema = z.object({ name: z.string().trim().min(2, "Enter at least 2 characters.").max(160, "Use at most 160 characters.") });
+const nameSchema = z.object({ name: personNameSchema });
 type NameValues = z.infer<typeof nameSchema>;
 
 /** The signed-in person's own account: their name can be changed, the rest is set by an Admin. */

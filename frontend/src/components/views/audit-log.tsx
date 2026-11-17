@@ -3,16 +3,17 @@
 import { useId } from "react";
 import { ScrollText, SearchX } from "lucide-react";
 
+import { DayInput } from "@/components/shared/day-input";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { FilterBar, FilterSelect } from "@/components/shared/filters";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/states";
-import { Input } from "@/components/ui/input";
 import { useToday } from "@/hooks/use-now";
 import { formatDateTime, humanize } from "@/lib/format";
 import { useAuditLogs, useTeams, useUsers } from "@/lib/queries";
 import { statusLabel } from "@/lib/status";
 import type { AuditEntry, AuditListParams } from "@/lib/types";
+import { isApiDay } from "@/lib/date-range";
 import { toPositiveInt, useUrlState } from "@/lib/url-state";
 
 const DEFAULTS = { action: "", actor: "", team: "", from: "", to: "", page: "1", page_size: "50" };
@@ -67,9 +68,9 @@ const ACTION_LABELS: Record<string, string> = {
   "assignment.status_changed": "Changed an application status",
   "assignment.withdrawn": "Withdrew an assignment",
   "settings.updated": "Changed portal settings",
+  "settings.extra_answers_deleted": "Deleted answers to changed profile fields",
 };
 
-const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 function detailValue(key: string, value: unknown): string {
   if (value === null || value === undefined) return "none";
@@ -106,8 +107,8 @@ export function AuditLogView() {
     action: state.action || undefined,
     actor_id: state.actor || undefined,
     team_id: state.team || undefined,
-    date_from: isDay(state.from) ? state.from : undefined,
-    date_to: isDay(state.to) ? state.to : undefined,
+    date_from: isApiDay(state.from) ? state.from : undefined,
+    date_to: isApiDay(state.to) ? state.to : undefined,
     page: toPositiveInt(state.page, 1),
     page_size: toPositiveInt(state.page_size, 50),
   };
@@ -161,33 +162,8 @@ export function AuditLogView() {
           onChange={(team) => setState({ team })}
           options={(teams.data ?? []).map((team) => ({ value: team.id, label: team.name }))}
         />
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground" htmlFor={`${fieldId}-from`}>
-            From
-          </label>
-          <Input
-            id={`${fieldId}-from`}
-            type="date"
-            value={state.from}
-            max={state.to || today || undefined}
-            onChange={(event) => setState({ from: event.target.value })}
-            className="w-40"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground" htmlFor={`${fieldId}-to`}>
-            To
-          </label>
-          <Input
-            id={`${fieldId}-to`}
-            type="date"
-            value={state.to}
-            min={state.from || undefined}
-            max={today || undefined}
-            onChange={(event) => setState({ to: event.target.value })}
-            className="w-40"
-          />
-        </div>
+        <DayInput id={`${fieldId}-from`} label="From" value={state.from} max={state.to || today || undefined} onChange={(from) => setState({ from })} />
+        <DayInput id={`${fieldId}-to`} label="To" value={state.to} min={state.from || undefined} max={today || undefined} onChange={(to) => setState({ to })} />
       </FilterBar>
       <DataTable
         caption="Activity log"

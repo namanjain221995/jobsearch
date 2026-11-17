@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { MailCheck, MailWarning } from "lucide-react";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { CopyField } from "@/components/shared/copy-field";
 import { FormField, FormMessage, TextareaField, TextField } from "@/components/shared/form-fields";
@@ -20,17 +20,22 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { ApiError, errorMessage } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
 import { formatDateTime, roleLabel } from "@/lib/format";
-import { applyServerErrors } from "@/lib/forms";
+import { applyServerErrors, isGeneralError, personNameSchema } from "@/lib/forms";
 import { useCreateInvitation, useTeams } from "@/lib/queries";
 import type { InvitationCreate, InvitationCreated } from "@/lib/types";
 
 /**
- * What the creator sees right after an invitation (or a fresh link) was issued:
- * the link, shown once, and the plain truth about whether an e-mail went out.
+ * What the creator sees right after an invitation (or a fresh link) was issued,
+ * and the plain truth about how it travels.
+ *
+ * When the API sent the e-mail it does not hand the link to the creator as well
+ * (`invite_url` is empty): whoever holds the link can set the password. Only an
+ * invitation that was not e-mailed comes with a link to pass on, shown once.
  */
 export function InvitationResult({ invitation }: { invitation: InvitationCreated }) {
+  const hasLink = invitation.invite_url !== "";
   return (
     <div className="flex flex-col gap-4">
       {invitation.email_sent ? (
@@ -38,11 +43,12 @@ export function InvitationResult({ invitation }: { invitation: InvitationCreated
           <span className="flex items-start gap-2">
             <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>
-              An invitation e-mail was sent to <span className="font-medium">{invitation.email}</span>.
+              The invitation was sent by e-mail to <span className="font-medium break-all">{invitation.email}</span>.
+              {!hasLink && " The link is in that e-mail only and is not shown here."}
             </span>
           </span>
         </FormMessage>
-      ) : (
+      ) : hasLink ? (
         <FormMessage tone="info">
           <span className="flex items-start gap-2">
             <MailWarning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
@@ -52,8 +58,13 @@ export function InvitationResult({ invitation }: { invitation: InvitationCreated
             </span>
           </span>
         </FormMessage>
+      ) : (
+        <FormMessage>
+          No e-mail was sent and the server returned no link. Use Resend on the Invitations page to create a new
+          one.
+        </FormMessage>
       )}
-      <CopyField label="Invitation link" value={invitation.invite_url} />
+      {hasLink && <CopyField label="Invitation link" value={invitation.invite_url} />}
       <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 text-sm">
         <dt className="text-muted-foreground">For</dt>
         <dd className="min-w-0 break-words">
@@ -68,8 +79,9 @@ export function InvitationResult({ invitation }: { invitation: InvitationCreated
         <dd>{formatDateTime(invitation.expires_at)}</dd>
       </dl>
       <p className="text-2sm text-muted-foreground">
-        The link works once. Whoever opens it chooses the password for this account, so share it only with{" "}
-        {invitation.name}.
+        {hasLink
+          ? `The link works once. Whoever opens it chooses the password for this account, so share it only with ${invitation.name}.`
+          : "The link works once. If the e-mail does not arrive, send a new one with Resend on the Invitations page."}
       </p>
     </div>
   );
@@ -77,7 +89,7 @@ export function InvitationResult({ invitation }: { invitation: InvitationCreated
 
 const schema = z
   .object({
-    name: z.string().trim().min(2, "Enter the person's full name.").max(160, "Use at most 160 characters."),
+    name: personNameSchema,
     email: z.email("Enter a valid e-mail address."),
     role: z.enum(["MEMBER", "TEAM_LEAD"]),
     team_choice: z.enum(["existing", "new", "none"]),
@@ -146,7 +158,7 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
       },
     });
   });
-  const failure = create.error && !(create.error instanceof ApiError && Object.keys(create.error.fields).length > 0);
+  const failure = isGeneralError(form, create.error);
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
@@ -317,7 +329,9 @@ export function InvitationDialog({
           <DialogTitle className="text-lg">{created ? "Invitation created" : heading}</DialogTitle>
           <DialogDescription>
             {created
-              ? "Share the link if no e-mail went out."
+              ? created.email_sent
+                ? `${created.name} chooses a password with the link in the e-mail. The account works from then on.`
+                : `The account works once ${created.name} has opened the link and chosen a password.`
               : "They get a link to choose their password. No account works until they do."}
           </DialogDescription>
         </DialogHeader>

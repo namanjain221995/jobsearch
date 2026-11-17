@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
+import { TriangleAlert } from "lucide-react";
 
 import { BrandMark } from "@/components/brand";
 import { SearchProgressHost, SearchProgressProvider } from "@/components/search/search-progress";
@@ -13,6 +14,7 @@ import { ErrorState } from "@/components/shared/states";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROLE_AREA } from "@/lib/nav";
+import { useTeam } from "@/lib/queries";
 
 /** The sidebar before the signed-in user is known. Same footprint as the real one, so nothing shifts. */
 function SidebarSkeleton() {
@@ -52,6 +54,30 @@ function RoleAreaGuard() {
     if (foreign) router.replace(me.home);
   }, [foreign, me.home, router]);
   return null;
+}
+
+/**
+ * A Team Lead whose team was deactivated can still look at everything, but the
+ * API refuses every change (409). Say so up front, in the API's own words,
+ * instead of letting them find out one failed action at a time.
+ */
+function TeamNotice() {
+  const me = useMe();
+  const team = useTeam(me.role === "TEAM_LEAD" ? me.team?.id : undefined);
+  if (!team.data || team.data.is_active) return null;
+  return (
+    <div
+      role="status"
+      data-slot="team-notice"
+      className="mb-5 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/8 px-3 py-2 text-sm"
+    >
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+      <span>
+        <span className="font-medium">{team.data.name} is deactivated.</span> You can still see everything, but an
+        administrator has to reactivate the team before you can make changes.
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -113,7 +139,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               <SidebarInset className="min-w-0">
                 <Header />
                 <main id="main" tabIndex={-1} className="flex-1 px-4 py-6 outline-none md:px-8 md:py-8">
-                  <div className="mx-auto w-full max-w-[84rem]">{children}</div>
+                  <div className="mx-auto w-full max-w-[84rem]">
+                    <Suspense fallback={null}>
+                      <TeamNotice />
+                    </Suspense>
+                    {children}
+                  </div>
                 </main>
               </SidebarInset>
               <Suspense fallback={null}>

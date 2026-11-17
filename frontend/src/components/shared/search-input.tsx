@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
  * A search box that reports what was typed after a short pause, so a list is not
  * refetched on every keystroke. Follows `value` when it changes from outside
  * (filters cleared, browser back).
+ *
+ * Leaving the box reports at once: a pause that is still running when the person
+ * clicks a link would otherwise write the filter to the address bar in the middle
+ * of that navigation and undo it.
  */
 export function SearchInput({
   value,
@@ -45,12 +49,14 @@ export function SearchInput({
   const emit = (next: string, immediately = false) => {
     setText(next);
     if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
     if (immediately) {
       setSeen(next);
       onChange(next);
       return;
     }
     timer.current = setTimeout(() => {
+      timer.current = null;
       setSeen(next);
       onChange(next);
     }, delay);
@@ -70,6 +76,11 @@ export function SearchInput({
         onChange={(event) => emit(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") emit(event.currentTarget.value, true);
+        }}
+        onBlur={(event) => {
+          // Focus moving to this box's own Clear button is not leaving the box.
+          const group = event.currentTarget.closest('[data-slot="input-group"]');
+          if (timer.current !== null && !group?.contains(event.relatedTarget)) emit(event.currentTarget.value, true);
         }}
         className="[&::-webkit-search-cancel-button]:hidden"
       />

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CloudOff, FileQuestion, Lock, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react";
+import { CloudOff, FileQuestion, Lock, RefreshCw, TriangleAlert, Undo2, type LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,7 +52,7 @@ export function EmptyState({
 
 /* ------------------------------------------------------------------ error */
 
-function describeError(error: unknown): { icon: LucideIcon; title: string; description: string } {
+function describeError(error: unknown): { icon: LucideIcon; title: string; description?: string } {
   if (error instanceof ApiError) {
     if (error.isForbidden) {
       return {
@@ -63,6 +63,11 @@ function describeError(error: unknown): { icon: LucideIcon; title: string; descr
     }
     if (error.isNotFound) {
       return { icon: FileQuestion, title: "Not found", description: `${error.message}. It may have been removed.` };
+    }
+    if (error.isGone) {
+      // 410: it was this person's and a manager took it back. The API's sentence says exactly that
+      // ("This job is no longer assigned to you."), so it is shown as it is, with nothing added.
+      return { icon: Undo2, title: error.message };
     }
     if (error.isNetwork) {
       return { icon: CloudOff, title: "The service is not reachable", description: error.message };
@@ -81,19 +86,33 @@ export function ErrorState({
   onRetry,
   compact = false,
   className,
+  unavailable,
+  action,
 }: {
   error: unknown;
   onRetry?: () => void;
   compact?: boolean;
   className?: string;
+  /**
+   * Better words for "the API will not show this" (403 or 404) on a screen that knows what was asked for.
+   * A 410 is not replaced: there the API's own sentence says what happened.
+   */
+  unavailable?: { title: string; description: string };
+  /** Where to go instead, shown under the message. */
+  action?: ReactNode;
 }) {
-  const { icon: Icon, title, description } = describeError(error);
   const denied = error instanceof ApiError && error.isForbidden;
+  const gone = error instanceof ApiError && error.isGone;
+  const refused = error instanceof ApiError && (error.isForbidden || error.isNotFound);
+  const described = describeError(error);
+  const { icon: Icon } = described;
+  const { title, description } = refused && unavailable ? unavailable : described;
   return (
     <div
       role="alert"
       data-slot="error-state"
       data-denied={denied || undefined}
+      data-gone={gone || undefined}
       className={cn(
         "flex w-full flex-col items-center justify-center text-center",
         compact ? "gap-1.5 px-4 py-8" : "gap-2 px-6 py-14",
@@ -103,21 +122,23 @@ export function ErrorState({
       <span
         className={cn(
           "mb-1 grid place-items-center rounded-md border text-destructive",
-          denied ? "border-border-strong text-muted-foreground" : "border-destructive/30 bg-destructive/5",
+          denied || gone ? "border-border-strong text-muted-foreground" : "border-destructive/30 bg-destructive/5",
           compact ? "size-8" : "size-10",
         )}
         aria-hidden="true"
       >
         <Icon className={compact ? "size-4" : "size-5"} />
       </span>
-      <p className="font-label text-sm text-foreground">{title}</p>
-      <p className="max-w-md text-2sm text-pretty text-muted-foreground">{description}</p>
-      {onRetry && !denied && (
+      <p className="max-w-md font-label text-sm text-pretty text-foreground">{title}</p>
+      {description && <p className="max-w-md text-2sm text-pretty text-muted-foreground">{description}</p>}
+      {/* Asking again does not change an answer: no access, not there, or taken back. */}
+      {onRetry && !refused && !gone && (
         <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
           <RefreshCw data-icon="inline-start" />
           Try again
         </Button>
       )}
+      {action && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">{action}</div>}
     </div>
   );
 }

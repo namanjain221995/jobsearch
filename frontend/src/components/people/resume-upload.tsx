@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { FormMessage } from "@/components/shared/form-fields";
 import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
 import { Tag } from "@/components/shared/status-badge";
+import { useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/api";
@@ -26,6 +27,10 @@ function validate(file: File): string | null {
   if (file.size === 0) return "This file is empty.";
   return null;
 }
+
+/** "OpenAI", "OpenAI and Anthropic", "OpenAI, Anthropic and Another". */
+const joinNames = (names: string[]) =>
+  names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "") : [];
@@ -112,6 +117,8 @@ function ExtractedDetails({ resume, memberId }: { resume: Resume; memberId: stri
 export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBehalfOf?: string }) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  // The outside AI services this server sends resume text to when a search runs; none when no provider is configured.
+  const aiProviders = useMe().settings.ai_providers;
   const resume = useResume(memberId);
   const upload = useUploadResume(memberId, Boolean(onBehalfOf));
   const remove = useDeleteResume(memberId);
@@ -211,10 +218,12 @@ export function ResumeUpload({ memberId, onBehalfOf }: { memberId: string; onBeh
         </label>
         {problem && <FormMessage>{problem}</FormMessage>}
         {onBehalfOf && <p className="text-xs text-muted-foreground">You are uploading on behalf of {onBehalfOf}.</p>}
-        <p className="text-xs text-muted-foreground">
-          {current?.ai_processing_notice ??
-            "Only the text of the file is kept. It is used to match jobs to the member when a search runs."}
-        </p>
+        {/* Said before anything is uploaded, and from the server's actual configuration: where the text of a resume goes. */}
+        <FormMessage tone="info">
+          {aiProviders.length > 0
+            ? `When a job search runs for ${onBehalfOf ? "this member" : "you"}, text from this resume is sent to ${joinNames(aiProviders)} to match and rank the jobs found. The uploaded file itself is not kept; only its text is stored.`
+            : "No outside AI service is configured on this server. Resume text stays on this server."}
+        </FormMessage>
       </div>
 
       {current && (

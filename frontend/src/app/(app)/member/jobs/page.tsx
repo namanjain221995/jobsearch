@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
+import { PageFallback } from "@/components/shared/page-fallback";
 import { MemberJobsView } from "@/components/views/member-jobs";
 
 export const metadata: Metadata = { title: "My Jobs" };
 
 export default function MemberJobsPage() {
-  return <MemberJobsView />;
+  return (
+    <Suspense fallback={<PageFallback />}>
+      <MemberJobsView />
+    </Suspense>
+  );
 }

@@ -3,7 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { FormMessage, TextareaField, TextField } from "@/components/shared/form-fields";
 import { ApplicationStatusBadge } from "@/components/shared/status-badge";
@@ -17,21 +17,35 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import { ApiError, errorMessage } from "@/lib/api";
-import { toDateTimeInput } from "@/lib/format";
-import { applyServerErrors } from "@/lib/forms";
+import { errorMessage } from "@/lib/api";
+import { formatDateTime, toDateTimeInput } from "@/lib/format";
+import { applyServerErrors, isGeneralError } from "@/lib/forms";
 import { useUpdateStatus } from "@/lib/queries";
 import { PRE_APPLICATION_STATUSES, STATUS_META } from "@/lib/status";
 import type { AssignmentDetail, AssignmentStatus, StatusUpdate } from "@/lib/types";
 
-const schema = z.object({
-  applied_at: z.string().refine((value) => !value || new Date(value).getTime() <= Date.now() + 60_000, {
-    message: "The application date cannot be in the future.",
-  }),
-  reference: z.string().max(200, "Use at most 200 characters."),
-  note: z.string().max(4000, "Use at most 4,000 characters."),
-});
-type Values = z.infer<typeof schema>;
+/** The API allows a few minutes of clock difference on both ends; so does this form. */
+const CLOCK_TOLERANCE_MS = 4 * 60_000;
+
+/**
+ * The application date is optional. When given it lies between the moment the
+ * job was assigned and now: nobody applied to a job before it was assigned to
+ * them. The API checks the same and answers 422 otherwise.
+ */
+const makeSchema = (assignedAt: string) =>
+  z.object({
+    applied_at: z
+      .string()
+      .refine((value) => !value || !Number.isNaN(new Date(value).getTime()), "Enter a date and a time.")
+      .refine((value) => !value || new Date(value).getTime() <= Date.now() + 60_000, "The application date cannot be in the future.")
+      .refine(
+        (value) => !value || new Date(value).getTime() >= new Date(assignedAt).getTime() - CLOCK_TOLERANCE_MS,
+        `The application date cannot be earlier than ${formatDateTime(assignedAt)}, when this job was assigned.`,
+      ),
+    reference: z.string().max(200, "Use at most 200 characters."),
+    note: z.string().max(4000, "Use at most 4,000 characters."),
+  });
+type Values = z.infer<ReturnType<typeof makeSchema>>;
 
 const SUBMITTED: AssignmentStatus[] = ["APPLIED", "INTERVIEWING", "OFFER", "REJECTED"];
 
@@ -102,7 +116,7 @@ function StatusDialogBody({
 }) {
   const update = useUpdateStatus(assignment.id);
   const form = useForm<Values>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(makeSchema(assignment.assigned_at)),
     defaultValues: { applied_at: "", reference: "", note: "" },
   });
   const { errors } = form.formState;
@@ -115,6 +129,7 @@ function StatusDialogBody({
 
   const onSubmit = form.handleSubmit((values) => {
     const body: StatusUpdate = { status: target };
+    // The box holds local time without a zone; the API wants the zone, so the instant is sent in UTC ("...Z").
     if (asksForSubmission && values.applied_at) body.applied_at = new Date(values.applied_at).toISOString();
     if (asksForSubmission && values.reference.trim()) body.reference = values.reference.trim();
     if (values.note.trim()) body.note = values.note.trim();
@@ -129,7 +144,7 @@ function StatusDialogBody({
     });
   });
 
-  const failure = update.error && !(update.error instanceof ApiError && Object.keys(update.error.fields).length > 0);
+  const failure = isGeneralError(form, update.error);
 
   return (
     <DialogContent className="sm:max-w-md">
@@ -177,8 +192,9 @@ function StatusDialogBody({
               label="When was the application submitted?"
               optional
               type="datetime-local"
+              min={toDateTimeInput(new Date(assignment.assigned_at))}
               max={toDateTimeInput(new Date())}
-              description="Leave empty to use the current time."
+              description={`Leave empty to use the current time. Not before ${formatDateTime(assignment.assigned_at)}, when this job was assigned.`}
               error={errors.applied_at?.message}
               {...form.register("applied_at")}
             />
