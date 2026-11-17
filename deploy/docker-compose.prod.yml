@@ -120,8 +120,25 @@ services:
 
 configs:
   searxng_settings:
+    # Engines: only web engines that answer `site:` queries and tolerate a server address; every other default engine
+    # (images, videos, news, music, maps, IT, science, files, ...) is dropped by keep_only so a query costs fewer
+    # outgoing requests. No proxies, no user-agent tricks: blocked engines are simply reported as unresponsive.
+    # mojeek and startpage stay off: SearXNG marks them inactive because they now answer with proof-of-work CAPTCHAs.
     content: |
-      use_default_settings: true
+      use_default_settings:
+        engines:
+          keep_only: [google cse, brave, yandex, bing, google, qwant, duckduckgo]
+      engines:
+        - { name: google cse, disabled: false, timeout: 6.0 }
+        - { name: brave, disabled: false, timeout: 5.0 }
+        - { name: qwant, disabled: false, timeout: 5.0 }
+        - { name: yandex, disabled: false, timeout: 5.0 }
+        - { name: google, disabled: false, timeout: 5.0 }
+        - { name: bing, disabled: false, timeout: 8.0 }
+        - { name: duckduckgo, disabled: false, timeout: 5.0 }
+      outgoing:
+        request_timeout: 5.0
+        max_request_timeout: 10.0
       server:
         secret_key: "${SEARXNG_SECRET:?SEARXNG_SECRET is not set}"
         limiter: false

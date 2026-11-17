@@ -243,6 +243,17 @@ tunnel, whose public hostname points at `http://frontend:3000`.
 
 Greenhouse, Ashby and Lever employer boards (about 420 seed employers plus boards learned from discovery), Workday (159 large employers, rate-limited by Workday), Workable search and Workable employer accounts found by discovery, Amazon Jobs, Remote OK, Jobicy, Himalayas, OpenAI web search and Claude web search with verification, a headless browser for pages that need JavaScript, and Adzuna (optional key, not live-tested). LinkedIn, Indeed, Glassdoor and ZipRecruiter are not scraped: their terms forbid it and the app does not bypass blocks. An Admin can switch sources off under Settings → Integrations.
 
+**Board discovery from Common Crawl.** `python -m app.portal.import_boards --common-crawl [N]` (default 2 crawls) reads the Common Crawl URL index of the N most recent crawls for `job-boards.greenhouse.io`, `boards.greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `apply.workable.com` and `*.myworkdayjobs.com`, keeps only board ids, and registers new ones with origin `commoncrawl` through the same dedupe and `register_catalog` path as the CSV import; the paced catalogue trickle then reads them. The CDX API at `index.commoncrawl.org/CC-MAIN-*-index` is disallowed by that host's robots.txt, so the tool reads the same index shards from `data.commoncrawl.org` (whose robots.txt welcomes HTTPS downloads) by byte range: one request at a time, a named User-Agent, exponential backoff with jitter up to 5 minutes, resume per (crawl, pattern, page) from `~/.cache/jobsearch/common_crawl_state.json` (`--cc-state`), a progress line per page, and `--cc-max-pages M` as a cap. One crawl (CC-MAIN-2026-43) took 2 min 17 s and found 3,859 Greenhouse, 264 Lever, 1,054 Ashby, 3,818 Workable and 2,918 Workday board ids.
+
+**SearXNG engines.** The production SearXNG (`configs.searxng_settings` in `deploy/docker-compose.prod.yml`) keeps only the web engines brave, mojeek, qwant, startpage, yandex, google, bing and duckduckgo, with 5–6 s per-engine timeouts; image, video, news, music and other default engines are dropped, and the app asks for `categories=general`. Engines that answer a server address with a CAPTCHA or 403 are reported as unresponsive and skipped; nothing tries to get around that.
+
+#### Free search engines considered
+
+- **SearXNG**: used (self-hosted meta-search, JSON API).
+- **Common Crawl index**: used for board discovery (open data, read from `data.commoncrawl.org`).
+- **Whoogle, 4get, LibreY**: rejected. They fetch Google or Bing result pages directly from our server, which those engines' terms forbid and which gets blocked; SearXNG already covers meta-search.
+- **YaCy, Stract**: rejected. They run their own crawler and index, need far more memory and disk than the server has, and would take months to index job boards that the ATS feeds already give directly.
+
 ### Finding more per search
 
 A search asks for up to 1,000 jobs per candidate and returns what really exists: only postings read from an employer's board API or a verified page, never a filler. Five things widen what one search finds; each is a setting and each can be switched off (`.env.example` lists every variable).

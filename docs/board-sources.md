@@ -91,6 +91,10 @@ Estimates (greenhouse/lever/ashby only, from the sample): about 166,000 extra po
 4.9 KB per posting including indexes (276 MB / 56,833 postings), so roughly +0.8 GB. Read-all time at the default
 rates, ATS in parallel: greenhouse 6 h, lever 4.7 h, ashby 8 h, workable 20 h, workday 43 h.
 
+## Common Crawl discovery
+
+`--common-crawl [N]` registers board ids found in the Common Crawl URL index with origin `commoncrawl`; `known_boards`, `catalog_due`, `catalog_touch` and `catalog_stats` treat `commoncrawl` like `catalog`. Code: app/portal/common_crawl.py (see its docstring for why the index shards on data.commoncrawl.org are read instead of the robots-disallowed CDX API).
+
 ## Terms and robots.txt findings (2026-11-18)
 
 | Vendor | Endpoint | robots.txt for our UA | Terms | Default |

@@ -196,7 +196,8 @@ class SearxClient:
             self._next = self._clock() + self.min_interval
             self.requests += 1
             r = await self.client.get(self.base_url + "/search", timeout=self.timeout, follow_redirects=False,
-                                      params={"q": query, "format": "json", "pageno": pageno, "safesearch": 0},
+                                      params={"q": query, "format": "json", "pageno": pageno, "safesearch": 0,
+                                              "categories": "general"},          # web engines only: no image/news engines
                                       headers={"Accept": "application/json"})
         if r.status_code == 429:
             self._next = max(self._next, self._clock() + 30.0)       # the instance asks for a pause: give it one

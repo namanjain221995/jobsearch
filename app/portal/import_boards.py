@@ -1,10 +1,14 @@
 """Register the imported employer-board catalogue in the PostgreSQL job index.
 
     python -m app.portal.import_boards [--dry-run] [--only greenhouse,lever] [--validate N] [--simplify] [--dsn postgresql://...]
+    python -m app.portal.import_boards --common-crawl [N] [--cc-state PATH] [--cc-max-pages M] [--only ...] [--dry-run]
 
 Registration fetches nothing: boards are read later by the engine's paced catalogue trickle (app/board_catalog.py).
 --validate N reads N random new boards per ATS now (paced, public feeds only) and reports the live ratio and postings per
 board; without --dry-run those boards are recorded (live / empty / dead) and their postings stored like a normal refresh.
+--common-crawl [N] (default 2) reads board ids from the Common Crawl URL index of the N most recent crawls
+(app/portal/common_crawl.py) instead of the shipped CSV lists, and registers the new ones with origin 'commoncrawl'
+through the same dedupe and register_catalog path; the trickle reads them like any other catalogue board.
 Idempotent: a second run registers nothing new."""
 import argparse
 import asyncio
@@ -85,6 +89,10 @@ async def main(argv: list[str] | None = None, index=None, client: httpx.AsyncCli
     ap.add_argument("--simplify", action="store_true", help="also take board ids from SimplifyJobs New-Grad-Positions (off by default)")
     ap.add_argument("--dsn", default="", help="PostgreSQL DSN (default: the app's DATABASE_URL)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--common-crawl", type=int, nargs="?", const=2, default=0, metavar="N",
+                    help="discover board ids from the Common Crawl index of the N most recent crawls (default 2)")
+    ap.add_argument("--cc-state", default="", help="resume file for --common-crawl (default ~/.cache/jobsearch/common_crawl_state.json)")
+    ap.add_argument("--cc-max-pages", type=int, default=0, metavar="M", help="read at most M index pages per crawl and pattern")
     args = ap.parse_args(argv)
     only = [a.strip() for a in args.only.split(",") if a.strip()] or None
     bad = [a for a in only or [] if a not in board_catalog.CATALOG_ATS]
@@ -101,13 +109,29 @@ async def main(argv: list[str] | None = None, index=None, client: httpx.AsyncCli
     own_client = client is None
     client = client or httpx.AsyncClient(follow_redirects=False)
     try:
-        extra = await fetch_simplify(client) if args.simplify else None
-        plans = await board_catalog.plan_import(index, only, extra)
-        inserted = {} if args.dry_run else await board_catalog.register(index, plans)
+        cc_stats = None
+        if args.common_crawl > 0:
+            from .common_crawl import DEFAULT_STATE, CommonCrawl
+            from pathlib import Path
+            cc = CommonCrawl(client, Path(args.cc_state) if args.cc_state else DEFAULT_STATE)
+            cc_stats = await cc.run(args.common_crawl, only, args.cc_max_pages)
+            extra = {ats: list(st.keys.values()) for ats, st in cc_stats.items()}
+            plans = await board_catalog.plan_import(index, [a for a in only or board_catalog.CATALOG_ATS if a in extra],
+                                                    extra, use_csv=False)
+            inserted = {} if args.dry_run else await board_catalog.register(index, plans, origin="commoncrawl")
+        else:
+            extra = await fetch_simplify(client) if args.simplify else None
+            plans = await board_catalog.plan_import(index, only, extra)
+            inserted = {} if args.dry_run else await board_catalog.register(index, plans)
         report = {"dry_run": args.dry_run, "ats": {}}
         for p in plans:
             report["ats"][p.ats] = {"new": len(p.new), "existing": p.existing, "skipped": p.skipped,
                                     "registered": inserted.get(p.ats, 0)}
+            if cc_stats and p.ats in cc_stats:
+                st = cc_stats[p.ats]
+                report["ats"][p.ats]["common_crawl"] = {"urls": st.urls, "distinct": len(st.keys), "pages": st.blocks,
+                                                        "resumed": st.resumed, "failures": st.failures,
+                                                        "seconds": round(st.seconds, 1)}
         if args.validate > 0:
             for p in plans:
                 started = time.monotonic()
@@ -127,6 +151,10 @@ def _print(report: dict) -> None:
     print(("DRY RUN - nothing written\n" if report["dry_run"] else "") + f"{'ats':16} {'new':>7} {'existing':>9} {'skipped':>8} {'registered':>11}")
     for ats, r in report["ats"].items():
         print(f"{ats:16} {r['new']:>7} {r['existing']:>9} {r['skipped']:>8} {r['registered']:>11}")
+        c = r.get("common_crawl")
+        if c:
+            print(f"  common crawl: urls {c['urls']} distinct {c['distinct']} new {r['new']} pages {c['pages']} "
+                  f"(resumed {c['resumed']}) failures {c['failures']} ({c['seconds']} s)")
         v = r.get("validation")
         if v:
             print(f"  validate {v['sampled']}: live {v['live']} empty {v['empty']} dead {v['dead']} error {v['error']} "

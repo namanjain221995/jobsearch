@@ -143,11 +143,12 @@ class Plan:
     skipped: int          # malformed rows + duplicates inside the list
 
 
-async def plan_import(index, only: list[str] | None = None, extra: dict[str, list[str]] | None = None) -> list[Plan]:
+async def plan_import(index, only: list[str] | None = None, extra: dict[str, list[str]] | None = None,
+                      use_csv: bool = True) -> list[Plan]:
     """What an import would register, per ATS. `index` needs `board_slugs(ats)` (PgJobIndex) or may be None."""
     plans = []
     for ats in only or CATALOG_ATS:
-        loaded = load_csv(ats)
+        loaded = load_csv(ats) if use_csv else Loaded()
         keys, skipped = list(loaded.keys), loaded.malformed + loaded.duplicates
         folded = {_fold(ats, k) for k in keys}
         for k in (extra or {}).get(ats, []):
@@ -162,12 +163,13 @@ async def plan_import(index, only: list[str] | None = None, extra: dict[str, lis
     return plans
 
 
-async def register(index, plans: list[Plan], chunk: int = 2000) -> dict[str, int]:
+async def register(index, plans: list[Plan], chunk: int = 2000, origin: str = "catalog") -> dict[str, int]:
     inserted = {}
     for plan in plans:
         n = 0
         for i in range(0, len(plan.new), chunk):
-            n += await index.register_catalog([(plan.ats, k) for k in plan.new[i: i + chunk]])
+            pairs = [(plan.ats, k) for k in plan.new[i: i + chunk]]
+            n += await (index.register_catalog(pairs, origin) if origin != "catalog" else index.register_catalog(pairs))
         inserted[plan.ats] = n
     return inserted
 
