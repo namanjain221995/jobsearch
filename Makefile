@@ -1,7 +1,7 @@
 # Local development commands. Run `make help` for the list.
 PY := .venv/bin/python
 
-.PHONY: help infra infra-stop migrate admin api worker web web-prod test demo openapi docker docker-stop
+.PHONY: help infra infra-stop migrate admin api worker web web-prod test demo e2e openapi docker docker-stop
 
 help:
 	@echo "make infra        start PostgreSQL (127.0.0.1:55432) and Redis (127.0.0.1:56379) in Docker"
@@ -13,6 +13,7 @@ help:
 	@echo "make web-prod     production build of the web app, then serve it on http://127.0.0.1:3010"
 	@echo "make test         backend tests (needs 'make infra')"
 	@echo "make demo         demo API on http://127.0.0.1:8011 with synthetic data (no network, no AI cost)"
+	@echo "make e2e          browser tests on a demo stack of their own (builds the web app; ports 8011 and 3011)"
 	@echo "make openapi      re-export openapi.json and regenerate the web app's API types"
 	@echo "make docker       whole stack in Docker (web app on http://localhost:3010)"
 	@echo "make infra-stop   stop PostgreSQL and Redis (data is kept)"
@@ -46,6 +47,9 @@ test:
 
 demo:
 	$(PY) -m tests.e2e.server --reset
+
+e2e:
+	./tests/e2e/run.sh
 
 openapi:
 	$(PY) -m app.portal.export_openapi > openapi.json

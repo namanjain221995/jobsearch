@@ -48,8 +48,16 @@ cp .env.example .env                           # add OPENAI_API_KEY / ANTHROPIC_
 # 4. Three processes
 .venv/bin/uvicorn app.portal.app:app --host 127.0.0.1 --port 8010 --no-access-log     # API (it writes its own request log)
 .venv/bin/arq app.portal.worker.WorkerSettings                        # background worker
-cd frontend && npm install && npm run dev                             # web app on http://127.0.0.1:3010
+cd frontend && npm install && npm run dev                             # web app on http://127.0.0.1:3010 (development mode)
 ```
+
+For everyday use run the production build of the web app instead of the development server:
+
+```bash
+cd frontend && npm run build && npm run start                         # http://127.0.0.1:3010
+```
+
+The address of the API (`API_ORIGIN`, default `http://127.0.0.1:8010`) is fixed into the web app when it is built, so set it before `npm run build` if the API runs elsewhere. `make help` lists a short command for each of these steps.
 
 Open <http://127.0.0.1:3010>. You land on the sign-in page; after signing in each role is sent to its own dashboard (`/admin/dashboard`, `/tl/dashboard`, `/member/dashboard`).
 
@@ -68,11 +76,12 @@ The SQLite file is opened read-only and is never changed. The copy is one transa
 ### Whole stack in Docker
 
 ```bash
+cp .env.example .env                           # once; the backend services read it
 docker compose --profile app up -d --build
-docker compose --profile app run --rm -e BOOTSTRAP_ADMIN_EMAIL=you@company.com -e BOOTSTRAP_ADMIN_PASSWORD='...' backend python -m app.portal.bootstrap
+docker compose --profile app exec -e BOOTSTRAP_ADMIN_EMAIL=you@company.com -e BOOTSTRAP_ADMIN_PASSWORD='...' backend python -m app.portal.bootstrap
 ```
 
-Services: `postgres`, `redis`, `migrate` (runs `alembic upgrade head` once), `backend`, `worker`, `frontend`. Set `PUBLIC_BASE_URL` to the address users open, and `POSTGRES_PASSWORD` to a real secret on any shared machine.
+Services: `postgres`, `redis`, `migrate` (runs `alembic upgrade head`, then exits), `backend`, `worker`, `frontend`. The web app is on <http://localhost:3010>. Set `PUBLIC_BASE_URL` to the address users open (default `http://localhost:3010`; invitation and reset links are built from it), and `POSTGRES_PASSWORD` to a real secret on any shared machine. `WEB_PORT`, `API_PORT`, `POSTGRES_PORT` and `REDIS_PORT` change the published ports. Stop the local API and web app first if they use the same ports.
 
 ## How accounts are created
 
@@ -80,10 +89,16 @@ There is no public registration.
 
 1. The Admin creates a Team Lead (with a new or existing team). A Team Lead adds members to their own team.
 2. The system creates an invitation: a random token that is stored only as a hash, works once and expires after 48 hours. Role and team are fixed on the server when the invitation is created.
-3. With SMTP configured the link is e-mailed. Without SMTP the person who created the invitation sees the link and copies it; the app never claims an e-mail was sent when it was not.
+3. With SMTP configured the link is e-mailed. Without SMTP the person who created the invitation sees the link and copies it; the app never claims an e-mail was sent when it was not. A send counts only when the mail server accepted the message. The connection is encrypted (STARTTLS, or TLS from the start on port 465) and the server's certificate is verified; a server without encryption or with an untrusted certificate gets neither the SMTP password nor the message.
 4. The invited person opens `/invite/accept?token=…`, chooses a password and signs in.
 
 Password reset works the same way (`/forgot-password`, or a manager creates a reset link for someone in their scope).
+
+## Member profiles and resumes
+
+A member fills in their profile (desired titles, experience, skills, locations, work arrangement, work authorization) and uploads a resume as PDF, DOCX or TXT. Their Team Lead and Admins can do both on the member's behalf. The text of the resume is extracted and stored; the file itself is not kept. The upload area says which outside AI services receive text from the resume when a search runs, read from the server's configuration.
+
+An Admin can add up to 20 extra profile fields under Settings (text, number, yes or no, or a choice from a list). They appear on every member's profile under "Additional information". Stored answers always match the fields that exist: removing a field, changing its type or removing an option deletes the answers that no longer fit when the settings are saved, the audit log records how many, and a field added again later starts empty.
 
 ## Searching and assigning
 
@@ -131,7 +146,7 @@ A date range selects assignments by the day they were assigned (UTC). Charts sho
 - **API documentation** (`/api/docs`, `/api/openapi.json`) is switched off when `APP_ENV=production` (`API_DOCS=true` turns it back on).
 - **Resumes:** the extracted text and structured profile are stored in PostgreSQL; the uploaded file is not kept. Replacing a resume erases the text of the previous version. Resume text is sent to the configured AI providers when a search runs for that member; the UI says so. Resume and posting text are passed to models as untrusted data.
 
-The rules above were checked by an adversarial review on 2026-11-17; its 23 findings and their fixes are pinned by the 30 tests of `tests/portal/test_security_review.py`; further rules are in `tests/portal/test_hardening.py`.
+The rules above were checked by an adversarial review on 2026-11-17; its 23 findings and their fixes are pinned by the 30 tests of `tests/portal/test_security_review.py`; further rules are in `tests/portal/test_hardening.py`. `tests/portal/test_email_delivery.py` runs the real mail sender against an SMTP server on the test machine: delivery, refusals, and the certificate checks.
 
 ### Client addresses
 
@@ -171,7 +186,7 @@ See `.env.example` for every variable. The ones you are most likely to set:
 | `DATABASE_URL`, `REDIS_URL` | PostgreSQL and Redis |
 | `PUBLIC_BASE_URL` | Address of the web app (links in invitations, same-origin check) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_MODEL`, `ANTHROPIC_MODEL` | AI providers (the app also works with none) |
-| `SMTP_HOST`, `SMTP_FROM`, … | E-mail delivery for invitations and resets |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS` | E-mail delivery for invitations and resets (STARTTLS, or TLS from the start on port 465; `SSL_CERT_FILE` names a private certificate authority) |
 | `COOKIE_SECURE`, `APP_ENV` | Secure cookies in production; production also switches the API docs off |
 | `TRUST_FORWARDED_FOR`, `TRUSTED_PROXY_HOPS` | Believe `X-Forwarded-For` (only behind a reverse proxy that sets it; see Security) |
 | `MAX_ACTIVE_SEARCHES_PER_USER`, `MAX_ACTIVE_SEARCHES` | Queued and running searches per person (3) and in total (12) |
@@ -197,9 +212,24 @@ A deterministic demo stack for UI work (own database `jobfinder_e2e`, synthetic 
 cd frontend && API_ORIGIN=http://127.0.0.1:8011 npm run dev -- --port 3011
 ```
 
-Browser tests (Playwright) for the main user journeys are not in the repository yet.
+### Browser tests
+
+```bash
+tests/e2e/run.sh                # everything, about 12 minutes; or: acceptance | crawl | checks
+```
+
+The script builds the web app against the demo API (into `frontend/.next-e2e`, beside the normal build), starts both on ports 8011 and 3011 with freshly seeded data, drives a real Chromium browser, and stops everything again. It never touches the real database or the real servers. External hosts are made unreachable for the browser, so no employer site is contacted.
+
+- `tests/e2e/test_acceptance.py`: the seven acceptance scenarios of the brief, step by step in the page (Admin creates teams and Team Leads, invitations are accepted, a Team Lead searches and jobs are assigned, a member opens a job and marks it applied and the three dashboards follow, the Admin delegates ten jobs and Team Lead Beta distributes five each, team isolation by typed address, a search that continues after its window is put away).
+- `tests/e2e/ui_checks.py`: about 330 named checks over every feature, run at 1280 px and again at 390 px; any console error, page error or failed API request fails the run.
+- `tests/e2e/ui_checks_more.py`: 125 further checks at each width for the screens that follow what the API states about itself: extra profile fields, password rules, the forgot-password answer, a job a manager took back, reactivation of an account an Admin deactivated, the deep-search default and the notice about outside AI services. Some of them alter an API answer on its way to the browser, to prove the screen shows the API's numbers and words and not constants of its own.
+- `tests/e2e/ui_crawl.py`: every page for every role at both widths: console messages, failed requests, horizontal overflow, elements sticking out of their box.
+
+Searches in the demo stack finish within a second, so the states "queued" and "running", polling and cancellation are checked there with stubbed API answers; the real worker's behaviour is covered by the backend tests and by the live checks described under Known limits.
 
 Demo accounts exist only in that database; they are listed at the top of `tests/e2e/server.py`.
+
+Last full run, 2026-11-17: 7 scenarios, 94 page loads and 907 checks, no failure, 12 minutes. The backend suite had 239 tests on that day.
 
 ## Measured performance
 
@@ -253,4 +283,5 @@ Interactive documentation: `http://127.0.0.1:8010/api/docs`. The contract is exp
 - Workday is throttled by Workday, so Workday coverage builds up over several minutes in the background.
 - Dashboards use page/offset pagination; very large lists (tens of thousands of rows per page set) would need keyset pagination.
 - E-mail addresses on reserved domains (for example `.test`, `.local`) are rejected by validation.
+- E-mail delivery is tested against an SMTP server on the test machine, not against a real mail provider. Adzuna has not been tested with a real key. The browser tests use Chromium only.
 - Time series are bucketed in UTC.
