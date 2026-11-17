@@ -16,3 +16,7 @@ openapi.json
 *.md
 .vscode
 .bootstrap-admin.txt
+*.pem
+*.key
+deploy
+.github

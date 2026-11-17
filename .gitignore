@@ -17,3 +17,7 @@ frontend/.next-e2e/
 test-results/
 playwright-report/
 .DS_Store
+
+# SSH and TLS private keys
+*.pem
+*.key

@@ -173,6 +173,31 @@ Then the audit trail holds real client addresses and the limits become: 5 failur
 
 The app discourages redistribution: members get no copyable URLs, every link opening is logged against the member, and member job views carry a faint watermark with the member's e-mail and the time (an Admin can switch it off). These are deterrents. Once the employer's page is open its address is visible in the browser, and no web application can stop screenshots, screen recording or a phone camera. The app does not pretend otherwise.
 
+## Deployment (CI/CD)
+
+`.github/workflows/ci-cd.yml` runs on every push and pull request: the backend tests against PostgreSQL and Redis, and
+the web app's lint, type check and production build. A push to `main` that passes both builds the two images for
+arm64, stores them in the GitHub container registry (`ghcr.io/namanjain221995/jobsearch-backend` and `-frontend`,
+tagged with the commit id) and releases them on the server.
+
+The server runs `deploy/docker-compose.prod.yml` in `/opt/jobfinder`: PostgreSQL, Redis, migrations, API, worker, web
+app and a Cloudflare Tunnel. No port is open to the internet for the application; people reach it through the
+tunnel, whose public hostname points at `http://frontend:3000`.
+
+- The pipeline signs in with its own SSH key, which the server binds to `deploy/deploy.sh` and nothing else. The
+  script pulls the images, starts them, and waits until `/api/health` reports the database, Redis and the worker.
+  When that does not happen within three minutes it starts the previous build again and the pipeline fails.
+  Database migrations are not undone by that, so a migration must leave the previous build working.
+- Repository secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`. The server's SSH port must
+  accept connections from GitHub's runners.
+- On the server, never in git: `/opt/jobfinder/.env` (API keys, `POSTGRES_PASSWORD`, `PUBLIC_BASE_URL`) and
+  `/opt/jobfinder/tunnel.env` (`TUNNEL_TOKEN`). After changing either: `cd /opt/jobfinder && docker compose up -d`.
+- `PUBLIC_BASE_URL` must be the address people use (for example `https://jobs.example.com`); invitation and reset
+  links are built from it.
+- `deploy/backup.sh` writes a compressed database dump to `/opt/jobfinder/backups` every night (systemd timer
+  `jobfinder-backup.timer`) and keeps 14 days. The dumps are on the same disk as the database.
+- Go back to an earlier build by hand: Actions, the run of that commit, "Re-run all jobs".
+
 ## Job sources
 
 Greenhouse, Ashby and Lever employer boards (about 420 seed employers plus boards learned from AI web search), Workday (159 large employers, rate-limited by Workday), Workable search, Amazon Jobs, Remote OK, Jobicy, Himalayas, OpenAI web search and Claude web search with verification, a headless browser for pages that need JavaScript, and Adzuna (optional key, not live-tested). LinkedIn, Indeed, Glassdoor and ZipRecruiter are not scraped: their terms forbid it and the app does not bypass blocks. An Admin can switch sources off under Settings → Integrations.
