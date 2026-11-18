@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeftRight, Ellipsis, Pencil, Search, UserCheck, UserRoundCheck, UserX } from "lucide-react";
+import { ArrowLeftRight, Bot, Ellipsis, Pencil, Search, UserCheck, UserRoundCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 
+import { AutoApplyDialog } from "@/components/auto-apply/start-dialog";
 import { AssignMemberDialog, EditCandidateDialog } from "@/components/candidates/candidate-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { useArea } from "@/components/shell/me-context";
+import { useArea, useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,7 +21,7 @@ import { errorMessage } from "@/lib/api";
 import { useUpdateCandidate } from "@/lib/queries";
 import type { Candidate } from "@/lib/types";
 
-type Action = "edit" | "assign" | "deactivate" | "activate" | null;
+type Action = "edit" | "assign" | "deactivate" | "activate" | "auto-apply" | null;
 
 /**
  * What a Team Lead or Admin can do with a candidate: edit the details, choose or change
@@ -29,6 +30,8 @@ type Action = "edit" | "assign" | "deactivate" | "activate" | null;
  */
 export function CandidateActions({ candidate, variant = "menu" }: { candidate: Candidate; variant?: "menu" | "buttons" }) {
   const area = useArea();
+  // Auto-apply is an Admin-only feature: nobody else is shown it.
+  const isAdmin = useMe().role === "ADMIN";
   const update = useUpdateCandidate();
   const [action, setAction] = useState<Action>(null);
   const close = () => setAction(null);
@@ -61,6 +64,12 @@ export function CandidateActions({ candidate, variant = "menu" }: { candidate: C
               Find Jobs
             </Link>
           </DropdownMenuItem>
+          {isAdmin && (
+            <DropdownMenuItem onSelect={() => setAction("auto-apply")}>
+              <Bot />
+              Auto Apply
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
         </>
       )}
@@ -115,6 +124,7 @@ export function CandidateActions({ candidate, variant = "menu" }: { candidate: C
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {action === "auto-apply" && isAdmin && <AutoApplyDialog candidate={candidate} onClose={close} />}
       {action === "edit" && <EditCandidateDialog candidate={candidate} onClose={close} />}
       {action === "assign" && <AssignMemberDialog candidate={candidate} onClose={close} />}
       <ConfirmDialog

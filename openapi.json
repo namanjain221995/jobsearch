@@ -176,6 +176,436 @@
     "title": "AdminAnalytics",
     "type": "object"
    },
+   "ApplicationAnswersIn": {
+    "additionalProperties": false,
+    "description": "Only the fields that are sent change.",
+    "properties": {
+     "age_18_or_over": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Age 18 Or Over",
+      "type": "string"
+     },
+     "authorized_us": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Authorized Us",
+      "type": "string"
+     },
+     "city": {
+      "default": "",
+      "maxLength": 100,
+      "title": "City",
+      "type": "string"
+     },
+     "country": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Country",
+      "type": "string"
+     },
+     "current_company": {
+      "default": "",
+      "maxLength": 160,
+      "title": "Current Company",
+      "type": "string"
+     },
+     "current_title": {
+      "default": "",
+      "maxLength": 160,
+      "title": "Current Title",
+      "type": "string"
+     },
+     "earliest_start": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Earliest Start",
+      "type": "string"
+     },
+     "eeo_disability": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Disability",
+      "type": "string"
+     },
+     "eeo_gender": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Gender",
+      "type": "string"
+     },
+     "eeo_hispanic_latino": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Hispanic Latino",
+      "type": "string"
+     },
+     "eeo_race": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Race",
+      "type": "string"
+     },
+     "eeo_veteran": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Veteran",
+      "type": "string"
+     },
+     "expected_salary": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Expected Salary",
+      "type": "string"
+     },
+     "first_name": {
+      "default": "",
+      "maxLength": 100,
+      "title": "First Name",
+      "type": "string"
+     },
+     "github_url": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Github Url",
+      "type": "string"
+     },
+     "last_name": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Last Name",
+      "type": "string"
+     },
+     "linkedin_url": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Linkedin Url",
+      "type": "string"
+     },
+     "notice_period": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Notice Period",
+      "type": "string"
+     },
+     "phone": {
+      "default": "",
+      "maxLength": 40,
+      "title": "Phone",
+      "type": "string"
+     },
+     "portfolio_url": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Portfolio Url",
+      "type": "string"
+     },
+     "preferred_name": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Preferred Name",
+      "type": "string"
+     },
+     "previous_employers_complete": {
+      "default": false,
+      "title": "Previous Employers Complete",
+      "type": "boolean"
+     },
+     "previously_employed_by": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Previously Employed By",
+      "type": "array"
+     },
+     "referral_source": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Referral Source",
+      "type": "string"
+     },
+     "restrictive_agreements": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Restrictive Agreements",
+      "type": "string"
+     },
+     "sponsorship_now_or_future": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Sponsorship Now Or Future",
+      "type": "string"
+     },
+     "state": {
+      "default": "",
+      "maxLength": 100,
+      "title": "State",
+      "type": "string"
+     },
+     "willing_to_relocate": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Willing To Relocate",
+      "type": "string"
+     }
+    },
+    "title": "ApplicationAnswersIn",
+    "type": "object"
+   },
+   "ApplicationAnswersOut": {
+    "properties": {
+     "age_18_or_over": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Age 18 Or Over",
+      "type": "string"
+     },
+     "authorized_us": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Authorized Us",
+      "type": "string"
+     },
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     },
+     "city": {
+      "default": "",
+      "maxLength": 100,
+      "title": "City",
+      "type": "string"
+     },
+     "country": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Country",
+      "type": "string"
+     },
+     "current_company": {
+      "default": "",
+      "maxLength": 160,
+      "title": "Current Company",
+      "type": "string"
+     },
+     "current_title": {
+      "default": "",
+      "maxLength": 160,
+      "title": "Current Title",
+      "type": "string"
+     },
+     "earliest_start": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Earliest Start",
+      "type": "string"
+     },
+     "eeo_disability": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Disability",
+      "type": "string"
+     },
+     "eeo_gender": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Gender",
+      "type": "string"
+     },
+     "eeo_hispanic_latino": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Hispanic Latino",
+      "type": "string"
+     },
+     "eeo_race": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Race",
+      "type": "string"
+     },
+     "eeo_veteran": {
+      "default": "decline",
+      "maxLength": 100,
+      "title": "Eeo Veteran",
+      "type": "string"
+     },
+     "effective": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/EffectiveValue"
+      },
+      "default": {},
+      "title": "Effective",
+      "type": "object"
+     },
+     "expected_salary": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Expected Salary",
+      "type": "string"
+     },
+     "first_name": {
+      "default": "",
+      "maxLength": 100,
+      "title": "First Name",
+      "type": "string"
+     },
+     "github_url": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Github Url",
+      "type": "string"
+     },
+     "last_name": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Last Name",
+      "type": "string"
+     },
+     "linkedin_url": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Linkedin Url",
+      "type": "string"
+     },
+     "notice_period": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Notice Period",
+      "type": "string"
+     },
+     "phone": {
+      "default": "",
+      "maxLength": 40,
+      "title": "Phone",
+      "type": "string"
+     },
+     "portfolio_url": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Portfolio Url",
+      "type": "string"
+     },
+     "preferred_name": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Preferred Name",
+      "type": "string"
+     },
+     "previous_employers_complete": {
+      "default": false,
+      "title": "Previous Employers Complete",
+      "type": "boolean"
+     },
+     "previously_employed_by": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Previously Employed By",
+      "type": "array"
+     },
+     "referral_source": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Referral Source",
+      "type": "string"
+     },
+     "restrictive_agreements": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Restrictive Agreements",
+      "type": "string"
+     },
+     "sponsorship_now_or_future": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Sponsorship Now Or Future",
+      "type": "string"
+     },
+     "state": {
+      "default": "",
+      "maxLength": 100,
+      "title": "State",
+      "type": "string"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     },
+     "updated_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "willing_to_relocate": {
+      "default": "unknown",
+      "enum": [
+       "yes",
+       "no",
+       "unknown"
+      ],
+      "title": "Willing To Relocate",
+      "type": "string"
+     }
+    },
+    "required": [
+     "candidate_id"
+    ],
+    "title": "ApplicationAnswersOut",
+    "type": "object"
+   },
    "AssignCreate": {
     "properties": {
      "candidate_id": {
@@ -748,6 +1178,1117 @@
      "created_at"
     ],
     "title": "AuditOut",
+    "type": "object"
+   },
+   "AutoApplyAnswer": {
+    "properties": {
+     "classification": {
+      "default": "",
+      "title": "Classification",
+      "type": "string"
+     },
+     "evidence": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Evidence",
+      "type": "array"
+     },
+     "field_key": {
+      "title": "Field Key",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
+     "required": {
+      "default": false,
+      "title": "Required",
+      "type": "boolean"
+     },
+     "source": {
+      "default": "",
+      "title": "Source",
+      "type": "string"
+     },
+     "status": {
+      "default": "ok",
+      "enum": [
+       "ok",
+       "missing",
+       "blocked"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "type": {
+      "default": "text",
+      "title": "Type",
+      "type": "string"
+     },
+     "value": {
+      "default": "",
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "field_key",
+     "label"
+    ],
+    "title": "AutoApplyAnswer",
+    "type": "object"
+   },
+   "AutoApplyAnswerEdit": {
+    "properties": {
+     "field_key": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Field Key",
+      "type": "string"
+     },
+     "value": {
+      "maxLength": 5000,
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "field_key",
+     "value"
+    ],
+    "title": "AutoApplyAnswerEdit",
+    "type": "object"
+   },
+   "AutoApplyAnswersPatch": {
+    "properties": {
+     "answers": {
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyAnswerEdit"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Answers",
+      "type": "array"
+     }
+    },
+    "required": [
+     "answers"
+    ],
+    "title": "AutoApplyAnswersPatch",
+    "type": "object"
+   },
+   "AutoApplyApproveIn": {
+    "properties": {
+     "answers_hash": {
+      "maxLength": 64,
+      "minLength": 64,
+      "title": "Answers Hash",
+      "type": "string"
+     }
+    },
+    "required": [
+     "answers_hash"
+    ],
+    "title": "AutoApplyApproveIn",
+    "type": "object"
+   },
+   "AutoApplyBatchApproveIn": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyBatchItem"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "AutoApplyBatchApproveIn",
+    "type": "object"
+   },
+   "AutoApplyBatchApproveOut": {
+    "properties": {
+     "approved": {
+      "default": [],
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "title": "Approved",
+      "type": "array"
+     },
+     "refused": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyRefusal"
+      },
+      "title": "Refused",
+      "type": "array"
+     }
+    },
+    "title": "AutoApplyBatchApproveOut",
+    "type": "object"
+   },
+   "AutoApplyBatchItem": {
+    "properties": {
+     "answers_hash": {
+      "maxLength": 64,
+      "minLength": 64,
+      "title": "Answers Hash",
+      "type": "string"
+     },
+     "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "run_id",
+     "answers_hash"
+    ],
+    "title": "AutoApplyBatchItem",
+    "type": "object"
+   },
+   "AutoApplyBlocker": {
+    "properties": {
+     "code": {
+      "title": "Code",
+      "type": "string"
+     },
+     "detail": {
+      "default": "",
+      "title": "Detail",
+      "type": "string"
+     }
+    },
+    "required": [
+     "code"
+    ],
+    "title": "AutoApplyBlocker",
+    "type": "object"
+   },
+   "AutoApplyConfirmation": {
+    "properties": {
+     "detected": {
+      "default": false,
+      "title": "Detected",
+      "type": "boolean"
+     },
+     "reference": {
+      "default": "",
+      "title": "Reference",
+      "type": "string"
+     },
+     "text_sha256": {
+      "default": "",
+      "title": "Text Sha256",
+      "type": "string"
+     },
+     "url": {
+      "default": "",
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "title": "AutoApplyConfirmation",
+    "type": "object"
+   },
+   "AutoApplyCounts": {
+    "properties": {
+     "ai_drafted": {
+      "default": 0,
+      "title": "Ai Drafted",
+      "type": "integer"
+     },
+     "answered": {
+      "default": 0,
+      "title": "Answered",
+      "type": "integer"
+     },
+     "fields": {
+      "default": 0,
+      "title": "Fields",
+      "type": "integer"
+     },
+     "needs_input": {
+      "default": 0,
+      "title": "Needs Input",
+      "type": "integer"
+     }
+    },
+    "title": "AutoApplyCounts",
+    "type": "object"
+   },
+   "AutoApplyEligibility": {
+    "description": "One open assignment of the candidate and whether a run can be started for it.",
+    "properties": {
+     "application_url": {
+      "default": "",
+      "title": "Application Url",
+      "type": "string"
+     },
+     "assignment_id": {
+      "format": "uuid",
+      "title": "Assignment Id",
+      "type": "string"
+     },
+     "ats": {
+      "enum": [
+       "greenhouse",
+       "lever",
+       "ashby",
+       "workable",
+       "unsupported"
+      ],
+      "title": "Ats",
+      "type": "string"
+     },
+     "eligible": {
+      "title": "Eligible",
+      "type": "boolean"
+     },
+     "job": {
+      "$ref": "#/components/schemas/AutoApplyJobRef"
+     },
+     "open_run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Open Run Id"
+     },
+     "open_run_status": {
+      "anyOf": [
+       {
+        "enum": [
+         "queued",
+         "preparing",
+         "needs_input",
+         "ready_for_review",
+         "approved",
+         "submitting",
+         "submitted",
+         "failed",
+         "blocked",
+         "cancelled"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Open Run Status"
+     },
+     "reason": {
+      "default": "",
+      "title": "Reason",
+      "type": "string"
+     },
+     "reason_code": {
+      "default": "",
+      "title": "Reason Code",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "supported": {
+      "title": "Supported",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "assignment_id",
+     "job",
+     "status",
+     "ats",
+     "supported",
+     "eligible"
+    ],
+    "title": "AutoApplyEligibility",
+    "type": "object"
+   },
+   "AutoApplyEligibilityOut": {
+    "properties": {
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     },
+     "has_active_consent": {
+      "title": "Has Active Consent",
+      "type": "boolean"
+     },
+     "has_resume_file": {
+      "title": "Has Resume File",
+      "type": "boolean"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyEligibility"
+      },
+      "title": "Items",
+      "type": "array"
+     }
+    },
+    "required": [
+     "candidate_id",
+     "has_active_consent",
+     "has_resume_file",
+     "items"
+    ],
+    "title": "AutoApplyEligibilityOut",
+    "type": "object"
+   },
+   "AutoApplyFillEntry": {
+    "properties": {
+     "error": {
+      "default": "",
+      "title": "Error",
+      "type": "string"
+     },
+     "field_key": {
+      "title": "Field Key",
+      "type": "string"
+     },
+     "filled": {
+      "default": false,
+      "title": "Filled",
+      "type": "boolean"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "value": {
+      "default": "",
+      "title": "Value",
+      "type": "string"
+     }
+    },
+    "required": [
+     "field_key",
+     "label"
+    ],
+    "title": "AutoApplyFillEntry",
+    "type": "object"
+   },
+   "AutoApplyFormField": {
+    "properties": {
+     "key": {
+      "title": "Key",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "multiple": {
+      "default": false,
+      "title": "Multiple",
+      "type": "boolean"
+     },
+     "options": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Options",
+      "type": "array"
+     },
+     "required": {
+      "default": false,
+      "title": "Required",
+      "type": "boolean"
+     },
+     "section": {
+      "default": "",
+      "title": "Section",
+      "type": "string"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "key",
+     "label",
+     "type"
+    ],
+    "title": "AutoApplyFormField",
+    "type": "object"
+   },
+   "AutoApplyGuardReport": {
+    "properties": {
+     "allowed_submissions": {
+      "default": 0,
+      "title": "Allowed Submissions",
+      "type": "integer"
+     },
+     "blocked_requests": {
+      "default": 0,
+      "title": "Blocked Requests",
+      "type": "integer"
+     },
+     "dry_run": {
+      "default": true,
+      "title": "Dry Run",
+      "type": "boolean"
+     }
+    },
+    "title": "AutoApplyGuardReport",
+    "type": "object"
+   },
+   "AutoApplyJobRef": {
+    "properties": {
+     "company": {
+      "title": "Company",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "company"
+    ],
+    "title": "AutoApplyJobRef",
+    "type": "object"
+   },
+   "AutoApplyNeedsInput": {
+    "properties": {
+     "field_key": {
+      "title": "Field Key",
+      "type": "string"
+     },
+     "fill_in": {
+      "title": "Fill In",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "field_key",
+     "label",
+     "reason",
+     "fill_in"
+    ],
+    "title": "AutoApplyNeedsInput",
+    "type": "object"
+   },
+   "AutoApplyRefusal": {
+    "properties": {
+     "detail": {
+      "default": "",
+      "title": "Detail",
+      "type": "string"
+     },
+     "reason": {
+      "enum": [
+       "not_found",
+       "not_ready",
+       "answers_changed",
+       "no_consent",
+       "assignment_changed",
+       "employer_daily_cap",
+       "disabled",
+       "already_submitted"
+      ],
+      "title": "Reason",
+      "type": "string"
+     },
+     "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "run_id",
+     "reason"
+    ],
+    "title": "AutoApplyRefusal",
+    "type": "object"
+   },
+   "AutoApplyRunCreate": {
+    "properties": {
+     "assignment_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Assignment Ids",
+      "type": "array"
+     },
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "candidate_id",
+     "assignment_ids"
+    ],
+    "title": "AutoApplyRunCreate",
+    "type": "object"
+   },
+   "AutoApplyRunDetail": {
+    "properties": {
+     "answers": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyAnswer"
+      },
+      "title": "Answers",
+      "type": "array"
+     },
+     "answers_hash": {
+      "default": "",
+      "title": "Answers Hash",
+      "type": "string"
+     },
+     "approved_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Approved At"
+     },
+     "approved_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "assignment_id": {
+      "format": "uuid",
+      "title": "Assignment Id",
+      "type": "string"
+     },
+     "ats": {
+      "enum": [
+       "greenhouse",
+       "lever",
+       "ashby",
+       "workable",
+       "unsupported"
+      ],
+      "title": "Ats",
+      "type": "string"
+     },
+     "blocked_reasons": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyBlocker"
+      },
+      "title": "Blocked Reasons",
+      "type": "array"
+     },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
+     "confirmation": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AutoApplyConfirmation"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "counts": {
+      "$ref": "#/components/schemas/AutoApplyCounts",
+      "default": {
+       "ai_drafted": 0,
+       "answered": 0,
+       "fields": 0,
+       "needs_input": 0
+      }
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "error": {
+      "default": "",
+      "title": "Error",
+      "type": "string"
+     },
+     "fill_report": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyFillEntry"
+      },
+      "title": "Fill Report",
+      "type": "array"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "form": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyFormField"
+      },
+      "title": "Form",
+      "type": "array"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "job": {
+      "$ref": "#/components/schemas/AutoApplyJobRef"
+     },
+     "job_url": {
+      "title": "Job Url",
+      "type": "string"
+     },
+     "needs_input": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyNeedsInput"
+      },
+      "title": "Needs Input",
+      "type": "array"
+     },
+     "outcome_unknown": {
+      "default": false,
+      "title": "Outcome Unknown",
+      "type": "boolean"
+     },
+     "screenshots": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyScreenshotOut"
+      },
+      "title": "Screenshots",
+      "type": "array"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "preparing",
+       "needs_input",
+       "ready_for_review",
+       "approved",
+       "submitting",
+       "submitted",
+       "failed",
+       "blocked",
+       "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "submission_guard": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AutoApplyGuardReport"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "submitted_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Submitted At"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "status",
+     "ats",
+     "job_url",
+     "candidate",
+     "assignment_id",
+     "job",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "AutoApplyRunDetail",
+    "type": "object"
+   },
+   "AutoApplyRunOut": {
+    "properties": {
+     "approved_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Approved At"
+     },
+     "approved_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "assignment_id": {
+      "format": "uuid",
+      "title": "Assignment Id",
+      "type": "string"
+     },
+     "ats": {
+      "enum": [
+       "greenhouse",
+       "lever",
+       "ashby",
+       "workable",
+       "unsupported"
+      ],
+      "title": "Ats",
+      "type": "string"
+     },
+     "blocked_reasons": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyBlocker"
+      },
+      "title": "Blocked Reasons",
+      "type": "array"
+     },
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
+     "counts": {
+      "$ref": "#/components/schemas/AutoApplyCounts",
+      "default": {
+       "ai_drafted": 0,
+       "answered": 0,
+       "fields": 0,
+       "needs_input": 0
+      }
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "error": {
+      "default": "",
+      "title": "Error",
+      "type": "string"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "job": {
+      "$ref": "#/components/schemas/AutoApplyJobRef"
+     },
+     "job_url": {
+      "title": "Job Url",
+      "type": "string"
+     },
+     "needs_input": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyNeedsInput"
+      },
+      "title": "Needs Input",
+      "type": "array"
+     },
+     "outcome_unknown": {
+      "default": false,
+      "title": "Outcome Unknown",
+      "type": "boolean"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "preparing",
+       "needs_input",
+       "ready_for_review",
+       "approved",
+       "submitting",
+       "submitted",
+       "failed",
+       "blocked",
+       "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "submitted_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Submitted At"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "status",
+     "ats",
+     "job_url",
+     "candidate",
+     "assignment_id",
+     "job",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "AutoApplyRunOut",
+    "type": "object"
+   },
+   "AutoApplyRunsCreated": {
+    "properties": {
+     "runs": {
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyRunOut"
+      },
+      "title": "Runs",
+      "type": "array"
+     },
+     "skipped": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AutoApplySkipped"
+      },
+      "title": "Skipped",
+      "type": "array"
+     }
+    },
+    "required": [
+     "runs"
+    ],
+    "title": "AutoApplyRunsCreated",
+    "type": "object"
+   },
+   "AutoApplyScreenshotOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "dry_run",
+       "before_submit",
+       "confirmation"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "size_bytes": {
+      "title": "Size Bytes",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "kind",
+     "created_at",
+     "size_bytes"
+    ],
+    "title": "AutoApplyScreenshotOut",
+    "type": "object"
+   },
+   "AutoApplySkipped": {
+    "properties": {
+     "assignment_id": {
+      "format": "uuid",
+      "title": "Assignment Id",
+      "type": "string"
+     },
+     "reason": {
+      "enum": [
+       "not_found",
+       "not_this_candidate",
+       "withdrawn",
+       "already_applied",
+       "run_open",
+       "already_submitted",
+       "no_application_url"
+      ],
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "assignment_id",
+     "reason"
+    ],
+    "title": "AutoApplySkipped",
+    "type": "object"
+   },
+   "AutoApplyStatus": {
+    "properties": {
+     "browser_concurrency": {
+      "title": "Browser Concurrency",
+      "type": "integer"
+     },
+     "employer_daily_cap": {
+      "title": "Employer Daily Cap",
+      "type": "integer"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "run_timeout_seconds": {
+      "title": "Run Timeout Seconds",
+      "type": "number"
+     },
+     "screenshot_retention_days": {
+      "title": "Screenshot Retention Days",
+      "type": "integer"
+     },
+     "supported_ats": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Supported Ats",
+      "type": "array"
+     },
+     "worker_online": {
+      "title": "Worker Online",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled",
+     "worker_online",
+     "browser_concurrency",
+     "employer_daily_cap",
+     "run_timeout_seconds",
+     "screenshot_retention_days",
+     "supported_ats"
+    ],
+    "title": "AutoApplyStatus",
     "type": "object"
    },
    "AwsWebSearchStatus": {
@@ -1642,6 +3183,168 @@
     "title": "ChangePasswordIn",
     "type": "object"
    },
+   "ConsentIn": {
+    "properties": {
+     "document_reference": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Document Reference",
+      "type": "string"
+     },
+     "granted": {
+      "default": true,
+      "title": "Granted",
+      "type": "boolean"
+     },
+     "may_accept_data_processing": {
+      "default": false,
+      "title": "May Accept Data Processing",
+      "type": "boolean"
+     },
+     "may_attest": {
+      "default": false,
+      "title": "May Attest",
+      "type": "boolean"
+     },
+     "method": {
+      "enum": [
+       "written",
+       "email",
+       "e_signature",
+       "verbal_recorded"
+      ],
+      "title": "Method",
+      "type": "string"
+     },
+     "note": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Note",
+      "type": "string"
+     },
+     "scope": {
+      "const": "auto_apply",
+      "default": "auto_apply",
+      "title": "Scope",
+      "type": "string"
+     }
+    },
+    "required": [
+     "method"
+    ],
+    "title": "ConsentIn",
+    "type": "object"
+   },
+   "ConsentOut": {
+    "properties": {
+     "active": {
+      "title": "Active",
+      "type": "boolean"
+     },
+     "candidate_id": {
+      "format": "uuid",
+      "title": "Candidate Id",
+      "type": "string"
+     },
+     "document_reference": {
+      "title": "Document Reference",
+      "type": "string"
+     },
+     "granted": {
+      "title": "Granted",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "may_accept_data_processing": {
+      "title": "May Accept Data Processing",
+      "type": "boolean"
+     },
+     "may_attest": {
+      "title": "May Attest",
+      "type": "boolean"
+     },
+     "method": {
+      "title": "Method",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     },
+     "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+     },
+     "recorded_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "revoked_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Revoked At"
+     },
+     "revoked_by": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "scope": {
+      "title": "Scope",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "candidate_id",
+     "scope",
+     "granted",
+     "method",
+     "note",
+     "document_reference",
+     "may_attest",
+     "may_accept_data_processing",
+     "recorded_at",
+     "active"
+    ],
+    "title": "ConsentOut",
+    "type": "object"
+   },
+   "ConsentRevokeIn": {
+    "properties": {
+     "note": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "title": "ConsentRevokeIn",
+    "type": "object"
+   },
    "CsvImportResult": {
     "properties": {
      "created": {
@@ -1671,6 +3374,37 @@
      "skipped"
     ],
     "title": "CsvImportResult",
+    "type": "object"
+   },
+   "EffectiveValue": {
+    "properties": {
+     "source": {
+      "title": "Source",
+      "type": "string"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "boolean"
+       }
+      ],
+      "title": "Value"
+     }
+    },
+    "required": [
+     "value",
+     "source"
+    ],
+    "title": "EffectiveValue",
     "type": "object"
    },
    "EventOut": {
@@ -4078,6 +5812,37 @@
      "page_size"
     ],
     "title": "Page[AuditOut]",
+    "type": "object"
+   },
+   "Page_AutoApplyRunOut_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AutoApplyRunOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     },
+     "page_size": {
+      "title": "Page Size",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "items",
+     "total",
+     "page",
+     "page_size"
+    ],
+    "title": "Page[AutoApplyRunOut]",
     "type": "object"
    },
    "Page_CandidateOut_": {
@@ -8490,6 +10255,530 @@
     ]
    }
   },
+  "/api/auto-apply/candidates/{candidate_id}/eligibility": {
+   "get": {
+    "description": "The candidate's open assignments, each with its application system and whether a run can be started.",
+    "operationId": "auto_apply_eligibility_api_auto_apply_candidates__candidate_id__eligibility_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyEligibilityOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Auto Apply Eligibility",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/runs": {
+   "get": {
+    "operationId": "list_auto_apply_runs_api_auto_apply_runs_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "candidate_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Candidate Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "assignment_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Assignment Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "items": {
+          "enum": [
+           "queued",
+           "preparing",
+           "needs_input",
+           "ready_for_review",
+           "approved",
+           "submitting",
+           "submitted",
+           "failed",
+           "blocked",
+           "cancelled"
+          ],
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "ats",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(greenhouse|lever|ashby|workable|unsupported)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Ats"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page",
+      "required": false,
+      "schema": {
+       "default": 1,
+       "title": "Page",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_AutoApplyRunOut_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Auto Apply Runs",
+    "tags": [
+     "auto-apply"
+    ]
+   },
+   "post": {
+    "operationId": "create_auto_apply_runs_api_auto_apply_runs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoApplyRunCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyRunsCreated"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Auto Apply Runs",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/runs/approve-batch": {
+   "post": {
+    "operationId": "approve_auto_apply_batch_api_auto_apply_runs_approve_batch_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoApplyBatchApproveIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyBatchApproveOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Approve Auto Apply Batch",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/runs/{run_id}": {
+   "get": {
+    "operationId": "get_auto_apply_run_api_auto_apply_runs__run_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyRunDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Auto Apply Run",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/runs/{run_id}/answers": {
+   "patch": {
+    "operationId": "patch_auto_apply_answers_api_auto_apply_runs__run_id__answers_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoApplyAnswersPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyRunDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Auto Apply Answers",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/runs/{run_id}/approve": {
+   "post": {
+    "operationId": "approve_auto_apply_run_api_auto_apply_runs__run_id__approve_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoApplyApproveIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyRunDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Approve Auto Apply Run",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/runs/{run_id}/cancel": {
+   "post": {
+    "operationId": "cancel_auto_apply_run_api_auto_apply_runs__run_id__cancel_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyRunDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cancel Auto Apply Run",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/runs/{run_id}/screenshots/{screenshot_id}": {
+   "get": {
+    "operationId": "get_auto_apply_screenshot_api_auto_apply_runs__run_id__screenshots__screenshot_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "screenshot_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Screenshot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "image/jpeg": {}
+      },
+      "description": "Successful Response"
+     },
+     "404": {
+      "description": "No such screenshot (or deleted by retention)"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Auto Apply Screenshot",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/auto-apply/status": {
+   "get": {
+    "operationId": "auto_apply_status_api_auto_apply_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoApplyStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Auto Apply Status",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
   "/api/candidates": {
    "get": {
     "description": "Filters only ever narrow the caller's scope. `unassigned=true`: candidates without a responsible member;\n`unassigned=false`: those with one. Sorts: `name`, `recent` (created), `updated`, `newest_job` (newest active\nassignment first, candidates without jobs last), `not_applied` (most jobs still to apply to first).",
@@ -9005,6 +11294,268 @@
     "summary": "Candidate Analytics",
     "tags": [
      "candidates"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/application-answers": {
+   "get": {
+    "operationId": "get_application_answers_api_candidates__candidate_id__application_answers_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApplicationAnswersOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Application Answers",
+    "tags": [
+     "auto-apply"
+    ]
+   },
+   "patch": {
+    "operationId": "update_application_answers_api_candidates__candidate_id__application_answers_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApplicationAnswersIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApplicationAnswersOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update Application Answers",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/consents": {
+   "get": {
+    "operationId": "list_candidate_consents_api_candidates__candidate_id__consents_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ConsentOut"
+         },
+         "title": "Response List Candidate Consents Api Candidates  Candidate Id  Consents Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Candidate Consents",
+    "tags": [
+     "auto-apply"
+    ]
+   },
+   "post": {
+    "operationId": "record_candidate_consent_api_candidates__candidate_id__consents_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConsentIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsentOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Record Candidate Consent",
+    "tags": [
+     "auto-apply"
+    ]
+   }
+  },
+  "/api/candidates/{candidate_id}/consents/{consent_id}/revoke": {
+   "post": {
+    "operationId": "revoke_candidate_consent_api_candidates__candidate_id__consents__consent_id__revoke_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "candidate_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Candidate Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "consent_id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Consent Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/ConsentRevokeIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Data"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConsentOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Revoke Candidate Consent",
+    "tags": [
+     "auto-apply"
     ]
    }
   },

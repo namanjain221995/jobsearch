@@ -188,6 +188,10 @@ class CandidateProfile(Base):
     excluded_companies: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
     required_keywords: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
     extra: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)   # admin-defined optional fields
+    # Answers the candidate gave for application forms (legal, EEO, links, ...): fixed schema in autoapply/records.py.
+    # Never guessed; "unknown" until recorded. Only Admin and Team Lead read or write them.
+    application_answers: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
+    application_answers_updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_at: Mapped[datetime] = updated()
 
 
@@ -482,3 +486,104 @@ class AwsWebSearchUsage(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (CheckConstraint("used >= 0", name="ck_aws_web_search_usage_used"),
                       CheckConstraint("month ~ '^[0-9]{4}-[0-9]{2}$'", name="ck_aws_web_search_usage_month"))
+
+
+# ---------------------------------------------------------------- AI auto-apply (Admin only; docs/auto-apply-api.md)
+CONSENT_METHODS = ("written", "email", "e_signature", "verbal_recorded")
+AUTO_APPLY_STATUSES = ("queued", "preparing", "needs_input", "ready_for_review", "approved", "submitting", "submitted", "failed",
+                       "blocked", "cancelled")
+AUTO_APPLY_OPEN = ("queued", "preparing", "needs_input", "ready_for_review", "approved", "submitting")
+
+
+class CandidateConsent(Base):
+    """The candidate's permission for the portal to apply on their behalf. Auto-apply needs one active row
+    (granted, not revoked). `may_attest` / `may_accept_data_processing` say whether the candidate also allowed
+    ticking "my answers are true and correct" and the employer's privacy notice; both default to no."""
+    __tablename__ = "candidate_consents"
+    id: Mapped[uuid.UUID] = pk()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
+    scope: Mapped[str] = mapped_column(String(30), default="auto_apply", server_default="auto_apply", nullable=False)
+    granted: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_text("true"), nullable=False)
+    method: Mapped[str] = mapped_column(String(20), nullable=False)
+    note: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    document_reference: Mapped[str] = mapped_column(String(300), default="", server_default="", nullable=False)
+    may_attest: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_text("false"), nullable=False)
+    may_accept_data_processing: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_text("false"), nullable=False)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    recorded_at: Mapped[datetime] = created()
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    __table_args__ = (
+        CheckConstraint(_in("scope", ("auto_apply",)), name="ck_candidate_consents_scope"),
+        CheckConstraint(_in("method", CONSENT_METHODS), name="ck_candidate_consents_method"),
+        Index("ix_candidate_consents_candidate", "candidate_id", "recorded_at"),
+    )
+
+
+class AutoApplyRun(Base):
+    """One attempt to apply one candidate to one assignment's posting. Holds the form snapshot (labels, types,
+    options; no third-party personal data), the proposed answers with their sources, blockers and the outcome."""
+    __tablename__ = "auto_apply_runs"
+    id: Mapped[uuid.UUID] = pk()
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
+    assignment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job_assignments.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("job_postings.id", ondelete="CASCADE"), nullable=False)
+    consent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("candidate_consents.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(String(20), default="queued", server_default="queued", nullable=False)
+    ats: Mapped[str] = mapped_column(String(20), default="unsupported", server_default="unsupported", nullable=False)
+    job_url: Mapped[str] = mapped_column(Text, nullable=False)
+    employer_key: Mapped[str] = mapped_column(String(200), default="", server_default="", nullable=False)
+    form_schema: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
+    schema_hash: Mapped[str] = mapped_column(String(64), default="", server_default="", nullable=False)
+    answers: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
+    answers_hash: Mapped[str] = mapped_column(String(64), default="", server_default="", nullable=False)
+    admin_edits: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
+    blocked_reasons: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
+    needs_input: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
+    fill_report: Mapped[list] = mapped_column(JSONB, default=list, server_default=sa_text("'[]'::jsonb"), nullable=False)
+    guard_report: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
+    confirmation: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
+    ai_usage: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"), nullable=False)
+    outcome_unknown: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_text("false"), nullable=False)
+    error: Mapped[str] = mapped_column(String(500), default="", server_default="", nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = created()
+    updated_at: Mapped[datetime] = updated()
+    __table_args__ = (
+        CheckConstraint(_in("status", AUTO_APPLY_STATUSES), name="ck_auto_apply_runs_status"),
+        CheckConstraint(_in("ats", ("greenhouse", "lever", "ashby", "workable", "unsupported")), name="ck_auto_apply_runs_ats"),
+        # One open run per assignment at a time.
+        Index("uq_auto_apply_runs_open", "assignment_id", unique=True,
+              postgresql_where=sa_text("status IN ('queued', 'preparing', 'needs_input', 'ready_for_review', 'approved', 'submitting')")),
+        # At most one application per candidate and posting, ever (a submit that may have gone through counts).
+        Index("uq_auto_apply_runs_applied", "candidate_id", "job_id", unique=True,
+              postgresql_where=sa_text("status IN ('submitting', 'submitted') OR outcome_unknown")),
+        Index("ix_auto_apply_runs_candidate", "candidate_id", "created_at"),
+        Index("ix_auto_apply_runs_status", "status"),
+        Index("ix_auto_apply_runs_employer_submitted", "employer_key", "submitted_at"),
+    )
+
+
+class AutoApplyScreenshot(Base):
+    """A JPEG of the form (dry run, just before submitting) or of the confirmation page. Size-capped; deleted
+    after AUTO_APPLY_SCREENSHOT_RETENTION_DAYS by the worker."""
+    __tablename__ = "auto_apply_screenshots"
+    id: Mapped[uuid.UUID] = pk()
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("auto_apply_runs.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(40), default="image/jpeg", server_default="image/jpeg", nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    data: Mapped[bytes] = deferred(mapped_column(LargeBinary, nullable=False))
+    created_at: Mapped[datetime] = created()
+    __table_args__ = (
+        CheckConstraint(_in("kind", ("dry_run", "before_submit", "confirmation")), name="ck_auto_apply_screenshots_kind"),
+        CheckConstraint("size_bytes <= 2000000", name="ck_auto_apply_screenshots_size"),
+        Index("ix_auto_apply_screenshots_run", "run_id"),
+        Index("ix_auto_apply_screenshots_created", "created_at"),
+    )

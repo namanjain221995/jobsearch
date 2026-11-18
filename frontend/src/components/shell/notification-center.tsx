@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bell, CheckCheck, Contact, FolderInput, Inbox, SearchCheck, UserCheck, UserRoundX, type LucideIcon } from "lucide-react";
+import { Bell, Bot, CheckCheck, Contact, FolderInput, Inbox, SearchCheck, SendHorizontal, UserCheck, UserRoundX, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { useMe } from "@/components/shell/me-context";
@@ -37,10 +37,42 @@ const text = (value: unknown, fallback = ""): string => (typeof value === "strin
 const count = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 
 /** Turns a stored notification into a sentence and the screen it points to. Unknown types still render. */
-function present(notification: Notification, role: Role): Presented {
+function present(notification: Notification, role: Role): Presented | null {
   const area = ROLE_AREA[role];
   const payload = notification.payload as Record<string, unknown>;
+  if (notification.type.startsWith("auto_apply")) {
+    // Auto-apply is an Admin-only feature: nobody else is ever shown a word about it.
+    if (role !== "ADMIN") return null;
+    const job = `${text(payload.job_title, "a job")}${payload.company ? ` at ${text(payload.company)}` : ""}`;
+    const who = text(payload.candidate_name, "a candidate");
+    const candidateId = text(payload.candidate_id);
+    const href = candidateId ? `/admin/candidates/${candidateId}?tab=auto-apply` : "/admin/auto-apply";
+    const sentence: Record<string, string> = {
+      auto_apply_needs_input: `The application to ${job} for ${who} needs answers before it can be reviewed.`,
+      auto_apply_ready: `The application to ${job} for ${who} is ready for your review.`,
+      auto_apply_submitted: `The application to ${job} for ${who} was submitted.`,
+      auto_apply_failed:
+        payload.outcome_unknown === true
+          ? `The application to ${job} for ${who} may have been submitted: check the employer's site, then record the outcome by hand.`
+          : `The application to ${job} for ${who} failed.`,
+      auto_apply_blocked: `The application to ${job} for ${who} is blocked and needs a person.`,
+    };
+    return {
+      icon: Bot,
+      text: sentence[notification.type] ?? `Auto Apply: ${humanize(notification.type.replace(/^auto_apply_?/, ""))}.`,
+      href,
+    };
+  }
   switch (notification.type) {
+    case "application_submitted": {
+      // Sent to the responsible member after an administrator submitted an application for their candidate.
+      const id = text(payload.candidate_id);
+      return {
+        icon: SendHorizontal,
+        text: `An administrator submitted the application to ${text(payload.job_title, "a job")}${payload.company ? ` at ${text(payload.company)}` : ""} for ${text(payload.candidate_name, "one of your candidates")}.`,
+        href: role === "MEMBER" ? "/member/applications" : id ? `${area}/candidates/${id}` : null,
+      };
+    }
     case "candidate_assigned": {
       // A candidate was handed to this member: from now on they apply on the candidate's behalf.
       const id = text(payload.candidate_id);
@@ -170,6 +202,7 @@ function NotificationList({ onNavigate }: { onNavigate: () => void }) {
       <ul className="max-h-[min(26rem,60svh)] overflow-y-auto overscroll-contain">
         {items.map((notification) => {
           const view = present(notification, me.role);
+          if (!view) return null;
           const isUnread = !notification.read_at;
           return (
             <li key={notification.id} className="border-b last:border-b-0">

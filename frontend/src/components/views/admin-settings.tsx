@@ -31,6 +31,7 @@ import {
   isGeneralError,
 } from "@/lib/forms";
 import { EXTRA_FIELD_TYPE_LABELS, EXTRA_FIELD_TYPES } from "@/lib/options";
+import { atsLabel, useAutoApplyStatus } from "@/lib/auto-apply";
 import { useHealth, useIntegrations, usePortalSettings, useUpdatePortalSettings } from "@/lib/queries";
 import { salesforceStatusOf, TEAM_LEAD_SCOPES, teamLeadScopeOf } from "@/lib/salesforce";
 import type { ExtraField, Integrations, PortalSettings } from "@/lib/types";
@@ -680,6 +681,8 @@ function IntegrationsPanels({ data, settings }: { data: Integrations; settings: 
   const emailBackend = email.backend ?? "none";
   const salesforce = salesforceStatusOf(data);
   const scope = TEAM_LEAD_SCOPES.find((option) => option.value === salesforce.team_lead_scope);
+  // Admin only (GET /api/auto-apply/status). Not shown at all while the API does not answer.
+  const autoApply = useAutoApplyStatus().data;
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -772,6 +775,22 @@ function IntegrationsPanels({ data, settings }: { data: Integrations; settings: 
             : "Without the Salesforce settings on the server, nothing about Salesforce is offered: candidates are added manually."}
         </p>
       </Panel>
+
+      {autoApply && (
+        <Panel title="Auto Apply" description="Set on the server (AUTO_APPLY_ENABLED and related settings). Read-only here.">
+          <Facts
+            rows={[
+              ["State", <State key="aa" ok={autoApply.enabled} yes="Enabled" no="Switched off" />],
+              ["Application worker", <State key="aw" ok={autoApply.worker_online} yes="Online" no="Offline" />],
+              ["Supported sites", autoApply.supported_ats.length > 0 ? autoApply.supported_ats.map(atsLabel).join(", ") : "None reported"],
+              ["Per employer per day", autoApply.employer_daily_cap.toLocaleString()],
+              ["Browsers at a time", autoApply.browser_concurrency.toLocaleString()],
+              ["Time limit per run", `${Math.round(autoApply.run_timeout_seconds).toLocaleString()} s`],
+              ["Screenshots kept", `${autoApply.screenshot_retention_days} days`],
+            ]}
+          />
+        </Panel>
+      )}
 
       <Panel title="Search index" description="Postings the search engine has read from the sources and keeps to search through.">
         <Facts

@@ -222,6 +222,20 @@ class Settings(BaseSettings):
     max_browser_pages_per_search: int = 24
     max_crawl_links_per_search: int = 16     # job links followed from careers/listing pages
 
+    # AI auto-apply (Admin only, docs/auto-apply-api.md). Off until switched on. The worker opens employer-hosted
+    # application forms in the honest browser; nothing is submitted without an Admin approval of the exact preview.
+    auto_apply_enabled: bool = False
+    auto_apply_browser_concurrency: int = 1          # application browsers at the same time (one on the 4 GB server)
+    auto_apply_employer_daily_cap: int = 5           # submissions per employer per 24 h, across all candidates
+    auto_apply_run_timeout_seconds: float = 240.0    # one inspect + fill (or one submission) of one run
+    auto_apply_host_interval_seconds: float = 20.0   # gap between two form openings on the same employer (pacing)
+    auto_apply_screenshot_retention_days: int = 14   # screenshots are deleted after this; the run row stays
+    auto_apply_screenshot_max_bytes: int = 600_000   # JPEG cap per screenshot (quality is lowered, then the page is cropped)
+    auto_apply_max_runs_per_request: int = 20
+    auto_apply_respect_robots: bool = True           # robots.txt of the form's host is read like the crawler does
+    auto_apply_ai_classify: bool = True              # unknown question labels are classified by techsara-35b, then OpenAI/Claude
+    auto_apply_draft_provider: str = "openai,claude"  # free-text drafting order (one call per run, one regeneration)
+
     # Abuse limits.
     max_concurrent_searches: int = 2
     searches_per_10_minutes: int = 10

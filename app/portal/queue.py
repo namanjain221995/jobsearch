@@ -18,6 +18,10 @@ def job_id(run_id, attempts: int) -> str:
     return f"search:{run_id}:r{attempts}"
 
 
+def auto_apply_job_id(kind: str, run_id, attempt: int) -> str:
+    return f"autoapply:{kind}:{run_id}:a{attempt}"
+
+
 class SearchQueue:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -56,6 +60,16 @@ class SearchQueue:
         except Exception:
             return False
 
+    async def enqueue_auto_apply(self, kind: str, run_id: uuid.UUID, attempt: int = 0) -> bool:
+        """kind: "prepare" | "submit". The queue entry is named after run, kind and attempt (handed over twice = run once)."""
+        if self.pool is None and not await self.connect():
+            return False
+        try:
+            await self.pool.enqueue_job(f"auto_apply_{kind}", str(run_id), _job_id=auto_apply_job_id(kind, run_id, attempt))
+            return True
+        except Exception:
+            return False
+
     async def worker_status(self) -> dict | None:
         try:
             raw = await self.pool.get(WORKER_STATUS_KEY) if self.pool else None
@@ -74,8 +88,9 @@ class InlineQueue:
     """Runs searches as tasks of the current event loop."""
     available = True
 
-    def __init__(self, runner):
+    def __init__(self, runner, auto_apply_runner=None):
         self.runner = runner                 # async callable(run_id)
+        self.auto_apply_runner = auto_apply_runner      # async callable(kind, run_id); None = auto-apply jobs are not run
         self.tasks: set[asyncio.Task] = set()
         self.pool = None
 
@@ -92,6 +107,14 @@ class InlineQueue:
 
     async def enqueue(self, run_id: uuid.UUID) -> bool:
         task = asyncio.create_task(self.runner(run_id))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return True
+
+    async def enqueue_auto_apply(self, kind: str, run_id: uuid.UUID, attempt: int = 0) -> bool:
+        if self.auto_apply_runner is None:
+            return False
+        task = asyncio.create_task(self.auto_apply_runner(kind, run_id))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
         return True

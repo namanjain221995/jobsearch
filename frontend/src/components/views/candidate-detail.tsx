@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Search } from "lucide-react";
 
+import { ApplicationAnswersForm } from "@/components/auto-apply/application-answers";
+import { ConsentPanel } from "@/components/auto-apply/consent";
+import { RunsList } from "@/components/auto-apply/runs-list";
 import { CandidateActions } from "@/components/candidates/candidate-actions";
 import { CandidateInactiveTag, ResponsibleMember, ResumeTag } from "@/components/candidates/candidate-meta";
 import { CandidateProfileCompletion, CandidateProfilePanel } from "@/components/candidates/profile-form";
@@ -16,7 +19,7 @@ import { DateRangeFilter } from "@/components/shared/date-range-filter";
 import { FilterBar } from "@/components/shared/filters";
 import { PageHeader, Panel } from "@/components/shared/page-header";
 import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
-import { useArea } from "@/components/shell/me-context";
+import { useArea, useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityFeed } from "@/components/views/activity-feed";
@@ -39,6 +42,8 @@ const TABS = [
   { value: "activity", label: "Activity" },
   { value: "searches", label: "Searches" },
 ];
+/** Shown to an Admin only. */
+const ADMIN_TABS = [...TABS, { value: "auto-apply", label: "Auto Apply" }];
 
 /** One candidate's figures and charts, from GET /api/candidates/{id}/analytics (the shape of the member dashboard). */
 export function CandidateAnalyticsPanels({ candidateId }: { candidateId: string }) {
@@ -145,11 +150,13 @@ function CandidateSearches({ candidateId }: { candidateId: string }) {
  */
 export function CandidateDetailView({ candidateId }: { candidateId: string }) {
   const area = useArea();
+  const isAdmin = useMe().role === "ADMIN";
+  const tabs = isAdmin ? ADMIN_TABS : TABS;
   const query = useCandidate(candidateId);
   const [state, setState] = useUrlState(TAB_DEFAULTS);
   const [opened, setOpened] = useState<string | null>(null);
   const back = { href: `${area}/candidates`, label: "Candidates" };
-  const tab = TABS.some((item) => item.value === state.tab) ? state.tab : "overview";
+  const tab = tabs.some((item) => item.value === state.tab) ? state.tab : "overview";
 
   if (query.isPending) {
     return (
@@ -230,7 +237,7 @@ export function CandidateDetailView({ candidateId }: { candidateId: string }) {
 
       <Tabs value={tab} onValueChange={(next) => setState({ tab: next })} className="gap-5">
         <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b">
-          {TABS.map((item) => (
+          {tabs.map((item) => (
             <TabsTrigger key={item.value} value={item.value} className="flex-none">
               {item.label}
             </TabsTrigger>
@@ -269,6 +276,12 @@ export function CandidateDetailView({ candidateId }: { candidateId: string }) {
               >
                 <CandidateResumePanel candidateId={candidate.id} candidateName={candidate.name} />
               </Panel>
+              <Panel
+                title="Application answers"
+                description="What application forms ask that a resume does not say: work authorization, availability, self-identification and links."
+              >
+                <ApplicationAnswersForm candidateId={candidate.id} />
+              </Panel>
             </div>
             <div className="flex min-w-0 flex-col gap-5 max-xl:order-first">
               <Panel title="Profile completion">
@@ -287,6 +300,17 @@ export function CandidateDetailView({ candidateId }: { candidateId: string }) {
         <TabsContent value="searches">
           <CandidateSearches candidateId={candidate.id} />
         </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="auto-apply" className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+            <div className="flex min-w-0 flex-col gap-3">
+              <RunsList candidateId={candidate.id} />
+            </div>
+            <Panel title="Consent" description="The candidate's permission to submit applications in their name." className="max-xl:order-first">
+              <ConsentPanel candidateId={candidate.id} candidateName={candidate.name} />
+            </Panel>
+          </TabsContent>
+        )}
       </Tabs>
 
       <AssignmentDrawer assignmentId={opened} onOpenChange={(open) => !open && setOpened(null)} />

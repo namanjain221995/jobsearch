@@ -8,11 +8,17 @@ import logging
 import time
 import uuid
 
+import httpx
 from arq.connections import RedisSettings
+from arq.cron import cron
 from arq.worker import func
 from sqlalchemy import select
 
+from ..autoapply import runner as autoapply_runner
+from ..autoapply.browser import ApplyBrowser
 from ..config import get_settings
+from ..netguard import assert_public_url
+from ..providers.base import RobotsCache
 from ..providers import registry
 from ..search_engine import SearchEngine
 from . import cache as cache_module
@@ -20,8 +26,8 @@ from . import logs
 from .cache import AnalyticsCache
 from .db import make_engine, make_sessionmaker
 from .index_pg import PgJobIndex
-from .models import SearchRun
-from .queue import WORKER_STATUS_KEY, job_id
+from .models import AutoApplyRun, SearchRun
+from .queue import WORKER_STATUS_KEY, auto_apply_job_id, job_id
 from .search_runner import RunnerDeps, execute_search, recover_interrupted
 from .services import settings as settings_service
 
@@ -67,6 +73,13 @@ async def _hand_over_runs(ctx: dict) -> None:
     for run_id, attempts in waiting:
         if str(run_id) not in ctx["active"]:
             await ctx["redis"].enqueue_job("run_search", str(run_id), _job_id=job_id(run_id, attempts or 0))
+    # Auto-apply runs the API could not queue (Redis was down) are handed over the same way.
+    async with ctx["sessions"]() as db:
+        pending = (await db.execute(select(AutoApplyRun.id, AutoApplyRun.status, AutoApplyRun.attempts)
+                                    .where(AutoApplyRun.status.in_(("queued", "approved"))))).all()
+    for run_id, status, attempts in pending:
+        kind = "prepare" if status == "queued" else "submit"
+        await ctx["redis"].enqueue_job(f"auto_apply_{kind}", str(run_id), _job_id=auto_apply_job_id(kind, run_id, attempts or 0))
 
 
 async def startup(ctx: dict) -> None:
@@ -81,6 +94,8 @@ async def startup(ctx: dict) -> None:
     ctx.update(settings=settings, sessions=sessions, index=index, engine=engine, active=set(),
                deps=RunnerDeps(sessions=sessions, engine=engine, settings=settings), all_specs=dict(engine.specs))
     await index.prune()
+    ctx["auto_apply"] = autoapply_deps(settings, sessions)
+    await autoapply_runner.recover(ctx["auto_apply"])
     await _hand_over_runs(ctx)                              # also picks up runs queued while no worker was up
     if settings.browser_enabled:
         ctx["browser_task"] = asyncio.create_task(engine.browser.start())
@@ -117,11 +132,48 @@ async def run_search(ctx: dict, run_id: str) -> None:
         ctx["active"].discard(run_id)
 
 
+def autoapply_deps(settings, sessions) -> autoapply_runner.RunnerDeps:
+    browser = ApplyBrowser(concurrency=settings.auto_apply_browser_concurrency)
+    robots = RobotsCache()
+    client = httpx.AsyncClient(follow_redirects=False, timeout=12.0)
+
+    async def robots_allowed(url: str) -> bool:
+        try:
+            await assert_public_url(url)
+            return await robots.allowed(client, url)
+        except Exception:
+            return False
+    return autoapply_runner.RunnerDeps(sessions=sessions, settings=settings, browser=browser,
+                                       engine_factory=lambda: autoapply_runner.build_engine(settings), robots_allowed=robots_allowed)
+
+
+async def auto_apply_prepare(ctx: dict, run_id: str) -> None:
+    if not ctx["settings"].auto_apply_enabled:
+        return
+    await autoapply_runner.prepare(uuid.UUID(run_id), ctx["auto_apply"])
+
+
+async def auto_apply_submit(ctx: dict, run_id: str) -> None:
+    if not ctx["settings"].auto_apply_enabled:
+        return
+    await autoapply_runner.submit(uuid.UUID(run_id), ctx["auto_apply"])
+
+
+async def auto_apply_cleanup(ctx: dict) -> None:
+    removed = await autoapply_runner.cleanup(ctx["auto_apply"])
+    if removed:
+        log.warning("auto-apply: %s screenshots past retention deleted", removed)
+
+
 _settings = get_settings()
 
 
 class WorkerSettings:
-    functions = [func(run_search, name="run_search", max_tries=1, timeout=max(3600, _settings.worker_job_timeout_seconds), keep_result=60)]
+    functions = [func(run_search, name="run_search", max_tries=1, timeout=max(3600, _settings.worker_job_timeout_seconds), keep_result=60),
+                 # never retried by arq: a submission must not be repeated (the runner decides about every outcome)
+                 func(auto_apply_prepare, name="auto_apply_prepare", max_tries=1, timeout=int(_settings.auto_apply_run_timeout_seconds) + 120, keep_result=60),
+                 func(auto_apply_submit, name="auto_apply_submit", max_tries=1, timeout=int(_settings.auto_apply_run_timeout_seconds) + 120, keep_result=60)]
+    cron_jobs = [cron(auto_apply_cleanup, hour={3}, minute={17}, run_at_startup=False)]
     redis_settings = RedisSettings.from_dsn(_settings.redis_url)
     max_jobs = max(1, _settings.worker_max_searches)
     job_timeout = max(3600, _settings.worker_job_timeout_seconds)

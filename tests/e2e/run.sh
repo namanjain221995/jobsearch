@@ -6,9 +6,10 @@
 #   tests/e2e/run.sh acceptance      the seven acceptance scenarios of the brief, for the candidate model, and an eighth
 #                                    for a candidate brought in from Salesforce (about 2 minutes)
 #   tests/e2e/run.sh crawl           every page for every role at 1280 px and 390 px
-#   tests/e2e/run.sh checks          the three check lists at 1280 px and 390 px
+#   tests/e2e/run.sh checks          the four check lists at 1280 px and 390 px
 #
 # Salesforce in the demo stack is an in-process fake (tests/e2e/salesforce_fake.py); the real one is never contacted.
+# Auto-apply's browser in the demo API reaches only the local fake ATS (tests/autoapply/fake_ats.py); no real job site.
 #
 # Ports: E2E_API_PORT (default 8011) and E2E_WEB_PORT (default 3011). Both must be free.
 set -uo pipefail
@@ -94,6 +95,8 @@ if [ "$WHAT" = "all" ] || [ "$WHAT" = "checks" ]; then
     run "second check list, $1 px" "$PY" tests/e2e/ui_checks_more.py --base "$BASE" --w "$1" --h "$2"
     fresh_api
     run "third check list (Salesforce), $1 px" "$PY" tests/e2e/ui_checks_salesforce.py --base "$BASE" --w "$1" --h "$2"
+    fresh_api
+    run "fourth check list (auto-apply), $1 px" "$PY" tests/e2e/ui_checks_auto_apply.py --base "$BASE" --w "$1" --h "$2"
   done
 fi
 

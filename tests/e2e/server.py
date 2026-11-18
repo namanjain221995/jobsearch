@@ -19,7 +19,15 @@
 - Salesforce is replaced by an in-process fake with twelve synthetic candidates (tests/e2e/salesforce_fake.py lists
   them, and a crowd of 21 closed "Zimmer" records for the "more matches than shown" case): search "ch", "am", "de" ...
   as lead.alpha@example.com. Two are already in the portal: Amara Nwosu in Team
-  Alpha and Elif Demir in Team Beta, both brought in through the real import code when the demo data is seeded."""
+  Alpha and Elif Demir in Team Beta, both brought in through the real import code when the demo data is seeded.
+- AI auto-apply is switched on. Its browser only ever reaches the local fake ATS (tests/autoapply/fake_ats.py, started
+  in this process): the guard proxy's resolver and the host check know only the four fake hosts and refuse every other
+  host, so no real job site can be contacted. Jordan Rivera has a consent (may accept privacy notices, may not attest),
+  complete application answers and six jobs on the fake ATS: "Northpeak Robotics" (Greenhouse, no run: start one, it ends
+  ready for review with one AI-drafted answer, approve it and it is submitted), and runs made by the real worker code:
+  Lever (ready for review), Workable "Unknown Co" (needs input: notice period, T-shirt size), Greenhouse "Captcha Co" (blocked: visible CAPTCHA),
+  Workable "Orbit Cloud" (submitted, with confirmation) and Ashby (failed, outcome unknown: stopped while submitting).
+  Hannah Kim has no consent."""
 import argparse
 import asyncio
 import hashlib
@@ -52,6 +60,13 @@ from app.search_engine import SearchEngine
 from tests.conftest import RESUME, FakeAI, FakeBrowser
 from tests.e2e.fixtures import SEEDS, handler
 from tests.e2e.salesforce_fake import IMPORTED_ALPHA, IMPORTED_BETA, FakeSalesforce
+from tests.autoapply.fake_ats import ASHBY_ID, LEVER_ID, FakeATS
+from app.autoapply import runner as autoapply_runner
+from app.autoapply.answers import Engine
+from app.autoapply.browser import ApplyBrowser
+from app.portal.autoapply_schemas import ApplicationAnswersIn, AutoApplyRunCreate, ConsentIn
+from app.portal.models import AutoApplyRun
+from app.portal.services import auto_apply as auto_apply_service
 
 URL = os.environ.get("E2E_DATABASE_URL", "postgresql+asyncpg://jobfinder:jobfinder@127.0.0.1:55432/jobfinder_e2e")
 PLAIN = URL.replace("postgresql+asyncpg://", "postgresql://", 1)
@@ -72,7 +87,9 @@ def settings() -> Settings:
     return Settings(_env_file=None, database_url=URL, openai_api_key="", anthropic_api_key="", app_env="e2e",
                     public_base_url=os.environ.get("E2E_PUBLIC_BASE_URL", "http://127.0.0.1:3011"),
                     allowed_origins="http://localhost:3011,http://127.0.0.1:3011,http://localhost:3010,http://127.0.0.1:3010",
-                    prewarm_on_start=False, browser_enabled=False, fetch_deadline_seconds=10, login_max_failures=50)
+                    prewarm_on_start=False, browser_enabled=False, fetch_deadline_seconds=10, login_max_failures=50,
+                    auto_apply_enabled=True, auto_apply_host_interval_seconds=0, auto_apply_ai_classify=False,
+                    auto_apply_run_timeout_seconds=90)
 
 
 async def prepare_database(reset: bool) -> None:
@@ -94,7 +111,103 @@ async def prepare_database(reset: bool) -> None:
         await conn.close()
 
 
-async def seed(sessions, deps: RunnerDeps, salesforce: FakeSalesforce) -> None:
+class DemoWriter:
+    """Stands in for OpenAI/Claude when drafting free text: one fixed answer per question, built only from resume facts
+    (so the real verifier accepts it). No network."""
+    name = "DemoWriter"
+
+    async def json_call(self, system, user, schema, name):
+        import re
+        company = (re.search(r"\nEMPLOYER: (.*)", user) or [None, "the company"])[1].strip()
+        title = (re.search(r"\nJOB TITLE: (.*)", user) or [None, "this"])[1].strip()
+        return {"answers": [{"key": key, "cannot_answer": False,
+                             "text": f"I build and deploy models with Python and PyTorch, which fits the {title} role at {company}.",
+                             "claims": [{"claim": "Python", "evidence": "Skills: Python, PyTorch"}]}
+                            for key in re.findall(r"- key='([^']+)'", user)]}
+
+
+def autoapply_deps(sessions, cfg, fake: FakeATS) -> autoapply_runner.RunnerDeps:
+    """The real worker code, with a browser that can only reach the local fake ATS."""
+    browser = ApplyBrowser(resolver=fake.resolver, host_check=fake.host_check, ignore_https_errors=True,
+                           concurrency=cfg.auto_apply_browser_concurrency)
+
+    async def robots_allowed(url: str) -> bool:
+        await fake.host_check(url)                              # raises for any non-fake host
+        return True
+    return autoapply_runner.RunnerDeps(sessions=sessions, settings=cfg, browser=browser,
+                                       engine_factory=lambda: Engine(classifiers=[], writers=[DemoWriter()], max_draft_calls=2),
+                                       robots_allowed=robots_allowed)
+
+
+# Jordan's jobs on the fake ATS: (company, title, url, what the seed does with it)
+FAKE_JOBS = [("Northpeak Robotics", "Robotics Perception Engineer", "https://job-boards.greenhouse.io/acme/jobs/1001", None),
+             ("Lumen Labs", "Lumen Platform Engineer", f"https://jobs.lever.co/acme/{LEVER_ID}/apply", "ready"),
+             ("Unknown Co", "Unknown Co Modeling Engineer", "https://apply.workable.com/unknown/j/UNK999/apply/", "needs_input"),
+             ("Captcha Co", "Captcha Co Vision Engineer", "https://job-boards.greenhouse.io/captcha/jobs/2001", "blocked"),
+             ("Orbit Cloud", "Orbit Inference Engineer", "https://apply.workable.com/acme/j/ABC123/apply/", "submitted"),
+             ("Keystone AI", "Keystone Research Engineer", f"https://jobs.ashbyhq.com/acme/{ASHBY_ID}/application", "unknown")]
+
+
+async def seed_auto_apply(sessions, aa: autoapply_runner.RunnerDeps, ids: dict) -> None:
+    """Consent, answers and runs in every status, all through the real services and worker code (fake ATS only)."""
+    cfg = aa.settings
+    async with sessions() as db:
+        admin = Principal(await db.get(User, ids["admin"].id), None)
+        jordan = await db.get(Candidate, ids["jordan"].id)
+        await auto_apply_service.record_consent(db, admin, jordan, ConsentIn(
+            method="written", note="Signed the auto-apply consent form.", document_reference="signed form, demo data",
+            may_attest=False, may_accept_data_processing=True), "127.0.0.1")
+        await auto_apply_service.update_answers(db, admin, jordan, ApplicationAnswersIn(
+            authorized_us="yes", sponsorship_now_or_future="no", age_18_or_over="yes", willing_to_relocate="no",
+            earliest_start="2 weeks notice", expected_salary="$150,000", previously_employed_by=[],
+            previous_employers_complete=True, restrictive_agreements="no", linkedin_url="https://www.linkedin.com/in/jordan-example",
+            current_company="Example Corp", current_title="Machine Learning Engineer", city="New York", state="NY",
+            country="United States", referral_source="Company website"), "127.0.0.1")
+        jobs = {}
+        for company, title, url, plan in FAKE_JOBS:
+            posting = await jobs_service.create_manual(db, admin.user, JobCreate(
+                company=company, title=title, city="New York", state="NY", work_mode="Remote", canonical_url=url, apply_url=url,
+                requirements=["Python", "PyTorch"], description=f"About the Company\n{company} is hiring.\n\nResponsibilities\n• Build models"))
+            jobs[plan] = posting.id
+        await db.flush()
+        new, _ = await assignments_service.create_assignments(db, admin, [(job_id, jordan.id) for job_id in jobs.values()], skip_scope_checks=True)
+        await db.commit()
+    async with sessions() as db:
+        rows = {a.job_id: a.id for a in (await db.execute(select(JobAssignment).where(JobAssignment.id.in_(new)))).scalars()}
+        admin = Principal(await db.get(User, ids["admin"].id), None)
+        runs, _ = await auto_apply_service.create_runs(db, admin, cfg, AutoApplyRunCreate(
+            candidate_id=ids["jordan"].id, assignment_ids=[rows[jobs[k]] for k in ("ready", "needs_input", "blocked", "submitted", "unknown")]),
+            "127.0.0.1")
+        await db.commit()
+        by_plan = {plan: run.id for plan, run in zip(("ready", "needs_input", "blocked", "submitted", "unknown"), runs)}
+    # "Unknown Co" is prepared before the notice period is recorded, so it needs input from the candidate's answers
+    # (application_answers.notice_period) as well as for the run (an unknown T-shirt size question).
+    await autoapply_runner.prepare(by_plan["needs_input"], aa)
+    async with sessions() as db:
+        await auto_apply_service.update_answers(db, Principal(await db.get(User, ids["admin"].id), None), await db.get(Candidate, ids["jordan"].id),
+                                                ApplicationAnswersIn(notice_period="2 weeks"), "127.0.0.1")
+        await db.commit()
+    for plan in ("ready", "blocked", "submitted", "unknown"):
+        await autoapply_runner.prepare(by_plan[plan], aa)
+    for plan in ("submitted", "unknown"):
+        async with sessions() as db:
+            run = await auto_apply_service.load_run(db, by_plan[plan], lock=True)
+            if run.status != "ready_for_review":
+                raise RuntimeError(f"demo auto-apply run for {plan!r} ended {run.status}: {run.blocked_reasons} {run.needs_input} {run.error}")
+            await auto_apply_service.approve(db, admin, cfg, run, run.answers_hash, "127.0.0.1")
+            await db.commit()
+    await autoapply_runner.submit(by_plan["submitted"], aa)
+    # The worker stopped while submitting: recovery fails the run with outcome_unknown (never retried).
+    await autoapply_runner._claim(aa, by_plan["unknown"], ("approved",), "submitting")
+    await autoapply_runner.recover(aa)
+    async with sessions() as db:
+        got = {plan: (await db.get(AutoApplyRun, run_id)).status for plan, run_id in by_plan.items()}
+    want = {"ready": "ready_for_review", "needs_input": "needs_input", "blocked": "blocked", "submitted": "submitted", "unknown": "failed"}
+    if got != want:
+        raise RuntimeError(f"demo auto-apply runs ended {got}, expected {want}")
+
+
+async def seed(sessions, deps: RunnerDeps, salesforce: FakeSalesforce, aa=None) -> None:
     hashed = security.hash_password(PASSWORD)
     ids: dict[str, object] = {}
     async with sessions() as db:
@@ -214,6 +327,8 @@ async def seed(sessions, deps: RunnerDeps, salesforce: FakeSalesforce) -> None:
                 description=f"About the Company\n{company} is hiring.\n\nResponsibilities\n• Build models\n• Ship features\n\nRequired Qualifications\n• 3+ years of experience"))
             db.add(TeamJobQueue(team_id=ids["team_beta"].id, job_id=posting.id, delegated_by=admin.id, note="From the conference list"))
         await db.commit()
+    if aa is not None:
+        await seed_auto_apply(sessions, aa, ids)
 
 
 def main() -> None:
@@ -228,7 +343,11 @@ def main() -> None:
     async def runner(run_id):
         await execute_search(run_id, holder["deps"])
 
-    app = create_app(cfg, queue=InlineQueue(runner), use_redis=False)
+    async def auto_apply_runner(kind, run_id):
+        await (autoapply_runner.prepare if kind == "prepare" else autoapply_runner.submit)(run_id, holder["aa"])
+
+    fake_ats = FakeATS().__enter__()                         # local fake ATS: the only "employer site" auto-apply can reach
+    app = create_app(cfg, queue=InlineQueue(runner, auto_apply_runner), use_redis=False)
     portal_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
@@ -242,12 +361,14 @@ def main() -> None:
             holder["deps"] = RunnerDeps(sessions=app_.state.sessions, engine=engine, settings=cfg)
             await app_.state.salesforce.aclose()
             app_.state.salesforce = FakeSalesforce()          # the demo stack never talks to the real Salesforce
-            await seed(app_.state.sessions, holder["deps"], app_.state.salesforce)
+            holder["aa"] = autoapply_deps(app_.state.sessions, cfg, fake_ats)
+            await seed(app_.state.sessions, holder["deps"], app_.state.salesforce, holder["aa"])
             try:
                 yield
             finally:
                 await engine.aclose()
                 await index.close()
+                fake_ats.__exit__(None, None, None)
 
     app.router.lifespan_context = lifespan
 

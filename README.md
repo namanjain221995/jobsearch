@@ -168,6 +168,18 @@ An assignment is a job given to a candidate; the member responsible for that can
 
 A member's numbers are the totals over the candidates assigned to that member at the moment; team and organization numbers also include candidates nobody is responsible for. Team and organization dashboards break the numbers down per candidate and per responsible member. A date range selects assignments by the day they were assigned (UTC). Charts show, per day or week, jobs assigned, applications confirmed and links opened.
 
+## AI auto-apply (Admin only, off by default)
+
+An Admin can let the worker fill a candidate's application on the employer's own hosted form (Greenhouse, Lever,
+Ashby, Workable; Workday and aggregators are refused with a reason). Every run first does a **dry run** in a browser
+whose submissions are blocked (request routing plus the guard proxy), shows the Admin each field, the value, its
+source and a screenshot, and submits only after the Admin approves that exact preview. CAPTCHAs, sign-ins, e-mail
+codes, bot checks, "I personally completed this application" and arbitration agreements always go back to a person.
+Legal and EEO questions are answered only from answers recorded for the candidate (`/application-answers`); EEO
+defaults to the form's decline option; free text is drafted from the resume and rejected if it states anything the
+resume does not. It needs a recorded consent. Switch on with `AUTO_APPLY_ENABLED=true` and run
+`alembic upgrade head` (revision `d3f6a1b8c925`). Contract and rules: [docs/auto-apply-api.md](docs/auto-apply-api.md).
+
 ## Security
 
 - **Passwords:** Argon2id, computed in worker threads so a sign-in never stalls other requests. **Sessions:** random token in an HttpOnly, SameSite=Lax cookie; only its hash is stored; validated on the server for every request; revoked on sign-out, password reset and deactivation. Set `COOKIE_SECURE=true` (or `APP_ENV=production`) when served over HTTPS.

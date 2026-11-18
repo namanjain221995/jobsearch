@@ -93,10 +93,15 @@ class GuardProxy:
     made to the address that was checked. A page therefore cannot steer the browser to localhost or
     to an internal network, not even through a redirect that page-level request filters never see."""
 
-    def __init__(self, resolver=resolve_public):
+    def __init__(self, resolver=resolve_public, block_submissions: bool = False):
         self.resolver = resolver
         self.port = 0
         self.blocked = 0
+        # Dry-run mode of auto-apply (app/autoapply/browser.py): a plain-http request whose method can change state
+        # (POST, PUT, PATCH, DELETE) is refused here as well. HTTPS travels inside CONNECT tunnels the proxy cannot
+        # read; those requests are stopped by the browser's own request routing, before they are encrypted.
+        self.block_submissions = block_submissions
+        self.blocked_submissions = 0
         self._server: asyncio.AbstractServer | None = None
 
     async def start(self) -> int:
@@ -152,10 +157,15 @@ class GuardProxy:
                 if parts.scheme != "http" or not parts.hostname:
                     raise UnsafeURL("Unsupported proxy request")
                 host, port = parts.hostname, parts.port or 80
+                if self.block_submissions and method.upper() not in ("GET", "HEAD", "OPTIONS"):
+                    self.blocked_submissions += 1
+                    raise UnsafeURL("Submissions are blocked (dry run)")
                 path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
                 kept = [h for h in headers if h and not h.lower().startswith(("proxy-", "connection:"))]
                 forward = ("\r\n".join([f"{method} {path} {version}", *kept, "Connection: close"]) + "\r\n\r\n").encode("latin-1")
             address = await self.resolver(host, port)
+            if isinstance(address, tuple):               # a resolver may also name the port (test servers on loopback)
+                address, port = address
         except Exception:
             self.blocked += 1
             await self._reply(writer, "403 Forbidden")

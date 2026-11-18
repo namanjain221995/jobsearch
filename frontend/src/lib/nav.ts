@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bot,
   BriefcaseBusiness,
   ChartColumn,
   ClipboardList,
@@ -67,6 +68,7 @@ export const NAVIGATION: Record<Role, NavGroup[]> = {
         { label: "Find Jobs", href: "/admin/search", icon: Search },
         { label: "Search History", href: "/admin/searches", icon: History },
         { label: "Assignments", href: "/admin/assignments", icon: ClipboardList },
+        { label: "Auto Apply", href: "/admin/auto-apply", icon: Bot },
       ],
     },
     {

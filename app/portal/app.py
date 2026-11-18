@@ -25,7 +25,7 @@ from .limits import RequestGuardMiddleware
 from .queue import SearchQueue
 from ..providers import aws_web_search
 from ..providers.aws_web_search import AwsWebSearch
-from .routers import admin, assignments, auth, candidates, invitations, jobs, salesforce, searches, teams, users, web_search
+from .routers import admin, assignments, auth, auto_apply, candidates, invitations, jobs, salesforce, searches, teams, users, web_search
 from .security import RateLimiter
 from .services.emailer import Emailer
 from .services.salesforce import SalesforceClient
@@ -160,7 +160,7 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
-    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin, web_search):
+    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin, web_search, auto_apply):
         app.include_router(module.router)
     return app
 

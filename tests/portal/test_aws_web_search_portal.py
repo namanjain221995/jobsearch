@@ -103,7 +103,7 @@ async def test_usage_revision_upgrades_and_downgrades_without_touching_data(data
         assert not await conn.fetchval("SELECT to_regclass('aws_web_search_usage') IS NOT NULL")
         await conn.close()
         alembic("upgrade", "b5e8d2c47a19")
-        assert "b5e8d2c47a19 (head)" in alembic("current")
+        assert "b5e8d2c47a19" in alembic("current")                   # later revisions (d3f6a1b8c925, auto-apply) follow it
         conn = await asyncpg.connect(PLAIN)
         await conn.execute("INSERT INTO aws_web_search_usage (month) VALUES ('2026-11')")
         assert await conn.fetchval("SELECT used FROM aws_web_search_usage") == 0

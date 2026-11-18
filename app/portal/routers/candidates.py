@@ -257,6 +257,8 @@ async def activity_page(db: AsyncSession, principal: Principal, where: list, pag
         private = ApplicationEvent.meta["private"].astext
         stmt = stmt.where(JobAssignment.is_active, ApplicationEvent.event_type.not_in(assignments_service.MANAGER_ONLY_EVENTS),
                           or_(private.is_(None), private != "true"))
+    if not principal.is_admin:                           # auto-apply is invisible to Team Leads and members
+        stmt = stmt.where(ApplicationEvent.event_type.not_in(assignments_service.ADMIN_ONLY_EVENTS))
     rows, total = await paginate(db, stmt, page, page_size)
     users = await users_by_id(db, {e.actor_id for e, _, _, _ in rows} | {c.assigned_member_id for _, _, _, c in rows})
     items = [ActivityItem(id=e.id, event_type=e.event_type, old_status=e.old_status, new_status=e.new_status, created_at=e.created_at,

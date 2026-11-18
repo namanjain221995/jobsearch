@@ -32,6 +32,9 @@ const ACTION_GROUPS = [
   { value: "search", label: "Searches" },
   { value: "assignment", label: "Assignments" },
   { value: "settings", label: "Settings" },
+  { value: "auto_apply", label: "Auto Apply" },
+  { value: "consent", label: "Auto-apply consent" },
+  { value: "application_answers", label: "Application answers" },
 ];
 
 const ACTION_LABELS: Record<string, string> = {
@@ -78,6 +81,14 @@ const ACTION_LABELS: Record<string, string> = {
   "search.finished": "Search finished",
   "assignments.created": "Assigned jobs to candidates",
   "assignment.status_changed": "Changed an application status",
+  "auto_apply.runs_created": "Started preparing automatic applications",
+  "auto_apply.answers_edited": "Edited the answers of an automatic application",
+  "auto_apply.approved": "Approved an automatic application",
+  "auto_apply.submitted": "Automatic application submitted",
+  "auto_apply.cancelled": "Cancelled an automatic application",
+  "consent.recorded": "Recorded a candidate's consent to auto-apply",
+  "consent.revoked": "Revoked a candidate's consent to auto-apply",
+  "application_answers.updated": "Updated a candidate's application answers",
   "assignment.withdrawn": "Withdrew an assignment",
   "settings.updated": "Changed portal settings",
   "settings.extra_answers_deleted": "Deleted answers to changed candidate profile fields",

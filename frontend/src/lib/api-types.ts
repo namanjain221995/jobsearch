@@ -329,6 +329,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auto-apply/candidates/{candidate_id}/eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auto Apply Eligibility
+         * @description The candidate's open assignments, each with its application system and whether a run can be started.
+         */
+        get: operations["auto_apply_eligibility_api_auto_apply_candidates__candidate_id__eligibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auto-apply/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Auto Apply Runs */
+        get: operations["list_auto_apply_runs_api_auto_apply_runs_get"];
+        put?: never;
+        /** Create Auto Apply Runs */
+        post: operations["create_auto_apply_runs_api_auto_apply_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auto-apply/runs/approve-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Auto Apply Batch */
+        post: operations["approve_auto_apply_batch_api_auto_apply_runs_approve_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auto-apply/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Auto Apply Run */
+        get: operations["get_auto_apply_run_api_auto_apply_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auto-apply/runs/{run_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Auto Apply Answers */
+        patch: operations["patch_auto_apply_answers_api_auto_apply_runs__run_id__answers_patch"];
+        trace?: never;
+    };
+    "/api/auto-apply/runs/{run_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Auto Apply Run */
+        post: operations["approve_auto_apply_run_api_auto_apply_runs__run_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auto-apply/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Auto Apply Run */
+        post: operations["cancel_auto_apply_run_api_auto_apply_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auto-apply/runs/{run_id}/screenshots/{screenshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Auto Apply Screenshot */
+        get: operations["get_auto_apply_screenshot_api_auto_apply_runs__run_id__screenshots__screenshot_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auto-apply/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Auto Apply Status */
+        get: operations["auto_apply_status_api_auto_apply_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/candidates": {
         parameters: {
             query?: never;
@@ -421,6 +578,59 @@ export interface paths {
         get: operations["candidate_analytics_api_candidates__candidate_id__analytics_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/application-answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Application Answers */
+        get: operations["get_application_answers_api_candidates__candidate_id__application_answers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Application Answers */
+        patch: operations["update_application_answers_api_candidates__candidate_id__application_answers_patch"];
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Candidate Consents */
+        get: operations["list_candidate_consents_api_candidates__candidate_id__consents_get"];
+        put?: never;
+        /** Record Candidate Consent */
+        post: operations["record_candidate_consent_api_candidates__candidate_id__consents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/consents/{consent_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Candidate Consent */
+        post: operations["revoke_candidate_consent_api_candidates__candidate_id__consents__consent_id__revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1190,6 +1400,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/web-search/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Web Search Jobs */
+        post: operations["web_search_jobs_api_web_search_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1255,6 +1482,314 @@ export interface components {
             };
             /** Weekly Activity */
             weekly_activity: components["schemas"]["SeriesPoint"][];
+        };
+        /**
+         * ApplicationAnswersIn
+         * @description Only the fields that are sent change.
+         */
+        ApplicationAnswersIn: {
+            /**
+             * Age 18 Or Over
+             * @default unknown
+             * @enum {string}
+             */
+            age_18_or_over: "yes" | "no" | "unknown";
+            /**
+             * Authorized Us
+             * @default unknown
+             * @enum {string}
+             */
+            authorized_us: "yes" | "no" | "unknown";
+            /**
+             * City
+             * @default
+             */
+            city: string;
+            /**
+             * Country
+             * @default
+             */
+            country: string;
+            /**
+             * Current Company
+             * @default
+             */
+            current_company: string;
+            /**
+             * Current Title
+             * @default
+             */
+            current_title: string;
+            /**
+             * Earliest Start
+             * @default
+             */
+            earliest_start: string;
+            /**
+             * Eeo Disability
+             * @default decline
+             */
+            eeo_disability: string;
+            /**
+             * Eeo Gender
+             * @default decline
+             */
+            eeo_gender: string;
+            /**
+             * Eeo Hispanic Latino
+             * @default decline
+             */
+            eeo_hispanic_latino: string;
+            /**
+             * Eeo Race
+             * @default decline
+             */
+            eeo_race: string;
+            /**
+             * Eeo Veteran
+             * @default decline
+             */
+            eeo_veteran: string;
+            /**
+             * Expected Salary
+             * @default
+             */
+            expected_salary: string;
+            /**
+             * First Name
+             * @default
+             */
+            first_name: string;
+            /**
+             * Github Url
+             * @default
+             */
+            github_url: string;
+            /**
+             * Last Name
+             * @default
+             */
+            last_name: string;
+            /**
+             * Linkedin Url
+             * @default
+             */
+            linkedin_url: string;
+            /**
+             * Notice Period
+             * @default
+             */
+            notice_period: string;
+            /**
+             * Phone
+             * @default
+             */
+            phone: string;
+            /**
+             * Portfolio Url
+             * @default
+             */
+            portfolio_url: string;
+            /**
+             * Preferred Name
+             * @default
+             */
+            preferred_name: string;
+            /**
+             * Previous Employers Complete
+             * @default false
+             */
+            previous_employers_complete: boolean;
+            /** Previously Employed By */
+            previously_employed_by?: string[];
+            /**
+             * Referral Source
+             * @default
+             */
+            referral_source: string;
+            /**
+             * Restrictive Agreements
+             * @default unknown
+             * @enum {string}
+             */
+            restrictive_agreements: "yes" | "no" | "unknown";
+            /**
+             * Sponsorship Now Or Future
+             * @default unknown
+             * @enum {string}
+             */
+            sponsorship_now_or_future: "yes" | "no" | "unknown";
+            /**
+             * State
+             * @default
+             */
+            state: string;
+            /**
+             * Willing To Relocate
+             * @default unknown
+             * @enum {string}
+             */
+            willing_to_relocate: "yes" | "no" | "unknown";
+        };
+        /** ApplicationAnswersOut */
+        ApplicationAnswersOut: {
+            /**
+             * Age 18 Or Over
+             * @default unknown
+             * @enum {string}
+             */
+            age_18_or_over: "yes" | "no" | "unknown";
+            /**
+             * Authorized Us
+             * @default unknown
+             * @enum {string}
+             */
+            authorized_us: "yes" | "no" | "unknown";
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /**
+             * City
+             * @default
+             */
+            city: string;
+            /**
+             * Country
+             * @default
+             */
+            country: string;
+            /**
+             * Current Company
+             * @default
+             */
+            current_company: string;
+            /**
+             * Current Title
+             * @default
+             */
+            current_title: string;
+            /**
+             * Earliest Start
+             * @default
+             */
+            earliest_start: string;
+            /**
+             * Eeo Disability
+             * @default decline
+             */
+            eeo_disability: string;
+            /**
+             * Eeo Gender
+             * @default decline
+             */
+            eeo_gender: string;
+            /**
+             * Eeo Hispanic Latino
+             * @default decline
+             */
+            eeo_hispanic_latino: string;
+            /**
+             * Eeo Race
+             * @default decline
+             */
+            eeo_race: string;
+            /**
+             * Eeo Veteran
+             * @default decline
+             */
+            eeo_veteran: string;
+            /**
+             * Effective
+             * @default {}
+             */
+            effective: {
+                [key: string]: components["schemas"]["EffectiveValue"];
+            };
+            /**
+             * Expected Salary
+             * @default
+             */
+            expected_salary: string;
+            /**
+             * First Name
+             * @default
+             */
+            first_name: string;
+            /**
+             * Github Url
+             * @default
+             */
+            github_url: string;
+            /**
+             * Last Name
+             * @default
+             */
+            last_name: string;
+            /**
+             * Linkedin Url
+             * @default
+             */
+            linkedin_url: string;
+            /**
+             * Notice Period
+             * @default
+             */
+            notice_period: string;
+            /**
+             * Phone
+             * @default
+             */
+            phone: string;
+            /**
+             * Portfolio Url
+             * @default
+             */
+            portfolio_url: string;
+            /**
+             * Preferred Name
+             * @default
+             */
+            preferred_name: string;
+            /**
+             * Previous Employers Complete
+             * @default false
+             */
+            previous_employers_complete: boolean;
+            /** Previously Employed By */
+            previously_employed_by?: string[];
+            /**
+             * Referral Source
+             * @default
+             */
+            referral_source: string;
+            /**
+             * Restrictive Agreements
+             * @default unknown
+             * @enum {string}
+             */
+            restrictive_agreements: "yes" | "no" | "unknown";
+            /**
+             * Sponsorship Now Or Future
+             * @default unknown
+             * @enum {string}
+             */
+            sponsorship_now_or_future: "yes" | "no" | "unknown";
+            /**
+             * State
+             * @default
+             */
+            state: string;
+            /** Updated At */
+            updated_at?: string | null;
+            updated_by?: components["schemas"]["UserRef"] | null;
+            /**
+             * Willing To Relocate
+             * @default unknown
+             * @enum {string}
+             */
+            willing_to_relocate: "yes" | "no" | "unknown";
         };
         /** AssignCreate */
         AssignCreate: {
@@ -1519,6 +2054,615 @@ export interface components {
             /** Target Type */
             target_type: string;
             team?: components["schemas"]["TeamRef"] | null;
+        };
+        /** AutoApplyAnswer */
+        AutoApplyAnswer: {
+            /**
+             * Classification
+             * @default
+             */
+            classification: string;
+            /**
+             * Evidence
+             * @default []
+             */
+            evidence: string[];
+            /** Field Key */
+            field_key: string;
+            /** Label */
+            label: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Status
+             * @default ok
+             * @enum {string}
+             */
+            status: "ok" | "missing" | "blocked";
+            /**
+             * Type
+             * @default text
+             */
+            type: string;
+            /**
+             * Value
+             * @default
+             */
+            value: string;
+        };
+        /** AutoApplyAnswerEdit */
+        AutoApplyAnswerEdit: {
+            /** Field Key */
+            field_key: string;
+            /** Value */
+            value: string;
+        };
+        /** AutoApplyAnswersPatch */
+        AutoApplyAnswersPatch: {
+            /** Answers */
+            answers: components["schemas"]["AutoApplyAnswerEdit"][];
+        };
+        /** AutoApplyApproveIn */
+        AutoApplyApproveIn: {
+            /** Answers Hash */
+            answers_hash: string;
+        };
+        /** AutoApplyBatchApproveIn */
+        AutoApplyBatchApproveIn: {
+            /** Items */
+            items: components["schemas"]["AutoApplyBatchItem"][];
+        };
+        /** AutoApplyBatchApproveOut */
+        AutoApplyBatchApproveOut: {
+            /**
+             * Approved
+             * @default []
+             */
+            approved: string[];
+            /**
+             * Refused
+             * @default []
+             */
+            refused: components["schemas"]["AutoApplyRefusal"][];
+        };
+        /** AutoApplyBatchItem */
+        AutoApplyBatchItem: {
+            /** Answers Hash */
+            answers_hash: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /** AutoApplyBlocker */
+        AutoApplyBlocker: {
+            /** Code */
+            code: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
+        /** AutoApplyConfirmation */
+        AutoApplyConfirmation: {
+            /**
+             * Detected
+             * @default false
+             */
+            detected: boolean;
+            /**
+             * Reference
+             * @default
+             */
+            reference: string;
+            /**
+             * Text Sha256
+             * @default
+             */
+            text_sha256: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+        };
+        /** AutoApplyCounts */
+        AutoApplyCounts: {
+            /**
+             * Ai Drafted
+             * @default 0
+             */
+            ai_drafted: number;
+            /**
+             * Answered
+             * @default 0
+             */
+            answered: number;
+            /**
+             * Fields
+             * @default 0
+             */
+            fields: number;
+            /**
+             * Needs Input
+             * @default 0
+             */
+            needs_input: number;
+        };
+        /**
+         * AutoApplyEligibility
+         * @description One open assignment of the candidate and whether a run can be started for it.
+         */
+        AutoApplyEligibility: {
+            /**
+             * Application Url
+             * @default
+             */
+            application_url: string;
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /**
+             * Ats
+             * @enum {string}
+             */
+            ats: "greenhouse" | "lever" | "ashby" | "workable" | "unsupported";
+            /** Eligible */
+            eligible: boolean;
+            job: components["schemas"]["AutoApplyJobRef"];
+            /** Open Run Id */
+            open_run_id?: string | null;
+            /** Open Run Status */
+            open_run_status?: ("queued" | "preparing" | "needs_input" | "ready_for_review" | "approved" | "submitting" | "submitted" | "failed" | "blocked" | "cancelled") | null;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Reason Code
+             * @default
+             */
+            reason_code: string;
+            /** Status */
+            status: string;
+            /** Supported */
+            supported: boolean;
+        };
+        /** AutoApplyEligibilityOut */
+        AutoApplyEligibilityOut: {
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Has Active Consent */
+            has_active_consent: boolean;
+            /** Has Resume File */
+            has_resume_file: boolean;
+            /** Items */
+            items: components["schemas"]["AutoApplyEligibility"][];
+        };
+        /** AutoApplyFillEntry */
+        AutoApplyFillEntry: {
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Field Key */
+            field_key: string;
+            /**
+             * Filled
+             * @default false
+             */
+            filled: boolean;
+            /** Label */
+            label: string;
+            /**
+             * Value
+             * @default
+             */
+            value: string;
+        };
+        /** AutoApplyFormField */
+        AutoApplyFormField: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Multiple
+             * @default false
+             */
+            multiple: boolean;
+            /**
+             * Options
+             * @default []
+             */
+            options: string[];
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /**
+             * Section
+             * @default
+             */
+            section: string;
+            /** Type */
+            type: string;
+        };
+        /** AutoApplyGuardReport */
+        AutoApplyGuardReport: {
+            /**
+             * Allowed Submissions
+             * @default 0
+             */
+            allowed_submissions: number;
+            /**
+             * Blocked Requests
+             * @default 0
+             */
+            blocked_requests: number;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** AutoApplyJobRef */
+        AutoApplyJobRef: {
+            /** Company */
+            company: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+        };
+        /** AutoApplyNeedsInput */
+        AutoApplyNeedsInput: {
+            /** Field Key */
+            field_key: string;
+            /** Fill In */
+            fill_in: string;
+            /** Label */
+            label: string;
+            /** Reason */
+            reason: string;
+        };
+        /** AutoApplyRefusal */
+        AutoApplyRefusal: {
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "not_found" | "not_ready" | "answers_changed" | "no_consent" | "assignment_changed" | "employer_daily_cap" | "disabled" | "already_submitted";
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /** AutoApplyRunCreate */
+        AutoApplyRunCreate: {
+            /** Assignment Ids */
+            assignment_ids: string[];
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+        };
+        /** AutoApplyRunDetail */
+        AutoApplyRunDetail: {
+            /**
+             * Answers
+             * @default []
+             */
+            answers: components["schemas"]["AutoApplyAnswer"][];
+            /**
+             * Answers Hash
+             * @default
+             */
+            answers_hash: string;
+            /** Approved At */
+            approved_at?: string | null;
+            approved_by?: components["schemas"]["UserRef"] | null;
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /**
+             * Ats
+             * @enum {string}
+             */
+            ats: "greenhouse" | "lever" | "ashby" | "workable" | "unsupported";
+            /**
+             * Blocked Reasons
+             * @default []
+             */
+            blocked_reasons: components["schemas"]["AutoApplyBlocker"][];
+            candidate: components["schemas"]["CandidateRef"];
+            confirmation?: components["schemas"]["AutoApplyConfirmation"] | null;
+            /**
+             * @default {
+             *       "ai_drafted": 0,
+             *       "answered": 0,
+             *       "fields": 0,
+             *       "needs_input": 0
+             *     }
+             */
+            counts: components["schemas"]["AutoApplyCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by?: components["schemas"]["UserRef"] | null;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Fill Report
+             * @default []
+             */
+            fill_report: components["schemas"]["AutoApplyFillEntry"][];
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Form
+             * @default []
+             */
+            form: components["schemas"]["AutoApplyFormField"][];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            job: components["schemas"]["AutoApplyJobRef"];
+            /** Job Url */
+            job_url: string;
+            /**
+             * Needs Input
+             * @default []
+             */
+            needs_input: components["schemas"]["AutoApplyNeedsInput"][];
+            /**
+             * Outcome Unknown
+             * @default false
+             */
+            outcome_unknown: boolean;
+            /**
+             * Screenshots
+             * @default []
+             */
+            screenshots: components["schemas"]["AutoApplyScreenshotOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "preparing" | "needs_input" | "ready_for_review" | "approved" | "submitting" | "submitted" | "failed" | "blocked" | "cancelled";
+            submission_guard?: components["schemas"]["AutoApplyGuardReport"] | null;
+            /** Submitted At */
+            submitted_at?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AutoApplyRunOut */
+        AutoApplyRunOut: {
+            /** Approved At */
+            approved_at?: string | null;
+            approved_by?: components["schemas"]["UserRef"] | null;
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /**
+             * Ats
+             * @enum {string}
+             */
+            ats: "greenhouse" | "lever" | "ashby" | "workable" | "unsupported";
+            /**
+             * Blocked Reasons
+             * @default []
+             */
+            blocked_reasons: components["schemas"]["AutoApplyBlocker"][];
+            candidate: components["schemas"]["CandidateRef"];
+            /**
+             * @default {
+             *       "ai_drafted": 0,
+             *       "answered": 0,
+             *       "fields": 0,
+             *       "needs_input": 0
+             *     }
+             */
+            counts: components["schemas"]["AutoApplyCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            created_by?: components["schemas"]["UserRef"] | null;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            job: components["schemas"]["AutoApplyJobRef"];
+            /** Job Url */
+            job_url: string;
+            /**
+             * Needs Input
+             * @default []
+             */
+            needs_input: components["schemas"]["AutoApplyNeedsInput"][];
+            /**
+             * Outcome Unknown
+             * @default false
+             */
+            outcome_unknown: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "preparing" | "needs_input" | "ready_for_review" | "approved" | "submitting" | "submitted" | "failed" | "blocked" | "cancelled";
+            /** Submitted At */
+            submitted_at?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AutoApplyRunsCreated */
+        AutoApplyRunsCreated: {
+            /** Runs */
+            runs: components["schemas"]["AutoApplyRunOut"][];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: components["schemas"]["AutoApplySkipped"][];
+        };
+        /** AutoApplyScreenshotOut */
+        AutoApplyScreenshotOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "dry_run" | "before_submit" | "confirmation";
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** AutoApplySkipped */
+        AutoApplySkipped: {
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "not_found" | "not_this_candidate" | "withdrawn" | "already_applied" | "run_open" | "already_submitted" | "no_application_url";
+        };
+        /** AutoApplyStatus */
+        AutoApplyStatus: {
+            /** Browser Concurrency */
+            browser_concurrency: number;
+            /** Employer Daily Cap */
+            employer_daily_cap: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Run Timeout Seconds */
+            run_timeout_seconds: number;
+            /** Screenshot Retention Days */
+            screenshot_retention_days: number;
+            /** Supported Ats */
+            supported_ats: string[];
+            /** Worker Online */
+            worker_online: boolean;
+        };
+        /** AwsWebSearchStatus */
+        AwsWebSearchStatus: {
+            /**
+             * Counter Available
+             * @default false
+             */
+            counter_available: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Limit
+             * @default 0
+             */
+            limit: number;
+            /**
+             * Month
+             * @default
+             */
+            month: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Region */
+            region: string;
+            /**
+             * Remaining
+             * @default 0
+             */
+            remaining: number;
+            /**
+             * Remaining For Searches
+             * @default 0
+             */
+            remaining_for_searches: number;
+            /**
+             * Reserve
+             * @default 0
+             */
+            reserve: number;
+            /**
+             * Used
+             * @default 0
+             */
+            used: number;
+            /** Web Search Id */
+            web_search_id: string;
         };
         /** Body_import_csv_api_jobs_import_csv_post */
         Body_import_csv_api_jobs_import_csv_post: {
@@ -1874,6 +3018,91 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** ConsentIn */
+        ConsentIn: {
+            /**
+             * Document Reference
+             * @default
+             */
+            document_reference: string;
+            /**
+             * Granted
+             * @default true
+             */
+            granted: boolean;
+            /**
+             * May Accept Data Processing
+             * @default false
+             */
+            may_accept_data_processing: boolean;
+            /**
+             * May Attest
+             * @default false
+             */
+            may_attest: boolean;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "written" | "email" | "e_signature" | "verbal_recorded";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Scope
+             * @default auto_apply
+             * @constant
+             */
+            scope: "auto_apply";
+        };
+        /** ConsentOut */
+        ConsentOut: {
+            /** Active */
+            active: boolean;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Document Reference */
+            document_reference: string;
+            /** Granted */
+            granted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** May Accept Data Processing */
+            may_accept_data_processing: boolean;
+            /** May Attest */
+            may_attest: boolean;
+            /** Method */
+            method: string;
+            /** Note */
+            note: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            recorded_by?: components["schemas"]["UserRef"] | null;
+            /** Revoked At */
+            revoked_at?: string | null;
+            revoked_by?: components["schemas"]["UserRef"] | null;
+            /** Scope */
+            scope: string;
+        };
+        /** ConsentRevokeIn */
+        ConsentRevokeIn: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
         /** CsvImportResult */
         CsvImportResult: {
             /** Created */
@@ -1887,6 +3116,13 @@ export interface components {
             skipped: number;
             /** Updated */
             updated: number;
+        };
+        /** EffectiveValue */
+        EffectiveValue: {
+            /** Source */
+            source: string;
+            /** Value */
+            value: string | string[] | boolean;
         };
         /** EventOut */
         EventOut: {
@@ -1963,6 +3199,7 @@ export interface components {
             ai_providers: {
                 [key: string]: unknown;
             };
+            aws_web_search?: components["schemas"]["AwsWebSearchStatus"] | null;
             /** Email */
             email: {
                 [key: string]: unknown;
@@ -2924,6 +4161,17 @@ export interface components {
         Page_AuditOut_: {
             /** Items */
             items: components["schemas"]["AuditOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page[AutoApplyRunOut] */
+        Page_AutoApplyRunOut_: {
+            /** Items */
+            items: components["schemas"]["AutoApplyRunOut"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -4167,6 +5415,127 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** WebSearchJobOut */
+        WebSearchJobOut: {
+            /**
+             * Apply Url
+             * @default
+             */
+            apply_url: string;
+            /** Company */
+            company: string;
+            /**
+             * Discovered Via
+             * @default aws_web_search
+             * @constant
+             */
+            discovered_via: "aws_web_search";
+            /** Employer Url */
+            employer_url: string;
+            /** Location */
+            location: string;
+            /**
+             * Matching Skills
+             * @default []
+             */
+            matching_skills: string[];
+            /**
+             * Missing Skills
+             * @default []
+             */
+            missing_skills: string[];
+            /**
+             * Posted At
+             * @default
+             */
+            posted_at: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Score */
+            score: number;
+            /** Score Source */
+            score_source: string;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Verification */
+            verification: string;
+            /**
+             * Verified At
+             * @default
+             */
+            verified_at: string;
+            /** Work Mode */
+            work_mode: string;
+        };
+        /**
+         * WebSearchJobsIn
+         * @description POST /api/web-search/jobs. Runs AWS web search queries, verifies every hit against the employer's live feed
+         *     and returns only verified jobs. Nothing of the AWS results is stored.
+         */
+        WebSearchJobsIn: {
+            /** Candidate Id */
+            candidate_id?: string | null;
+            /** Keywords */
+            keywords: string;
+            /**
+             * Limit
+             * @default 20
+             */
+            limit: number;
+            /** Locations */
+            locations?: string[];
+            /**
+             * Work Mode
+             * @default any
+             * @enum {string}
+             */
+            work_mode: "remote" | "hybrid" | "onsite" | "any";
+        };
+        /** WebSearchJobsOut */
+        WebSearchJobsOut: {
+            /** Candidate Id */
+            candidate_id?: string | null;
+            /** Jobs */
+            jobs: components["schemas"]["WebSearchJobOut"][];
+            stats: components["schemas"]["WebSearchStats"];
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: string[];
+        };
+        /** WebSearchStats */
+        WebSearchStats: {
+            /** Dropped Filtered */
+            dropped_filtered: number;
+            /** Dropped Generic */
+            dropped_generic: number;
+            /** Dropped Not Relevant */
+            dropped_not_relevant: number;
+            /** Dropped Unverifiable */
+            dropped_unverifiable: number;
+            /** Duplicates */
+            duplicates: number;
+            /** Monthly Limit */
+            monthly_limit: number;
+            /** Monthly Remaining */
+            monthly_remaining: number;
+            /** Monthly Used */
+            monthly_used: number;
+            /** Queries Used */
+            queries_used: number;
+            /** Results Seen */
+            results_seen: number;
+            /** Returned */
+            returned: number;
+            /** Verified */
+            verified: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -4821,6 +6190,330 @@ export interface operations {
             };
         };
     };
+    auto_apply_eligibility_api_auto_apply_candidates__candidate_id__eligibility_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyEligibilityOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_auto_apply_runs_api_auto_apply_runs_get: {
+        parameters: {
+            query?: {
+                candidate_id?: string | null;
+                assignment_id?: string | null;
+                status?: ("queued" | "preparing" | "needs_input" | "ready_for_review" | "approved" | "submitting" | "submitted" | "failed" | "blocked" | "cancelled")[] | null;
+                ats?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AutoApplyRunOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_auto_apply_runs_api_auto_apply_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoApplyRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyRunsCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_auto_apply_batch_api_auto_apply_runs_approve_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoApplyBatchApproveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyBatchApproveOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_auto_apply_run_api_auto_apply_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyRunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_auto_apply_answers_api_auto_apply_runs__run_id__answers_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoApplyAnswersPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyRunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_auto_apply_run_api_auto_apply_runs__run_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoApplyApproveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyRunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_auto_apply_run_api_auto_apply_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyRunDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_auto_apply_screenshot_api_auto_apply_runs__run_id__screenshots__screenshot_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                screenshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": unknown;
+                };
+            };
+            /** @description No such screenshot (or deleted by retention) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auto_apply_status_api_auto_apply_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoApplyStatus"];
+                };
+            };
+        };
+    };
     list_candidates_api_candidates_get: {
         parameters: {
             query?: {
@@ -5085,6 +6778,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CandidateAnalytics"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_application_answers_api_candidates__candidate_id__application_answers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationAnswersOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_application_answers_api_candidates__candidate_id__application_answers_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationAnswersIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationAnswersOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_candidate_consents_api_candidates__candidate_id__consents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_candidate_consent_api_candidates__candidate_id__consents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_candidate_consent_api_candidates__candidate_id__consents__consent_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+                consent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConsentRevokeIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentOut"];
                 };
             };
             /** @description Validation Error */
@@ -6840,6 +8701,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResetLinkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    web_search_jobs_api_web_search_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebSearchJobsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebSearchJobsOut"];
                 };
             };
             /** @description Validation Error */

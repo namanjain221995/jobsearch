@@ -197,6 +197,8 @@ async def detail(db: AsyncSession, principal: Principal, assignment: JobAssignme
     notes = list((await db.execute(note_stmt.limit(200))).scalars())
     if principal.is_member:                                  # what managers do among themselves is not shown to the member
         events = [e for e in events if member_may_see(e.event_type, e.meta)]
+    elif not principal.is_admin:
+        events = [e for e in events if e.event_type not in ADMIN_ONLY_EVENTS]
     actors = await users_by_id(db, {e.actor_id for e in events} | {n.author_id for n in notes})
     others: list[JobAssignee] = []
     urls = None
@@ -222,10 +224,11 @@ async def detail(db: AsyncSession, principal: Principal, assignment: JobAssignme
 
 
 MANAGER_ONLY_EVENTS = ("link_opened_by_manager",)
+ADMIN_ONLY_EVENTS = ("auto_apply_submitted",)          # the auto-apply feature is invisible to Team Leads and members
 
 
 def member_may_see(event_type: str, meta: dict | None) -> bool:
-    return event_type not in MANAGER_ONLY_EVENTS and not (meta or {}).get("private")
+    return event_type not in MANAGER_ONLY_EVENTS + ADMIN_ONLY_EVENTS and not (meta or {}).get("private")
 
 
 # ---------------------------------------------------------------- tracking
