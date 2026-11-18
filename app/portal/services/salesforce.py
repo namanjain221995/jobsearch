@@ -61,7 +61,8 @@ ACCOUNT_WHITELIST = frozenset({
     "Total_Years_of_Experience__c", "Work_Authorization__c", "Current_Visa_Status__c", "Sponsorship_Required_For_VISA__c",
     "Authorized_To_Work_In_US__c", "Targeted_Experience_Level__c", "Salary_Expectations__c", "Open_to_relocate__c",
     "Relocation_Readiness__c", "Current_Address__StateCode__s", "Current_Address__City__s", "List_of_Certifications__c",
-    "Assigned_Recruiter__r.Name", "Assigned_Marketing_Team_Lead__r.Name", "Assigned_Marketing_Team_Lead__r.Email__c",
+    "Assigned_Recruiter__r.Name", "Assigned_Recruiter__r.Email__c",
+    "Assigned_Marketing_Team_Lead__r.Name", "Assigned_Marketing_Team_Lead__r.Email__c",
     "LastModifiedDate", "RecordType.Name"})
 READABLE_FIELDS = {
     "Account": ACCOUNT_WHITELIST,
@@ -74,7 +75,8 @@ ACCOUNT_FIELDS = (
     "Id", "Name", "PersonEmail", "Phone", "Candidate_Status__c", "Technology__c", "Niche__c", "Niches__r.Name",
     "Preferred_Job_Positions__c", "Preferred_Job_Locations__c", "Preferred_Job_Type__c", "Total_Years_of_Experience__c",
     "Work_Authorization__c", "Current_Visa_Status__c", "Sponsorship_Required_For_VISA__c", "Targeted_Experience_Level__c",
-    "Assigned_Recruiter__r.Name", "Assigned_Marketing_Team_Lead__r.Name", "Assigned_Marketing_Team_Lead__r.Email__c",
+    "Assigned_Recruiter__r.Name", "Assigned_Recruiter__r.Email__c",
+    "Assigned_Marketing_Team_Lead__r.Name", "Assigned_Marketing_Team_Lead__r.Email__c",
     "LastModifiedDate")
 
 
@@ -191,6 +193,7 @@ class SfCandidate:
     sponsorship_required: bool | None = None
     experience_level: str = ""
     assigned_recruiter: str = ""
+    assigned_recruiter_email: str = ""                # lower case; matched against the portal's members
     marketing_team_lead: str = ""
     marketing_team_lead_email: str = ""
     last_modified: datetime | None = None
@@ -206,8 +209,8 @@ class SfResume:
 
 
 def parse_account(record: dict) -> SfCandidate:
-    def related(key: str, field: str) -> str:
-        return _text((record.get(key) or {}).get(field))
+    def related(key: str, field: str, limit: int = 255) -> str:
+        return _text((record.get(key) or {}).get(field), limit)
 
     years = record.get("Total_Years_of_Experience__c")
     sponsorship = record.get("Sponsorship_Required_For_VISA__c")
@@ -223,6 +226,7 @@ def parse_account(record: dict) -> SfCandidate:
         sponsorship_required=sponsorship if isinstance(sponsorship, bool) else None,
         experience_level=_text(record.get("Targeted_Experience_Level__c")),
         assigned_recruiter=related("Assigned_Recruiter__r", "Name"),
+        assigned_recruiter_email=related("Assigned_Recruiter__r", "Email__c", 320).lower(),
         marketing_team_lead=related("Assigned_Marketing_Team_Lead__r", "Name"),
         marketing_team_lead_email=related("Assigned_Marketing_Team_Lead__r", "Email__c").lower(),
         last_modified=_when(record.get("LastModifiedDate")))

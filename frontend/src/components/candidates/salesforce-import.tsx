@@ -175,7 +175,7 @@ function Row({
         <Fact label="Locations" value={person.preferred_locations} />
       </span>
       <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-2sm">
-        <Fact label="Recruiter" value={person.assigned_recruiter} />
+        <Fact label="Recruiter" value={person.recruiter_member ? `${person.assigned_recruiter} (portal member)` : person.assigned_recruiter} />
         <Fact label="Marketing team lead" value={person.marketing_team_lead} />
         <Fact label="E-mail" value={person.email} />
         <Fact label="Phone" value={person.phone} />
@@ -535,6 +535,9 @@ export function SalesforceImport({
                 Responsible member <span className="font-normal">(optional)</span>
               </label>
               <MemberSelect id={memberSelectId} teamId={importTeamId || undefined} value={memberId} onChange={setMemberId} disabled={busyId !== null} />
+              <p className="text-2sm text-muted-foreground">
+                Left empty, the recruiter assigned in Salesforce becomes responsible when they are a member of this team.
+              </p>
             </div>
           )}
         </div>

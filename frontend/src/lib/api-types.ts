@@ -2978,6 +2978,7 @@ export interface components {
              * @default {
              *       "created": false,
              *       "kept_fields": [],
+             *       "recruiter": "no_recruiter",
              *       "resume": "none",
              *       "updated_fields": []
              *     }
@@ -4608,6 +4609,7 @@ export interface components {
              * @default
              */
             preferred_locations: string;
+            recruiter_member?: components["schemas"]["UserRef"] | null;
             /** Salesforce Id */
             salesforce_id: string;
             /**
@@ -4687,6 +4689,12 @@ export interface components {
              * @default []
              */
             kept_fields: string[];
+            /**
+             * Recruiter
+             * @default no_recruiter
+             * @enum {string}
+             */
+            recruiter: "assigned" | "unchanged" | "kept" | "no_recruiter" | "not_in_portal" | "other_team";
             /**
              * Resume
              * @default none

@@ -16,6 +16,7 @@ from ..deps import SESSION_COOKIE, Principal, client_ip, get_db, get_settings, m
 from ..models import JobAssignment, SearchPreset, SearchResult, SearchRun, SearchTarget
 from ..schemas import (Message, Page, PresetIn, PresetOut, SearchCreate, SearchCreated, SearchOptions, SearchResultOut, SearchRunOut)
 from ..security import utcnow
+from ..services import salesforce_sync
 from ..services import searches as service
 from ..services import settings as settings_service
 from ..services.audit import audit
@@ -52,6 +53,7 @@ async def search_options(request: Request, principal: Principal = Depends(manage
 async def create_search(data: SearchCreate, request: Request, principal: Principal = Depends(managers),
                         db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
     portal = await settings_service.load(db, settings)
+    await salesforce_sync.link_selected(db, request.app.state.salesforce, principal, data.candidate_ids, client_ip(request))
     run, skipped = await service.create_search(db, settings, portal, principal, data, client_ip(request))
     await db.commit()                                   # the run exists before the worker can pick it up
     if not await request.app.state.queue.enqueue(run.id):

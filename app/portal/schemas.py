@@ -435,6 +435,9 @@ class SalesforceStatus(Model):
     team_lead_scope: TeamLeadScope = "all"
 
 
+RecruiterSync = Literal["assigned", "unchanged", "kept", "no_recruiter", "not_in_portal", "other_team"]
+
+
 class SalesforceCandidate(Model):
     """A candidate as found in Salesforce (a Person Account), with whether it is already in the portal."""
     salesforce_id: str
@@ -451,6 +454,7 @@ class SalesforceCandidate(Model):
     preferred_locations: str = ""
     experience_level: str = ""
     assigned_recruiter: str = ""
+    recruiter_member: UserRef | None = None        # the portal member with the recruiter's e-mail address, when the caller may see them
     marketing_team_lead: str = ""
     has_resume: bool = False
     imported_candidate_id: uuid.UUID | None = None      # only when the caller may see that candidate
@@ -474,6 +478,7 @@ class SalesforceSync(Model):
     updated_fields: list[str] = []                 # written from Salesforce in this call
     kept_fields: list[str] = []                    # Salesforce differs, the local edit was kept
     resume: ResumeSync = "none"
+    recruiter: RecruiterSync = "no_recruiter"      # what happened to the responsible member (see docs/salesforce-api.md)
 
 
 class CandidateSyncOut(CandidateOut):

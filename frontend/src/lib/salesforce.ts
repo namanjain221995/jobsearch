@@ -153,12 +153,29 @@ export function syncResumeSentence(resume: SyncResume | undefined): string {
   }
 }
 
+/** What became of the responsible member: the recruiter Salesforce assigns, matched to a portal member by e-mail. */
+export function syncRecruiterSentence(recruiter: SalesforceSync["recruiter"] | undefined): string {
+  switch (recruiter) {
+    case "assigned":
+      return "The recruiter assigned in Salesforce is now the responsible member.";
+    case "kept":
+      return "The responsible member chosen in the portal was kept; Salesforce names a different recruiter.";
+    case "not_in_portal":
+      return "The recruiter assigned in Salesforce has no member account in the portal, so nobody was assigned.";
+    case "other_team":
+      return "The recruiter assigned in Salesforce is a member of another team, so they were not assigned.";
+    default:
+      return "";
+  }
+}
+
 /** What a refresh changed and what it left alone, for the confirmation after it. */
 export function syncSummary(sync: SalesforceSync): string {
   const parts = [
     sync.updated_fields.length > 0 ? `Updated from Salesforce: ${fieldNames(sync.updated_fields)}.` : "No details changed.",
     sync.kept_fields.length > 0 ? `Kept as changed in the portal: ${fieldNames(sync.kept_fields)}.` : "",
     syncResumeSentence(sync.resume),
+    syncRecruiterSentence(sync.recruiter),
   ];
   return parts.filter(Boolean).join(" ");
 }

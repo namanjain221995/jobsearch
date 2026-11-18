@@ -3043,6 +3043,7 @@
       "default": {
        "created": false,
        "kept_fields": [],
+       "recruiter": "no_recruiter",
        "resume": "none",
        "updated_fields": []
       }
@@ -6824,6 +6825,16 @@
       "title": "Preferred Locations",
       "type": "string"
      },
+     "recruiter_member": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/UserRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
      "salesforce_id": {
       "title": "Salesforce Id",
       "type": "string"
@@ -6988,6 +6999,19 @@
       },
       "title": "Kept Fields",
       "type": "array"
+     },
+     "recruiter": {
+      "default": "no_recruiter",
+      "enum": [
+       "assigned",
+       "unchanged",
+       "kept",
+       "no_recruiter",
+       "not_in_portal",
+       "other_team"
+      ],
+      "title": "Recruiter",
+      "type": "string"
      },
      "resume": {
       "default": "none",

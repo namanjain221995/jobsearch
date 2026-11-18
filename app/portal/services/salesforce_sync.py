@@ -21,13 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from ...job_normalizer import US_STATES
 from ..deps import Principal, forbid
-from ..models import Candidate, Resume, Team
+from ..models import Candidate, Resume, Team, User
 from ..schemas import SalesforceCandidate, SalesforceSync
 from ..security import utcnow
 from . import candidates as candidates_service
 from . import people
 from . import salesforce as sf
 from .audit import audit
+from .common import user_ref
 
 OTHER_AUTHORIZATION = "Other / Prefer Not to Say"
 # Salesforce's visa / authorization values on the portal's options. Anything not listed becomes OTHER_AUTHORIZATION:
@@ -173,15 +174,19 @@ async def search_items(db: AsyncSession, principal: Principal, found: list[sf.Sf
     rows = (await db.execute(select(Candidate.salesforce_id, Candidate.id, Candidate.team_id)
                              .where(Candidate.salesforce_id.in_([c.id for c in found])))).all() if found else []
     local = {row[0]: (row[1], row[2]) for row in rows}
+    members = await recruiter_members(db, {c.assigned_recruiter_email for c in found})
     items = []
     for c in found:
         here = local.get(c.id)
         mine = here is not None and can_see_local(principal, here[1])
+        member = members.get(c.assigned_recruiter_email)
+        if member is not None and not can_see_local(principal, member.team_id):
+            member = None                                 # a member of a team the caller does not manage is not named
         items.append(SalesforceCandidate(
             salesforce_id=c.id, name=c.name, email=c.email, phone=c.phone, candidate_status=c.candidate_status, technology=c.technology,
             niche=c.niche, work_authorization=c.work_authorization, visa_status=c.visa_status, years_experience=c.years_experience,
             preferred_job_type=c.preferred_job_type, preferred_locations=c.preferred_locations, experience_level=c.experience_level,
-            assigned_recruiter=c.assigned_recruiter, marketing_team_lead=c.marketing_team_lead, has_resume=c.id in with_resume,
+            assigned_recruiter=c.assigned_recruiter, recruiter_member=user_ref(member), marketing_team_lead=c.marketing_team_lead, has_resume=c.id in with_resume,
             imported_candidate_id=here[0] if mine else None, imported_elsewhere=here is not None and not mine, importable=here is None))
     return items
 
@@ -230,6 +235,59 @@ async def fetch_resume(client, settings: Settings, fetched: Fetched, skip_versio
         fetched.resume_problem = "refused_size"
     except sf.SalesforceError:
         fetched.resume_problem = "unavailable"
+
+
+# ---------------------------------------------------------------- the assigned recruiter
+async def recruiter_members(db: AsyncSession, emails: set[str]) -> dict[str, User]:
+    """Active portal members by sign-in address, for the recruiter e-mail addresses Salesforce names."""
+    emails = {e for e in emails if e}
+    if not emails:
+        return {}
+    rows = (await db.execute(select(User).where(User.email.in_(emails), User.role == "MEMBER", User.is_active))).scalars()
+    return {u.email: u for u in rows}
+
+
+async def link_recruiter(db: AsyncSession, actor: User | None, candidate: Candidate, found: sf.SfCandidate, ip: str = "") -> str:
+    """Make the recruiter Salesforce assigns to this candidate the responsible member, when that recruiter is an
+    active member of the candidate's team (matched by e-mail address). A member a manager chose in the portal is
+    kept: the member changes only when nobody is responsible, or when the last sync set the current one."""
+    email = found.assigned_recruiter_email
+    if not email:
+        return "no_recruiter"
+    member = (await recruiter_members(db, {email})).get(email)
+    if member is None:
+        return "not_in_portal"
+    if not candidate.team_id or member.team_id != candidate.team_id:
+        return "other_team"
+    snapshot = dict(candidate.salesforce_snapshot or {})
+    if candidate.assigned_member_id == member.id:
+        result = "unchanged"
+    elif candidate.assigned_member_id is None or str(candidate.assigned_member_id) == snapshot.get("recruiter_member_id"):
+        candidates_service.hand_over(db, actor, candidate, member, ip, "salesforce_assigned_recruiter")
+        result = "assigned"
+    else:
+        return "kept"
+    candidate.salesforce_snapshot = {**snapshot, "recruiter_member_id": str(member.id)}
+    return result
+
+
+async def link_selected(db: AsyncSession, client, principal: Principal, candidate_ids: list[uuid.UUID], ip: str) -> None:
+    """Before a search: Salesforce candidates among the selected ones that have no responsible member get their
+    Salesforce recruiter, so the jobs found go to that member. Best effort: a Salesforce problem changes nothing."""
+    if not candidate_ids or not getattr(client, "configured", False):
+        return
+    rows = list((await db.execute(select(Candidate).where(
+        Candidate.id.in_(candidate_ids[:50]), Candidate.salesforce_id.is_not(None), Candidate.assigned_member_id.is_(None),
+        Candidate.is_active))).scalars())
+    for candidate in rows:
+        if not can_see_local(principal, candidate.team_id):
+            continue
+        try:
+            found = await client.get_candidate(candidate.salesforce_id)
+        except sf.SalesforceError:
+            return
+        if found is not None:
+            await link_recruiter(db, principal.user, candidate, found, ip)
 
 
 # ---------------------------------------------------------------- writing the portal
@@ -290,11 +348,16 @@ async def apply(db: AsyncSession, settings: Settings, principal: Principal, cand
             previous[name] = value
     candidate.salesforce_snapshot = {"fields": previous, "notes_line": line or snapshot.get("notes_line") or "",
                                      "instance_url": fetched.instance_url or snapshot.get("instance_url") or ""}
+    if snapshot.get("recruiter_member_id"):
+        candidate.salesforce_snapshot["recruiter_member_id"] = snapshot["recruiter_member_id"]
     candidate.salesforce_synced_at = utcnow()
+    recruiter = await link_recruiter(db, principal.user, candidate, fetched.candidate, ip)
     resume = await _sync_resume(db, settings, principal, candidate, fetched, ip)
-    sync = SalesforceSync(created=created, updated_fields=[] if created else outcome.updated, kept_fields=outcome.kept, resume=resume)
+    sync = SalesforceSync(created=created, updated_fields=[] if created else outcome.updated, kept_fields=outcome.kept, resume=resume,
+                          recruiter=recruiter)
     audit(db, principal.user, "candidate.imported_salesforce" if created else "candidate.salesforce_refreshed", "candidate", candidate.id,
-          candidate.team_id, {"salesforce_id": candidate.salesforce_id, "updated": outcome.updated, "kept": outcome.kept, "resume": resume}, ip)
+          candidate.team_id, {"salesforce_id": candidate.salesforce_id, "updated": outcome.updated, "kept": outcome.kept, "resume": resume,
+                                "recruiter": recruiter}, ip)
     return sync
 
 
@@ -333,6 +396,10 @@ async def new_candidate(db: AsyncSession, principal: Principal, fetched: Fetched
         if not principal.user.team_id or (team_id is not None and team_id != principal.user.team_id):
             raise forbid()
         team_id = principal.user.team_id
+    if team_id is None:                                   # an Admin who chose no team: the team of the Salesforce recruiter
+        email = fetched.candidate.assigned_recruiter_email
+        recruiter = (await recruiter_members(db, {email})).get(email)
+        team_id = recruiter.team_id if recruiter else None
     if team_id is None:
         raise HTTPException(422, "Choose the team this candidate belongs to")
     team = await db.get(Team, team_id)

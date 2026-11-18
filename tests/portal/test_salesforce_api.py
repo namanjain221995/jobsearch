@@ -62,7 +62,7 @@ async def test_search_lists_key_details_caches_and_is_rate_limited(world):
     assert ana == {"salesforce_id": ANA, "name": "Ana Example", "email": "ana.1@example.com", "phone": "(555) 010-2001", "candidate_status": "Active",
                    "technology": "AI/ML Engineer", "niche": "AI ML Engineer", "work_authorization": "OPT", "visa_status": "STEM OPT Extension",
                    "years_experience": 4.0, "preferred_job_type": "Remote", "preferred_locations": "Texas, California",
-                   "experience_level": "Mid-Senior_level", "assigned_recruiter": "Rita Recruiter", "marketing_team_lead": "Lead Alpha",
+                   "experience_level": "Mid-Senior_level", "assigned_recruiter": "Rita Recruiter", "recruiter_member": None, "marketing_team_lead": "Lead Alpha",
                    "has_resume": True, "imported_candidate_id": None, "imported_elsewhere": False, "importable": True}
     assert {i["name"]: i["has_resume"] for i in body["items"]}["Anna Noresume"] is False
     # Typing: fewer than two characters asks nothing; the same search within a few seconds is answered from memory.
@@ -149,7 +149,7 @@ async def test_import_creates_the_candidate_with_profile_resume_and_audit(world)
     assert body["team"]["id"] == alpha and body["assigned_member"]["id"] == a1 and body["is_active"] is True and body["created_by"]["name"] == "Lead Alpha"
     assert (body["source"], body["salesforce_id"], body["salesforce_url"]) == ("salesforce", ANA, f"{INSTANCE}/{ANA}") and body["salesforce_synced_at"]
     assert body["notes"] == "Preferred job locations (from Salesforce): Texas, NJ, St. Louis (Open to relocate)"
-    assert body["sync"] == {"created": True, "updated_fields": [], "kept_fields": [], "resume": "imported"}
+    assert body["sync"] == {"created": True, "updated_fields": [], "kept_fields": [], "resume": "imported", "recruiter": "no_recruiter"}
     assert body["has_resume"] is True and body["resume_has_file"] is True
     profile = (await tl.get(f"/api/candidates/{cid}/profile")).json()
     assert (profile["desired_titles"], profile["years_experience"], profile["work_mode"], profile["work_authorization"], profile["sponsorship_needed"],
@@ -253,7 +253,7 @@ async def test_duplicates_and_team_isolation(world):
     # Again in the same team: the same candidate, refreshed, 200. Never a second row.
     again = await bring_in(alpha, ANA, assigned_member_id=str(world.ids["member_a2"]))
     assert again.status_code == 200 and again.json()["id"] == cid and again.json()["assigned_member"] is None
-    assert again.json()["sync"] == {"created": False, "updated_fields": [], "kept_fields": [], "resume": "unchanged"}
+    assert again.json()["sync"] == {"created": False, "updated_fields": [], "kept_fields": [], "resume": "unchanged", "recruiter": "no_recruiter"}
     by_admin = await bring_in(admin, ANA, team_id=str(world.ids["team_beta"]))
     assert by_admin.status_code == 200 and by_admin.json()["id"] == cid and by_admin.json()["team"]["name"] == "Team Alpha"     # not moved
     async with world.sessions() as db:
@@ -305,7 +305,7 @@ async def test_refresh_keeps_local_edits_and_takes_what_changed_in_salesforce(wo
     # Nothing changed anywhere: nothing is written, the file is not fetched again.
     downloads = len([1 for _, p, _ in org.requests if p.endswith("/VersionData")])
     same = await tl.post(refresh)
-    assert same.status_code == 200 and same.json()["sync"] == {"created": False, "updated_fields": [], "kept_fields": [], "resume": "unchanged"}
+    assert same.status_code == 200 and same.json()["sync"] == {"created": False, "updated_fields": [], "kept_fields": [], "resume": "unchanged", "recruiter": "no_recruiter"}
     assert len([1 for _, p, _ in org.requests if p.endswith("/VersionData")]) == downloads
     # A manager edits some fields in the portal; Salesforce changes those and others.
     assert (await tl.patch(f"/api/candidates/{cid}", json={"phone": "555 0199", "notes": "Call after 5 pm\n\nPreferred job locations (from Salesforce): Texas, California"})).status_code == 200
@@ -400,3 +400,56 @@ async def test_refresh_replaces_a_resume_only_with_a_newer_salesforce_file(world
     # A newer file of a kind the portal does not take leaves the current resume in place.
     org.add_resume(ANA, 34, ext="png", data=b"\x89PNG\r\n\x1a\n" + b"0" * 32, created="2099-02-01T09:00:00.000+0000", modified="2099-02-01T09:00:00.000+0000")
     assert (await tl.post(refresh)).json()["sync"]["resume"] == "refused_type" and await current() == ("salesforce", 1)
+
+
+async def test_the_salesforce_recruiter_becomes_the_responsible_member(world):
+    """Assigned_Recruiter__r.Email__c names a portal member: that member is responsible, in their own team only,
+    and a manager's own choice is never overwritten."""
+    from app.portal.models import User
+    async with world.sessions() as db:
+        emails = {key: (await db.get(User, world.ids[key])).email for key in ("member_a1", "member_a2", "member_b1")}
+    org = standard_org()
+    org.accounts[ANA]["Assigned_Recruiter__r"] = {"Name": "A One", "Email__c": emails["member_a1"].upper()}
+    org.accounts[ANDRE]["Assigned_Recruiter__r"] = {"Name": "B One", "Email__c": emails["member_b1"]}
+    org.accounts[ANNA]["Assigned_Recruiter__r"] = {"Name": "Nobody", "Email__c": "nobody.here@example.com"}
+    install(world, org)
+    admin, tl = await world.as_admin(), await world.as_tl("alpha")
+    a1, a2, b1, beta = (str(world.ids[k]) for k in ("member_a1", "member_a2", "member_b1", "team_beta"))
+    # The search names the member only to a manager of that member's team.
+    items = {i["salesforce_id"]: i for i in (await tl.get("/api/salesforce/candidates", params={"q": "an"})).json()["items"]}
+    assert items[ANA]["recruiter_member"]["id"] == a1 and items[ANDRE]["recruiter_member"] is None and items[ANNA]["recruiter_member"] is None
+    seen = {i["salesforce_id"]: i for i in (await admin.get("/api/salesforce/candidates", params={"q": "and"})).json()["items"]}
+    assert seen[ANDRE]["recruiter_member"]["id"] == b1
+    # Import by the Team Lead: the recruiter is responsible and is told.
+    made = (await bring_in(tl, ANA)).json()
+    assert made["assigned_member"]["id"] == a1 and made["sync"]["recruiter"] == "assigned"
+    async with world.sessions() as db:
+        entry = (await db.execute(select(AuditLog).where(AuditLog.action == "candidate.assigned", AuditLog.target_id == made["id"]))).scalar_one()
+        assert entry.meta["reason"] == "salesforce_assigned_recruiter" and entry.meta["to_member"] == a1
+    # A recruiter of another team, or one who is not in the portal, is not assigned.
+    other = (await bring_in(tl, ANDRE)).json()
+    assert other["assigned_member"] is None and other["sync"]["recruiter"] == "other_team"
+    unknown = (await bring_in(tl, ANNA)).json()
+    assert unknown["assigned_member"] is None and unknown["sync"]["recruiter"] == "not_in_portal"
+    # An Admin who chooses no team: the candidate goes to the recruiter's team.
+    org.accounts[ANYA]["Assigned_Recruiter__r"] = {"Name": "B One", "Email__c": emails["member_b1"]}
+    placed = await bring_in(admin, ANYA)
+    assert placed.status_code == 201, placed.text
+    assert placed.json()["team"]["id"] == beta and placed.json()["assigned_member"]["id"] == b1
+    # A manager's own choice stays; a member set by the sync follows Salesforce.
+    cid = made["id"]
+    assert (await tl.patch(f"/api/candidates/{cid}", json={"assigned_member_id": a2})).status_code == 200
+    again = (await tl.post(f"/api/candidates/{cid}/salesforce-refresh")).json()
+    assert again["assigned_member"]["id"] == a2 and again["sync"]["recruiter"] == "kept"
+    assert (await tl.patch(f"/api/candidates/{cid}", json={"assigned_member_id": None})).status_code == 200
+    back = (await tl.post(f"/api/candidates/{cid}/salesforce-refresh")).json()
+    assert back["assigned_member"]["id"] == a1 and back["sync"]["recruiter"] == "assigned"
+    org.accounts[ANA]["Assigned_Recruiter__r"] = {"Name": "A Two", "Email__c": emails["member_a2"]}
+    moved = (await tl.post(f"/api/candidates/{cid}/salesforce-refresh")).json()
+    assert moved["assigned_member"]["id"] == a2 and moved["sync"]["recruiter"] == "assigned"
+    assert (await tl.post(f"/api/candidates/{cid}/salesforce-refresh")).json()["sync"]["recruiter"] == "unchanged"
+    # Starting a search links a Salesforce candidate that has nobody responsible.
+    org.accounts[ANDRE]["Assigned_Recruiter__r"] = {"Name": "A One", "Email__c": emails["member_a1"]}
+    started = await tl.post("/api/searches", json={"candidate_ids": [other["id"]], "target_count": 5})
+    assert started.status_code == 202, started.text
+    assert (await tl.get(f"/api/candidates/{other['id']}")).json()["assigned_member"]["id"] == a1

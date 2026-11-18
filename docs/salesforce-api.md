@@ -73,6 +73,7 @@ than `limit`: ask the user to type more).
 | `years_experience` | number or null | `Total_Years_of_Experience__c` |
 | `preferred_job_type`, `preferred_locations`, `experience_level` | string | as written in Salesforce |
 | `assigned_recruiter`, `marketing_team_lead` | string | names only |
+| `recruiter_member` | user or null | the active portal member whose sign-in address equals the recruiter's e-mail address in Salesforce (`Assigned_Recruiter__r.Email__c`); null when there is none or the caller does not manage that member's team |
 | `has_resume` | bool | an active resume record with status Uploaded or Approved exists |
 | `imported_candidate_id` | uuid or null | the portal candidate made from it, **only when the caller may see that candidate** |
 | `imported_elsewhere` | bool | it is in the portal in a team the caller cannot see. A Team Lead learns nothing more (no team, no id). Always false for an Admin |
@@ -176,3 +177,22 @@ Nothing is invented: a value Salesforce does not have leaves the portal field as
 | Green Card EAD, OPT, STEM OPT Extension | Employment Authorization Document (EAD) |
 | H1B | Current Work Visa |
 | CPT, H4, B2, Other, anything else | Other / Prefer Not to Say |
+
+## The assigned recruiter becomes the responsible member
+
+Salesforce names a recruiter for a candidate (`Account.Assigned_Recruiter__c`, a lookup to `Recruiter__c`, whose
+`Email__c` is read). On import and on refresh the portal looks for an active MEMBER with that sign-in address:
+
+| `sync.recruiter` | meaning |
+| --- | --- |
+| `assigned` | that member is now the responsible member (audit `candidate.assigned`, reason `salesforce_assigned_recruiter`; the member is notified) |
+| `unchanged` | that member was already responsible |
+| `kept` | a manager chose another member in the portal; that choice stays |
+| `no_recruiter` | Salesforce names no recruiter, or the recruiter has no e-mail address |
+| `not_in_portal` | nobody in the portal has that address as an active member |
+| `other_team` | the member belongs to another team than the candidate |
+
+The member changes only when nobody is responsible or when the last sync set the current one. An Admin who imports
+without `team_id` gets the recruiter's team. `POST /api/searches` does the same for selected Salesforce candidates
+that have nobody responsible, before the search starts, so the jobs found go to that member; a Salesforce failure
+there changes nothing and never stops the search.

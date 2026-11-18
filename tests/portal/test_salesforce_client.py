@@ -20,6 +20,7 @@ ALLOWED_ACCOUNT_FIELDS = {
     "Work_Authorization__c", "Current_Visa_Status__c", "Sponsorship_Required_For_VISA__c", "Authorized_To_Work_In_US__c",
     "Targeted_Experience_Level__c", "Salary_Expectations__c", "Open_to_relocate__c", "Relocation_Readiness__c",
     "Current_Address__StateCode__s", "Current_Address__City__s", "List_of_Certifications__c", "Assigned_Recruiter__r.Name",
+    "Assigned_Recruiter__r.Email__c",
     "Assigned_Marketing_Team_Lead__r.Name", "Assigned_Marketing_Team_Lead__r.Email__c", "LastModifiedDate", "RecordType.Name"}
 ALLOWED = {"Account": ALLOWED_ACCOUNT_FIELDS,
            "Resume__c": {"Id", "Candidate__c", "Is_Active__c", "Resume_Status__c", "CreatedDate"},

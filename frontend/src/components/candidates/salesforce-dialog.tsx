@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { syncResumeSentence, useSalesforceStatus } from "@/lib/salesforce";
+import { syncRecruiterSentence, syncResumeSentence, useSalesforceStatus } from "@/lib/salesforce";
 import type { Candidate } from "@/lib/types";
 
 function Body({
@@ -54,7 +54,7 @@ function Body({
             onChosen={(candidate, how, sync) => {
               if (how === "imported") {
                 toast.success(`${candidate.name} brought in from Salesforce`, {
-                  description: syncResumeSentence(sync?.resume) || undefined,
+                  description: [syncResumeSentence(sync?.resume), syncRecruiterSentence(sync?.recruiter)].filter(Boolean).join(" ") || undefined,
                 });
               }
               onChosen(candidate, how);
