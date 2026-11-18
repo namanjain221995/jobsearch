@@ -129,6 +129,7 @@ export function CandidatePicker({
     onChange(next);
   };
 
+  const noPortalMatch = grouped && Boolean(query) && candidates.isSuccess && items.length === 0;
   return (
     <div className={cn("flex flex-col gap-2", className)} onKeyDown={resultKeys}>
       <div className="flex flex-wrap items-center gap-2">
@@ -160,13 +161,20 @@ export function CandidatePicker({
         </div>
       </div>
 
-      {grouped && (
+      {grouped && !noPortalMatch && (
         <h4 id={portalTitleId} className="font-label text-sm">
           In the portal
         </h4>
       )}
-      <div role="group" aria-label={grouped ? "Candidates in the portal" : "Candidates"} className="max-h-72 overflow-y-auto overscroll-contain rounded-lg border bg-card">
-        {candidates.isPending ? (
+      <div
+        role="group"
+        aria-label={grouped ? "Candidates in the portal" : "Candidates"}
+        className={noPortalMatch ? "sr-only" : "max-h-72 overflow-y-auto overscroll-contain rounded-lg border bg-card"}
+      >
+        {noPortalMatch ? (
+          // With Salesforce below, an empty portal list needs no box of its own: said to screen readers only.
+          <p>Nobody in the portal matches this search</p>
+        ) : candidates.isPending ? (
           <LoadingSkeleton variant="rows" count={4} />
         ) : candidates.isError ? (
           <ErrorState compact error={candidates.error} onRetry={() => candidates.refetch()} />
