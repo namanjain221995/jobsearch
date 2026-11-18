@@ -3528,6 +3528,41 @@
     "title": "ForgotPasswordIn",
     "type": "object"
    },
+   "GoLiveIn": {
+    "properties": {
+     "confirm": {
+      "const": "REAL DATA",
+      "title": "Confirm",
+      "type": "string"
+     }
+    },
+    "required": [
+     "confirm"
+    ],
+    "title": "GoLiveIn",
+    "type": "object"
+   },
+   "GoLiveOut": {
+    "properties": {
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "removed": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "default": {},
+      "title": "Removed",
+      "type": "object"
+     }
+    },
+    "required": [
+     "message"
+    ],
+    "title": "GoLiveOut",
+    "type": "object"
+   },
    "HTTPValidationError": {
     "properties": {
      "detail": {
@@ -7795,6 +7830,11 @@
       "title": "Salesforce Team Lead Scope",
       "type": "string"
      },
+     "test_mode": {
+      "default": false,
+      "title": "Test Mode",
+      "type": "boolean"
+     },
      "watermark_enabled": {
       "default": true,
       "title": "Watermark Enabled",
@@ -8884,6 +8924,51 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/api/admin/go-live": {
+   "post": {
+    "description": "End test mode and start with real data. Deletes every team, Team Lead, member, candidate, resume, search, job,\nassignment, notification and log entry. Keeps the Admin accounts, the settings and the job board index. It\nworks once: when test mode is off the call is refused. There is no undo.",
+    "operationId": "go_live_api_admin_go_live_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GoLiveIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GoLiveOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "409": {
+      "description": "Not in test mode, or a search is queued or running"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Go Live",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
   "/api/analytics/admin": {
    "get": {
     "operationId": "admin_analytics_api_analytics_admin_get",

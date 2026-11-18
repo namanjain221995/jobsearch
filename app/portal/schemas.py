@@ -1019,6 +1019,16 @@ class SettingsOut(Model):
     invitation_hours: int = 48
     password_min_length: int = 10                  # from the environment (PASSWORD_MIN_LENGTH); shown, not editable here
     salesforce_team_lead_scope: TeamLeadScope = "all"      # which Salesforce candidates a Team Lead can find: all, or only their own
+    test_mode: bool = False                        # the portal holds test data; ended once with POST /api/admin/go-live, never by PATCH
+
+
+class GoLiveIn(Model):
+    confirm: Literal["REAL DATA"]                  # typed by the Admin; anything else is refused
+
+
+class GoLiveOut(Model):
+    message: str
+    removed: dict[str, int] = {}                   # teams, users, candidates, searches that were deleted
 
 
 class SettingsUpdate(Model):

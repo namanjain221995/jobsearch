@@ -4,6 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ..models import AppSetting, User
+from fastapi import HTTPException
+from sqlalchemy import delete, func, text
+
+from ..models import Candidate, SearchRun, Session, Team
 from ..schemas import ExtraField, SettingsOut, SettingsUpdate, UiSettings
 from .audit import audit
 
@@ -60,6 +64,47 @@ async def save(db: AsyncSession, settings: Settings, actor: User, patch: Setting
         if dropped:
             audit(db, actor, "settings.extra_answers_deleted", "settings", None, None, {"answers": dropped})
     return SettingsOut(**{**current, "password_min_length": settings.password_min_length})
+
+
+# Everything people made while trying the portal out. Not in the list, so kept: the Admin accounts, app_settings,
+# the job board index (index_*), the monthly AWS web search count and alembic_version.
+TEST_DATA_TABLES = ("application_events", "assignment_notes", "audit_logs", "auto_apply_screenshots", "auto_apply_runs",
+                    "candidate_consents", "candidate_profiles", "resumes", "search_results", "search_targets", "search_presets",
+                    "team_job_queue", "job_assignments", "search_runs", "job_postings", "legacy_records", "notifications",
+                    "password_resets", "invitations", "team_lead_assignments", "candidates")
+
+
+async def set_test_mode(db: AsyncSession, settings: Settings, on: bool, actor: User | None = None) -> None:
+    current = (await load(db, settings)).model_dump()
+    current.pop("password_min_length", None)
+    current["test_mode"] = on
+    row = (await db.execute(select(AppSetting).where(AppSetting.key == KEY))).scalar_one_or_none()
+    if row:
+        row.value, row.updated_by = current, actor.id if actor else row.updated_by
+    else:
+        db.add(AppSetting(key=KEY, value=current, updated_by=actor.id if actor else None))
+
+
+async def go_live(db: AsyncSession, settings: Settings, actor: User, keep_session, ip: str) -> dict[str, int]:
+    """End test mode: delete every team, Team Lead, member, candidate, search, job and log entry, keep the Admin
+    accounts, the settings and the job board index, and switch test mode off. Works once: without test mode it is
+    refused, so the portal's real data can never be deleted from the screen. The caller commits."""
+    if not (await load(db, settings)).test_mode:
+        raise HTTPException(409, "The portal is not in test mode. There is no test data to remove.")
+    active = (await db.execute(select(func.count()).select_from(SearchRun).where(SearchRun.status.in_(("queued", "running"))))).scalar_one()
+    if active:
+        raise HTTPException(409, "A search is queued or running. Wait until it has finished or cancel it, then try again.")
+    removed = {"teams": (await db.execute(select(func.count()).select_from(Team))).scalar_one(),
+               "users": (await db.execute(select(func.count()).select_from(User).where(User.role != "ADMIN"))).scalar_one(),
+               "candidates": (await db.execute(select(func.count()).select_from(Candidate))).scalar_one(),
+               "searches": (await db.execute(select(func.count()).select_from(SearchRun))).scalar_one()}
+    await db.execute(text("TRUNCATE " + ", ".join(TEST_DATA_TABLES)))
+    await db.execute(delete(Session).where(Session.id != keep_session))       # the Admin who asked stays signed in
+    await db.execute(delete(User).where(User.role != "ADMIN"))
+    await db.execute(delete(Team))
+    await set_test_mode(db, settings, False, actor)
+    audit(db, actor, "data.test_data_removed", "settings", None, None, removed, ip)
+    return removed
 
 
 def ui(settings_out: SettingsOut, settings: Settings | None = None) -> UiSettings:

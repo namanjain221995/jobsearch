@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/api/admin/go-live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Go Live
+         * @description End test mode and start with real data. Deletes every team, Team Lead, member, candidate, resume, search, job,
+         *     assignment, notification and log entry. Keeps the Admin accounts, the settings and the job board index. It
+         *     works once: when test mode is off the call is refused. There is no undo.
+         */
+        post: operations["go_live_api_admin_go_live_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/admin": {
         parameters: {
             query?: never;
@@ -3178,6 +3200,26 @@ export interface components {
              */
             email: string;
         };
+        /** GoLiveIn */
+        GoLiveIn: {
+            /**
+             * Confirm
+             * @constant
+             */
+            confirm: "REAL DATA";
+        };
+        /** GoLiveOut */
+        GoLiveOut: {
+            /** Message */
+            message: string;
+            /**
+             * Removed
+             * @default {}
+             */
+            removed: {
+                [key: string]: number;
+            };
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -5090,6 +5132,11 @@ export interface components {
              */
             salesforce_team_lead_scope: "all" | "own";
             /**
+             * Test Mode
+             * @default false
+             */
+            test_mode: boolean;
+            /**
              * Watermark Enabled
              * @default true
              */
@@ -5553,6 +5600,46 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    go_live_api_admin_go_live_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoLiveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoLiveOut"];
+                };
+            };
+            /** @description Not in test mode, or a search is queued or running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_analytics_api_analytics_admin_get: {
         parameters: {
             query?: {

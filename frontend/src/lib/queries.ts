@@ -911,6 +911,15 @@ export function usePortalSettings() {
   });
 }
 
+/** POST /api/admin/go-live: ends test mode. Deletes all test data; the Admin accounts, settings and board index stay. */
+export function useGoLive() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ message: string; removed: Record<string, number> }>("/api/admin/go-live", { confirm: "REAL DATA" }),
+    onSuccess: () => client.invalidateQueries(),
+  });
+}
+
 export function useUpdatePortalSettings() {
   const client = useQueryClient();
   return useMutation({

@@ -10,7 +10,7 @@ from ...config import Settings
 from ...providers import registry
 from ..deps import Principal, admin_only, any_user, client_ip, get_db, get_settings, member_in_scope
 from ..models import AuditLog, Notification
-from ..schemas import (Day, AdminAnalytics, AuditOut, HealthOut, IntegrationsOut, MemberAnalytics, Message, NotificationOut, Page,
+from ..schemas import (Day, GoLiveIn, GoLiveOut, AdminAnalytics, AuditOut, HealthOut, IntegrationsOut, MemberAnalytics, Message, NotificationOut, Page,
                        SettingsOut, SettingsUpdate)
 from ..security import utcnow
 from ..services import analytics
@@ -122,6 +122,18 @@ async def update_portal_settings(data: SettingsUpdate, request: Request, princip
           client_ip(request))
     await db.commit()
     return out
+
+
+@router.post("/admin/go-live", response_model=GoLiveOut,
+             responses={409: {"description": "Not in test mode, or a search is queued or running"}})
+async def go_live(data: GoLiveIn, request: Request, principal: Principal = Depends(admin_only), db: AsyncSession = Depends(get_db),
+                  settings: Settings = Depends(get_settings)):
+    """End test mode and start with real data. Deletes every team, Team Lead, member, candidate, resume, search, job,
+    assignment, notification and log entry. Keeps the Admin accounts, the settings and the job board index. It
+    works once: when test mode is off the call is refused. There is no undo."""
+    removed = await settings_service.go_live(db, settings, principal.user, principal.session.id, client_ip(request))
+    await db.commit()
+    return GoLiveOut(message="Test data removed. The portal now works with real data.", removed=removed)
 
 
 @router.get("/integrations", response_model=IntegrationsOut)

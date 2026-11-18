@@ -32,7 +32,9 @@ import {
 } from "@/lib/forms";
 import { EXTRA_FIELD_TYPE_LABELS, EXTRA_FIELD_TYPES } from "@/lib/options";
 import { atsLabel, useAutoApplyStatus } from "@/lib/auto-apply";
-import { useHealth, useIntegrations, usePortalSettings, useUpdatePortalSettings } from "@/lib/queries";
+import { useGoLive, useHealth, useIntegrations, usePortalSettings, useUpdatePortalSettings } from "@/lib/queries";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { Input } from "@/components/ui/input";
 import { salesforceStatusOf, TEAM_LEAD_SCOPES, teamLeadScopeOf } from "@/lib/salesforce";
 import type { ExtraField, Integrations, PortalSettings } from "@/lib/types";
 import { useUrlState } from "@/lib/url-state";
@@ -821,6 +823,67 @@ const TABS = [
 ];
 
 /** Admin "Settings": portal-wide settings, the state of the integrations, and the Admin's own account. */
+const GO_LIVE_WORDS = "REAL DATA";
+
+/** Shown only while the portal holds test data. One click (and two typed words) removes it and ends test mode. */
+function TestModePanel() {
+  const goLive = useGoLive();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const inputId = useId();
+  const ready = typed.trim().toUpperCase() === GO_LIVE_WORDS;
+
+  return (
+    <div className="mb-5 flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-start gap-3">
+        <TriangleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-warning" />
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="font-label text-sm">The portal is in test mode</h2>
+          <p className="max-w-[72ch] text-2sm text-muted-foreground">
+            The teams, Team Leads, members, candidates, searches and jobs in it are test data. When testing is finished,
+            switch to real data: all of it is deleted and the portal starts empty. Your Admin account, these settings
+            and the job board index stay.
+          </p>
+        </div>
+      </div>
+      <Button type="button" variant="destructive" className="shrink-0" onClick={() => setOpen(true)}>
+        Switch to Real Data
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setTyped("");
+        }}
+        title="Delete all test data and switch to real data?"
+        description="Every team, Team Lead, member, candidate, resume, search, job, assignment, notification and audit entry is deleted. This cannot be undone. Your Admin account, the settings and the job board index stay."
+        confirmLabel="Delete Test Data"
+        destructive
+        pending={goLive.isPending}
+        onConfirm={() => {
+          if (!ready) {
+            toast.error(`Type ${GO_LIVE_WORDS} to confirm.`);
+            return;
+          }
+          goLive.mutate(undefined, {
+            onSuccess: () => {
+              setOpen(false);
+              setTyped("");
+              toast.success("Test data removed", { description: "The portal now works with real data. Create your teams and invite your people." });
+            },
+            onError: (error) => toast.error("The test data was not removed", { description: errorMessage(error) }),
+          });
+        }}
+      >
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={inputId}>Type {GO_LIVE_WORDS} to confirm</Label>
+          <Input id={inputId} value={typed} onChange={(event) => setTyped(event.target.value)} autoComplete="off" disabled={goLive.isPending} />
+        </div>
+      </ConfirmDialog>
+    </div>
+  );
+}
+
 export function AdminSettingsView() {
   const [state, setState] = useUrlState(TAB_DEFAULTS);
   const tab = TABS.some((item) => item.value === state.tab) ? state.tab : "portal";
@@ -833,6 +896,7 @@ export function AdminSettingsView() {
         title="Settings"
         description="Limits and defaults for the whole portal, the services it depends on, and your own account."
       />
+      {settings.data?.test_mode && <TestModePanel />}
       <Tabs value={tab} onValueChange={(next) => setState({ tab: next })} className="gap-5">
         <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b">
           {TABS.map((item) => (
