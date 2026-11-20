@@ -185,7 +185,7 @@ class Settings(BaseSettings):
     aws_web_search_max_calls_per_search_max: int = 10  # hard ceiling for large requests
     aws_web_search_expected_searches_per_day: int = 45   # pacing assumption: candidate searches per working day (15 runs x up to 3)
     aws_web_search_max_results: int = 25             # results per call (the API allows 1-25)
-    aws_web_search_published_days: int = 60          # publishedAfter filter: pages published in the last N days (0 = no filter)
+    aws_web_search_published_days: int = 0           # publishedAfter filter in days; 0 = off. With the filter on, job-board queries returned nothing (2026-11-20)
     aws_web_search_connect_timeout_seconds: float = 5.0
     aws_web_search_read_timeout_seconds: float = 20.0
     aws_web_search_max_attempts: int = 3             # attempts per query on throttling / 5xx / timeout (each attempt counts)

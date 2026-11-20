@@ -407,7 +407,9 @@ def employer_posting_address(url: str, aggregators: tuple[str, ...]) -> bool:
 
 # ATS hosts, rotated: a query asks one group at a time (results are ranked; mixing every host lets one dominate).
 def host_groups(site_hosts: list[str]) -> list[list[str]]:
+    """One job-board host per query, the hosts with the most postings first. Measured on 2026-11-20: a query limited
+    to one host returns about 20 postings of that host, while one query over several hosts returned 1 to 14."""
     hosts = valid_domains(site_hosts)
-    first = [h for h in hosts if "greenhouse" in h or h in ("jobs.lever.co", "jobs.ashbyhq.com")]
-    rest = [h for h in hosts if h not in first]
-    return [g for g in (first, rest) if g]
+    order = ("job-boards.greenhouse.io", "jobs.lever.co", "myworkdayjobs.com", "jobs.ashbyhq.com", "apply.workable.com")
+    ranked = [h for h in order if h in hosts] + [h for h in hosts if h not in order]
+    return [[h] for h in ranked]
