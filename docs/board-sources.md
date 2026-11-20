@@ -101,9 +101,9 @@ rates, ATS in parallel: greenhouse 6 h, lever 4.7 h, ashby 8 h, workable 20 h, w
 |---|---|---|---|---|
 | SmartRecruiters | `api.smartrecruiters.com/v1/companies/<id>/postings` | `User-agent: *  Disallow: /` (only LinkedInBot allowed) | Posting API is documented for career sites; robots forbids us | **off**; reader refuses while robots disallows |
 | BambooHR | `<co>.bamboohr.com/careers/list`, `/careers/<id>/detail` | allows all | ToS forbids "any robot, spider, other automated device ... to monitor or copy any content from the Service" | **off** |
-| Recruitee | `<co>.recruitee.com/api/offers/` | allows (only `/v/` disallowed) | not reviewed (terms page 404) | not built |
+| Recruitee | `<co>.recruitee.com/api/offers/` (documented Careers Site API) | allows (only `/v/` disallowed) | Tellent Recruitee terms read 2026-11-21: no clause on automated access | **on** (providers/ats_startup.py) |
 | Breezy | `<co>.breezy.hr/json` | allows | not reviewed (terms page 404) | not built |
-| Rippling | `api.rippling.com/platform/api/ats/v1/board/<slug>/jobs` | robots.txt 404 (no rules) | not reviewed (terms page 403) | not built |
-| Pinpoint | `<co>.pinpointhq.com/postings.json` | `Disallow: /` | - | not built (robots forbids) |
+| Rippling | list `ats.rippling.com/api/v2/board/<slug>/jobs`, detail `api.rippling.com/platform/api/ats/v1/board/<slug>/jobs/<uuid>` (both undocumented) | ats: only `/internal/` disallowed; api: robots.txt 404 (no rules) | could not be read 2026-11-21 (script-rendered legal pages) | **on**, `RIPPLING_ENABLED=0` switches it off |
+| Pinpoint | `<co>.pinpointhq.com/postings.json` (documented) | employer tenants: `Disallow: /` (ada, afm on 2026-11-21); Pinpoint's own board allows | acceptable-use policy: no clause on reading career pages | **off**; reader refuses a tenant while its robots disallows |
 | Personio | `<co>.jobs.personio.de/xml` | allows | not reviewed (429 on terms page) | not built |
 | Teamtailor | `<co>.teamtailor.com/jobs.rss` | allows; `Content-Signal: search=yes, ai-train=no` | not reviewed | not built |

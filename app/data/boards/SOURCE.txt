@@ -1,3 +1,9 @@
 Board lists (CSV name,slug,url) copied unchanged from https://github.com/kalil0321/ats-scrapers, folder ats-companies/,
 downloaded 2026-11-18. MIT licence, see LICENSE-ats-scrapers. Only the CSV data was copied; no code from that repository is used.
 Files: greenhouse.csv lever.csv ashby.csv workable.csv workday.csv smartrecruiters.csv bamboohr.csv
+
+Added 2026-11-21 from the same repository and folder (commit 5d04418c83bbb765053c64e3dd1cb6879787623a of 2026-11-19), copied unchanged:
+recruitee.csv pinpoint.csv rippling.csv
+Rows that are not a board on the vendor's own host (employer-owned domains, vendor subdomains) are skipped at import
+by board_catalog.normalize. Pinpoint boards are registered like the others but are read only while that reader is
+switched on (it is off by default, see app/providers/ats_startup.py).

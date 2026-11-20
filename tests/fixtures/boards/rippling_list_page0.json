@@ -1,0 +1,92 @@
+{
+ "items": [
+  {
+   "id": "84d388b6-7656-434c-8862-0312eb6b97ac",
+   "name": "Business Operations Manager",
+   "url": "https://ats.rippling.com/rippling/jobs/84d388b6-7656-434c-8862-0312eb6b97ac",
+   "department": {
+    "name": "Bizops",
+    "displayName": "Bizops"
+   },
+   "locations": [
+    {
+     "name": "New York, NY",
+     "country": "United States",
+     "countryCode": "US",
+     "state": "New York",
+     "stateCode": "NY",
+     "city": "New York",
+     "workplaceType": "ON_SITE"
+    }
+   ],
+   "language": "en-US"
+  },
+  {
+   "id": "84d388b6-7656-434c-8862-0312eb6b97ac",
+   "name": "Business Operations Manager",
+   "url": "https://ats.rippling.com/rippling/jobs/84d388b6-7656-434c-8862-0312eb6b97ac",
+   "department": {
+    "name": "Bizops",
+    "displayName": "Bizops"
+   },
+   "locations": [
+    {
+     "name": "San Francisco, CA",
+     "country": "United States",
+     "countryCode": "US",
+     "state": "California",
+     "stateCode": "CA",
+     "city": "San Francisco",
+     "workplaceType": "ON_SITE"
+    }
+   ],
+   "language": "en-US"
+  },
+  {
+   "id": "748c244b-11a7-4e62-b1fe-53f24f87713b",
+   "name": "Principal Technical Program Manager",
+   "url": "https://ats.rippling.com/rippling/jobs/748c244b-11a7-4e62-b1fe-53f24f87713b",
+   "department": {
+    "name": "Bizops",
+    "displayName": "Bizops"
+   },
+   "locations": [
+    {
+     "name": "San Francisco, CA",
+     "country": "United States",
+     "countryCode": "US",
+     "state": "California",
+     "stateCode": "CA",
+     "city": "San Francisco",
+     "workplaceType": "ON_SITE"
+    }
+   ],
+   "language": "en-US"
+  },
+  {
+   "id": "6c0acabf-2ffd-42c4-beb1-0bd1c72f30bf",
+   "name": "Product Strategy and Operations Lead",
+   "url": "https://ats.rippling.com/rippling/jobs/6c0acabf-2ffd-42c4-beb1-0bd1c72f30bf",
+   "department": {
+    "name": "Bizops",
+    "displayName": "Bizops"
+   },
+   "locations": [
+    {
+     "name": "San Francisco, CA",
+     "country": "United States",
+     "countryCode": "US",
+     "state": "California",
+     "stateCode": "CA",
+     "city": "San Francisco",
+     "workplaceType": "ON_SITE"
+    }
+   ],
+   "language": "en-US"
+  }
+ ],
+ "page": 0,
+ "pageSize": 4,
+ "totalItems": 7,
+ "totalPages": 2
+}

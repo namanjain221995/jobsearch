@@ -40,9 +40,18 @@ async def search_options(request: Request, principal: Principal = Depends(manage
     sources = [{"name": s.name, "label": s.label, "kind": s.kind, "note": s.note, "enabled": s.name not in off}
                for s in registry.enabled_specs(settings).values()]
     from typing import get_args
+    from ...ats_platforms import PLATFORMS
     from ...schemas import Authorization, WorkMode
+    from ...search_scope import coverage
+    readers = {s["name"] for s in sources if s["enabled"]}
+    platforms = []
+    for p in PLATFORMS.values():                          # the registry as it is right now; nothing is assumed about readers
+        enabled = bool(p.reader) and p.reader in readers
+        level, hint = coverage(p, enabled)
+        platforms.append({"id": p.id, "label": p.label, "startup": p.startup, "reader": p.reader, "reader_enabled": enabled, "access": p.access,
+                          "coverage": level, "hint": hint})
     return SearchOptions(
-        sources=sources,
+        platforms=platforms, sources=sources,
         ai_providers={"openai": {"configured": bool(settings.openai_api_key), "model": settings.openai_model},
                       "claude": {"configured": bool(settings.anthropic_api_key), "model": settings.anthropic_model}},
         limits=settings_service.ui(portal, settings), authorizations=list(get_args(Authorization)), work_modes=list(get_args(WorkMode)),

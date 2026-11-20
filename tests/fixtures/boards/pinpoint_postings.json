@@ -1,0 +1,133 @@
+{
+ "data": [
+  {
+   "id": "591998",
+   "benefits": "<div><!--block-->We want Pinpoint to be the best place you've ever worked, somewhere you feel valued, supported and excited to grow. Here's what you get:</div><ul><li><!--block--><strong>Comprehensive healthcare:</strong> excellent medical, dental and vision c ...",
+   "benefits_header": "What we offer",
+   "compensation": null,
+   "compensation_minimum": null,
+   "compensation_maximum": null,
+   "compensation_currency": null,
+   "compensation_frequency": null,
+   "compensation_visible": false,
+   "deadline_at": null,
+   "description": "<div><!--block-->Hi 👋 I'm the Head of Design at Pinpoint.<br><br>We build and sell software that helps in house recruitment teams attract, hire and onboard the right people. We're a team of about 100 across the UK, EU and US, with a mature product, strong prod ...",
+   "employment_type": "full_time",
+   "employment_type_text": "Full Time",
+   "key_responsibilities": "<ul><li><!--block-->Own design for every usage based feature in Pinpoint end to end, from the first conversation with a vendor or customer through the spec and the design to shipped and measured</li><li><!--block-->Ship the next phase of Pinpoint Checks, inclu ...",
+   "key_responsibilities_header": "What you'll do",
+   "reporting_to": "Head of Design",
+   "skills_knowledge_expertise": "<ul><li><!--block-->Design of complex B2B software products alongside a PM and engineers, with shipped work to show for it, ideally as the sole or lead designer</li><li><!--block-->A startup or scale up background, with small teams, few handoffs and a willingn ...",
+   "skills_knowledge_expertise_header": "What you'll bring",
+   "title": "Staff Product Designer",
+   "url": "https://workwithus.pinpointhq.com/en/postings/fa79e602-e5a1-4ee7-9cee-3bb2a13eb20a",
+   "path": "/en/postings/fa79e602-e5a1-4ee7-9cee-3bb2a13eb20a",
+   "workplace_type": "remote",
+   "workplace_type_text": "Fully remote",
+   "job": {
+    "id": "592098",
+    "requisition_id": "PIN-0412",
+    "department": {
+     "id": "1032",
+     "name": "Design"
+    },
+    "division": null,
+    "structure_custom_group_one": null
+   },
+   "location": {
+    "id": "283",
+    "city": "London",
+    "name": "Remote",
+    "postal_code": null,
+    "province": "London",
+    "street_address": null
+   }
+  },
+  {
+   "id": "604756",
+   "benefits": "<div><!--block-->We want Pinpoint to be the best place you've ever worked, somewhere you feel valued, supported and excited to grow. Here's what you get:</div><ul><li><!--block--><strong>Comprehensive healthcare:</strong> excellent medical, dental and vision c ...",
+   "benefits_header": "What we offer",
+   "compensation": null,
+   "compensation_minimum": null,
+   "compensation_maximum": null,
+   "compensation_currency": null,
+   "compensation_frequency": null,
+   "compensation_visible": false,
+   "deadline_at": null,
+   "description": "<div><!--block-->Hi 👋 I'm the Director of Growth Marketing at Pinpoint.<br><br>We build and sell software that helps in house recruitment teams attract, hire and onboard the right people. We're a team of about 100 across the UK, EU and US, with a mature produc ...",
+   "employment_type": "full_time",
+   "employment_type_text": "Full Time",
+   "key_responsibilities": "<ul><li><!--block-->Own how we position every significant feature, from what it's called and who it's for to how it compares, then bring a clear recommendation to Product and leadership, make the call, and keep it consistent everywhere it shows up</li><li> ...",
+   "key_responsibilities_header": "What you'll do",
+   "reporting_to": "Director of Growth Marketing",
+   "skills_knowledge_expertise": "<ul><li><!--block-->Product marketing in B2B SaaS, with features positioned and launched end to end and the work to show for it</li><li><!--block-->A track record of running launches across product, content, sales and customer marketing, with briefs that come  ...",
+   "skills_knowledge_expertise_header": "What you'll bring",
+   "title": "Senior Product Marketing Manager",
+   "url": "https://workwithus.pinpointhq.com/en/postings/207471c2-3297-4f76-8307-6ec844b20760",
+   "path": "/en/postings/207471c2-3297-4f76-8307-6ec844b20760",
+   "workplace_type": "remote",
+   "workplace_type_text": "Fully remote",
+   "job": {
+    "id": "604115",
+    "requisition_id": "PIN-0414",
+    "department": {
+     "id": "191",
+     "name": "Marketing"
+    },
+    "division": null,
+    "structure_custom_group_one": null
+   },
+   "location": {
+    "id": "5495",
+    "city": "London",
+    "name": "United Kingdom",
+    "postal_code": "",
+    "province": "London",
+    "street_address": ""
+   }
+  },
+  {
+   "id": "610925",
+   "benefits": "<div><!--block-->We want Pinpoint to be the best place you've ever worked, somewhere you feel valued, supported and excited to grow. Here's what you get:</div><ul><li><!--block--><strong>Comprehensive healthcare:</strong> excellent medical, dental and vision c ...",
+   "benefits_header": "What we offer",
+   "compensation": null,
+   "compensation_minimum": null,
+   "compensation_maximum": null,
+   "compensation_currency": null,
+   "compensation_frequency": null,
+   "compensation_visible": false,
+   "deadline_at": null,
+   "description": "<div><!--block-->Hi 👋 I'm the Head of Technical Success at Pinpoint.<br><br>We build and sell software that helps in house recruitment teams attract, hire and onboard the right people. We're a team of about 100 across the UK, EU and US, with a mature product,  ...",
+   "employment_type": "full_time",
+   "employment_type_text": "Full Time",
+   "key_responsibilities": "<ul><li><!--block-->Build AI workflows, scripts and automations that take apart the repetitive work in careers site changes, bulk data jobs and onboarding, so the queue shrinks instead of grows</li><li><!--block-->Solve the technical problems that block custom ...",
+   "key_responsibilities_header": "What you'll do",
+   "reporting_to": "Head of Technical Success",
+   "skills_knowledge_expertise": "<ul><li><!--block-->Hands on technical work for customers across integrations, data, configuration and debugging, ideally at a B2B SaaS company</li><li><!--block-->Something you've built with AI and still rely on, such as a workflow, agent or automation that t ...",
+   "skills_knowledge_expertise_header": "What you'll bring",
+   "title": "Senior Technical Success Engineer",
+   "url": "https://workwithus.pinpointhq.com/en/postings/6fc547ee-7139-41eb-92c8-add28d89e8c5",
+   "path": "/en/postings/6fc547ee-7139-41eb-92c8-add28d89e8c5",
+   "workplace_type": "remote",
+   "workplace_type_text": "Fully remote",
+   "job": {
+    "id": "609522",
+    "requisition_id": "PIN-0415",
+    "department": {
+     "id": "79208",
+     "name": "Technical Success"
+    },
+    "division": null,
+    "structure_custom_group_one": null
+   },
+   "location": {
+    "id": "283",
+    "city": "London",
+    "name": "Remote",
+    "postal_code": null,
+    "province": "London",
+    "street_address": null
+   }
+  }
+ ]
+}

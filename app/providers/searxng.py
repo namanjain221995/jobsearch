@@ -4,7 +4,8 @@ What it is used for: finding employer job boards on applicant-tracking systems t
 through their official API or public page. For every title variant and ATS host one paced `site:` query is
 sent. Results are only *addresses*; nothing is taken from a result's title or snippet:
 
-- an address of an employer board (Greenhouse, Lever, Ashby, Workable account, Workday tenant) names a board.
+- an address of an employer board (Greenhouse, Lever, Ashby, Workable account, Workday tenant, Recruitee,
+  Pinpoint, Rippling) names a board.
   A board the index does not know yet is registered and then read through its API like every other board;
 - an address of a single posting is a lead and goes through the same verification as an AI web-search lead.
 
@@ -26,10 +27,11 @@ import httpx
 
 from ..job_normalizer import canonical_url, parse_ats
 from ..job_verifier import host_blocked
+from . import ats_pages, ats_startup
 
 CACHE_PREFIX = "searx:"
 MAX_RESULTS_KEPT = 40
-BOARD_SOURCES = ("greenhouse", "lever", "ashby", "workable", "workday")
+BOARD_SOURCES = ("greenhouse", "lever", "ashby", "workable", "workday", "recruitee", "pinpoint", "rippling")
 _SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 _WD_TENANT = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 _WD_SITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}")
@@ -44,7 +46,7 @@ PAGE_LEAD_HOSTS = ("jobs.smartrecruiters.com",)
 @dataclass(frozen=True)
 class Hit:
     kind: str            # "board" (an employer board), "posting" (one posting on a board ATS), "page" (posting page to verify)
-    src: str             # greenhouse / lever / ashby / workable / workday / "" for page leads
+    src: str             # one of BOARD_SOURCES / "" for page leads
     board: str
     job_id: str
     url: str
@@ -59,6 +61,8 @@ def valid_board(src: str, key: str) -> bool:
                 and bool(_WD_SITE.fullmatch(parts[2])))
     if src in ("greenhouse", "lever", "ashby", "workable"):
         return bool(_SLUG.fullmatch(key)) and key not in _NOT_A_BOARD and ".." not in key and not key.strip(".-_") == ""
+    if src in ats_startup.SLUGS:                     # Recruitee / Pinpoint subdomain, Rippling board slug
+        return ats_startup.valid_key(src, key)       # the same rule the catalogue import applies
     return False
 
 
@@ -94,6 +98,9 @@ def extract(url: str, allowed_hosts: list[str]) -> Hit | None:
         if len(parts) == 2 and re.fullmatch(r"\d{6,}[A-Za-z0-9%._-]*", parts[1]) and re.fullmatch(r"[A-Za-z0-9._-]{1,80}", parts[0]):
             return Hit("page", "", "", "", canonical_url(url))
         return None
+    if ats_pages.is_page_host(host):                  # public career pages without a board reader (providers/ats_pages.py)
+        found = ats_pages.posting(url)
+        return Hit("page", "", "", "", found[1]) if found else None
     parsed = parse_ats(url)
     if not parsed:
         return None

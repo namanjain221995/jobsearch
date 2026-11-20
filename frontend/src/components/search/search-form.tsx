@@ -10,6 +10,7 @@ import { z } from "@/lib/zod";
 
 import { AddCandidateDialog } from "@/components/candidates/candidate-dialog";
 import { CandidatePicker, SelectedCandidates, toPicked, type PickedCandidate } from "@/components/candidates/candidate-picker";
+import { PlatformFilter } from "@/components/search/platform-filter";
 import { useSearchProgress } from "@/components/search/search-progress";
 import { MODE_LABELS } from "@/components/search/search-run";
 import { FormField, FormMessage, TextField } from "@/components/shared/form-fields";
@@ -69,6 +70,8 @@ function buildSchema(limits: SearchOptions["limits"]) {
     work_mode: z.string(),
     preferred_states: z.array(z.string()).max(30, "Keep it to 30 states."),
     excluded_companies: z.array(z.string()).max(100, "Keep it to 100 companies."),
+    ats_platforms: z.array(z.string()),
+    startup_focus: z.boolean(),
   }).superRefine((values, context) => {
     // Kept here so the message sits on the field; the totals check lives beside the candidate list.
     if (values.target_count !== "" && Number(values.target_count) > limits.max_results_per_search_run) {
@@ -96,6 +99,8 @@ const defaultsFor = (limits: SearchOptions["limits"], deepSearch: boolean): Valu
   work_mode: SAVED,
   preferred_states: [],
   excluded_companies: [],
+  ats_platforms: [],
+  startup_focus: false,
 });
 
 type Filters = SearchCreate["filters"];
@@ -111,6 +116,8 @@ function toRequest(values: Values, candidateIds: string[], teamId: string): Sear
     work_mode: picked<NonNullable<Filters["work_mode"]>>(values.work_mode),
     preferred_states: values.preferred_states.length ? values.preferred_states : null,
     excluded_companies: values.excluded_companies.length ? values.excluded_companies : null,
+    ats_platforms: values.ats_platforms,
+    startup_focus: values.startup_focus,
   };
   return {
     candidate_ids: candidateIds,
@@ -123,8 +130,11 @@ function toRequest(values: Values, candidateIds: string[], teamId: string): Sear
   };
 }
 
-/** A saved preset is the request without its candidates. Unknown or missing parts fall back to the current values. */
-function fromPreset(preset: Preset, current: Values): Values {
+/**
+ * A saved preset is the request without its candidates. Unknown or missing parts fall back to the current values.
+ * A preset saved before the platform filter existed has no platforms: it searches all of them, as it always did.
+ */
+function fromPreset(preset: Preset, current: Values, platformIds: ReadonlySet<string>): Values {
   const data = preset.filters as Record<string, unknown>;
   const filters = (data.filters ?? {}) as Record<string, unknown>;
   const list = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
@@ -142,6 +152,8 @@ function fromPreset(preset: Preset, current: Values): Values {
     work_mode: choice(filters.work_mode),
     preferred_states: list(filters.preferred_states),
     excluded_companies: list(filters.excluded_companies),
+    ats_platforms: list(filters.ats_platforms).filter((id) => platformIds.has(id)),
+    startup_focus: filters.startup_focus === true,
   };
 }
 
@@ -292,6 +304,7 @@ function Form({ options }: { options: SearchOptions }) {
   const create = useCreateSearch();
   const teams = useTeams(false, { enabled: isAdmin });
   const deepId = useId();
+  const startupId = useId();
   const teamSelectId = useId();
 
   const [selected, setSelected] = useState<ReadonlyMap<string, PickedCandidate>>(() => new Map());
@@ -323,6 +336,7 @@ function Form({ options }: { options: SearchOptions }) {
     if (!deepSearchChosen.current) form.resetField("deep_search", { defaultValue: deepSearchDefault });
   }, [form, deepSearchDefault]);
   const mode = useWatch({ control: form.control, name: "mode" });
+  const chosenPlatforms = useWatch({ control: form.control, name: "ats_platforms" });
   const targetText = useWatch({ control: form.control, name: "target_count" });
 
   const team = (teams.data ?? []).find((item) => item.id === teamId);
@@ -338,7 +352,16 @@ function Form({ options }: { options: SearchOptions }) {
   const withoutMember = [...selected.values()].filter((candidate) => !candidate.member);
 
   const aiConfigured = Object.values(options.ai_providers as Record<string, { configured?: boolean }>).some((provider) => provider.configured);
-  const sources = (options.sources as Array<{ name: string; label: string; enabled?: boolean }>).filter((source) => source.enabled !== false);
+  const platforms = options.platforms ?? [];
+  // With platforms chosen, only their board readers are read; job boards and other sources are left out.
+  const chosenReaders = new Set(platforms.filter((platform) => chosenPlatforms.includes(platform.id) && platform.reader).map((platform) => platform.reader));
+  const sources = (options.sources as Array<{ name: string; label: string; kind?: string; enabled?: boolean }>).filter(
+    // Search engines keep running (for the chosen platforms' hosts); Google Jobs listings are not postings of a platform.
+    (source) =>
+      source.enabled !== false &&
+      (chosenPlatforms.length === 0 || (source.kind === "discovery" && source.name !== "serpapi") || chosenReaders.has(source.name)),
+  );
+  const uncovered = platforms.filter((platform) => chosenPlatforms.includes(platform.id) && platform.coverage !== "full");
 
   const onSubmit = form.handleSubmit((values) => {
     if (candidateCount === 0) {
@@ -371,7 +394,7 @@ function Form({ options }: { options: SearchOptions }) {
             getValues={form.getValues}
             onApply={(preset) => {
               deepSearchChosen.current = true;
-              form.reset(fromPreset(preset, form.getValues()));
+              form.reset(fromPreset(preset, form.getValues(), new Set(platforms.map((platform) => platform.id))));
             }}
           />
         }
@@ -573,6 +596,44 @@ function Form({ options }: { options: SearchOptions }) {
             </div>
           </Panel>
 
+          <Panel title="Where to search" description="By default every applicant-tracking platform and job board the portal reads is searched.">
+            <div className="flex flex-col gap-5">
+              <Controller
+                control={form.control}
+                name="ats_platforms"
+                render={({ field }) => <PlatformFilter platforms={platforms} value={field.value} onChange={field.onChange} />}
+              />
+              {uncovered.length > 0 && (
+                <FormMessage tone="info">
+                  <span className="flex items-start gap-2">
+                    <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                    <span>
+                      {uncovered.map((platform) => platform.label).join(", ")} {uncovered.length === 1 ? "has" : "have"} limited
+                      or no coverage, so this search may find few jobs there or none. The search results say what
+                      was found for each platform.
+                    </span>
+                  </span>
+                </FormMessage>
+              )}
+              <div className="flex items-start gap-3">
+                <Controller
+                  control={form.control}
+                  name="startup_focus"
+                  render={({ field }) => (
+                    <Switch id={startupId} checked={field.value} onCheckedChange={field.onChange} ref={field.ref} className="mt-0.5" />
+                  )}
+                />
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor={startupId}>Startup focus</Label>
+                  <p className="text-2sm text-muted-foreground">
+                    Searches the platforms startups use most first ({platforms.filter((platform) => platform.startup).map((platform) => platform.label).join(", ")}),
+                    and lists their jobs first when two jobs match equally well. It never changes a match score.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Panel>
+
           <Panel title="How much, and how thoroughly">
             <div className="flex flex-col gap-5">
               <div className="grid gap-5 sm:grid-cols-2">
@@ -698,6 +759,14 @@ function Form({ options }: { options: SearchOptions }) {
               <div className="flex flex-col gap-1.5 border-t pt-3">
                 <p className="text-2sm text-muted-foreground">Result handling</p>
                 <p className="text-sm font-medium">{MODE_LABELS[mode]}</p>
+              </div>
+              <div className="flex flex-col gap-1.5 border-t pt-3">
+                <p className="text-2sm text-muted-foreground">ATS platforms</p>
+                <p className="text-sm font-medium break-words">
+                  {chosenPlatforms.length === 0
+                    ? "All platforms"
+                    : platforms.filter((platform) => chosenPlatforms.includes(platform.id)).map((platform) => platform.label).join(", ")}
+                </p>
               </div>
               <div className="flex flex-col gap-2 border-t pt-3">
                 <p className="text-2sm text-muted-foreground">Sources that will be read ({sources.length})</p>

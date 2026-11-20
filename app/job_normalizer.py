@@ -92,7 +92,8 @@ def canonical_url(url: str) -> str:
 
 
 def parse_ats(url: str) -> tuple[str, str, str] | None:
-    """Return (ats, board, job_id) for Greenhouse / Lever / Ashby URLs. board or job_id may be ''."""
+    """Return (ats, board, job_id) for the public addresses of the board ATSs (Greenhouse, Lever, Ashby, Workday,
+    Workable, Recruitee, Pinpoint, Rippling). board or job_id may be ''."""
     try:
         p = urlsplit((url or "").strip())
     except ValueError:
@@ -143,10 +144,39 @@ def parse_ats(url: str) -> tuple[str, str, str] | None:
             return ("workable", parts[0].lower() if i >= 1 else "", parts[i + 1].upper())
         if parts and parts[0] not in ("api", "j"):
             return ("workable", parts[0].lower(), "")
+    m = _SUBDOMAIN_ATS.fullmatch(host)
+    if m and m.group(1) not in ATS_VENDOR_SUBDOMAINS and not m.group(1).startswith("xn--"):
+        co = m.group(1)
+        if m.group(2) == "recruitee.com":
+            # https://{company}.recruitee.com/o/{offer-slug}[/c/new]  or  .../l/{lang}/o/{offer-slug}
+            # Offer slugs are unique per company only, so the posting id carries the company: "{company}:{offer-slug}".
+            if "o" in parts and parts.index("o") + 1 < len(parts):
+                offer = parts[parts.index("o") + 1].lower()
+                return ("recruitee", co, f"{co}:{offer}" if _OFFER_SLUG.fullmatch(offer) else "")
+            return ("recruitee", co, "")
+        # https://{company}.pinpointhq.com/[en/]postings/{uuid}
+        if "postings" in parts and parts.index("postings") + 1 < len(parts):
+            posting = parts[parts.index("postings") + 1].lower()
+            return ("pinpoint", co, posting if re.fullmatch(_UUID, posting) else "")
+        return ("pinpoint", co, "")
+    if host == "ats.rippling.com":
+        # https://ats.rippling.com/[en-GB/]{board}/jobs[/{uuid}]
+        segs = parts[1:] if len(parts) >= 2 and parts[1] != "jobs" and re.fullmatch(r"[a-z]{2}-[A-Za-z]{2}", parts[0]) else parts
+        if not segs or segs[0].lower() in ("api", "internal", "_next", "static", "assets"):
+            return None
+        if len(segs) >= 3 and segs[1] == "jobs" and re.fullmatch(_UUID, segs[2].lower()):
+            return ("rippling", segs[0].lower(), segs[2].lower())
+        return ("rippling", segs[0].lower(), "")
     return None
 
 
 _WORKDAY_HOST = re.compile(r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com")
+_SUBDOMAIN_ATS = re.compile(r"([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.(recruitee\.com|pinpointhq\.com)")
+_OFFER_SLUG = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,118}[a-z0-9])?")
+# Subdomains of recruitee.com / pinpointhq.com that belong to the vendor, not to an employer.
+ATS_VENDOR_SUBDOMAINS = frozenset({
+    "www", "app", "api", "auth", "careers", "career", "jobs", "docs", "developers", "help", "support", "status", "blog",
+    "cdn", "static", "assets", "mail", "admin", "login", "ats", "hris", "view", "go", "info"})
 
 
 def ats_key(ats: str, job_id: str) -> str:

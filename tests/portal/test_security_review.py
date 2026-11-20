@@ -871,6 +871,9 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
     # Salesforce: two read routes, both behind the session; the portal has no route that could write to Salesforce.
     assert {key: level for key, level in protection.items() if key[1].startswith("/api/salesforce")} == {
         ("GET", "/api/salesforce/status"): "session", ("GET", "/api/salesforce/candidates"): "session"}
+    # Integration health (Admin only, read-only): both views need the session; who may read them is in test_ats_health.py.
+    assert {key: level for key, level in protection.items() if key[1].startswith("/api/integrations")} == {
+        ("GET", "/api/integrations"): "session", ("GET", "/api/integrations/ats"): "session"}
     assert {protection[key] for key in protection if key[1].startswith("/api/candidates")} == {"session"}
     assert not any(path.startswith(("/api/resumes", "/api/members")) or path.endswith("/profile") and path.startswith("/api/users")
                    for _, path in protection)                                              # the routes the candidate ones replaced are gone

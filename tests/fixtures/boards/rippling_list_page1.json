@@ -1,0 +1,71 @@
+{
+ "items": [
+  {
+   "id": "b5b713a7-4274-42ca-bd41-aae4116e3ae3",
+   "name": "Senior Business Operations Manager",
+   "url": "https://ats.rippling.com/rippling/jobs/b5b713a7-4274-42ca-bd41-aae4116e3ae3",
+   "department": {
+    "name": "Bizops",
+    "displayName": "Bizops"
+   },
+   "locations": [
+    {
+     "name": "San Francisco, CA",
+     "country": "United States",
+     "countryCode": "US",
+     "state": "California",
+     "stateCode": "CA",
+     "city": "San Francisco",
+     "workplaceType": "ON_SITE"
+    }
+   ],
+   "language": "en-US"
+  },
+  {
+   "id": "336db642-a679-41de-b195-b3a1ebb60441",
+   "name": "Staff Technical Program Manager",
+   "url": "https://ats.rippling.com/rippling/jobs/336db642-a679-41de-b195-b3a1ebb60441",
+   "department": {
+    "name": "Bizops",
+    "displayName": "Bizops"
+   },
+   "locations": [
+    {
+     "name": "Bangalore, India",
+     "country": "India",
+     "countryCode": "IN",
+     "state": "Karnataka",
+     "stateCode": "KA",
+     "city": "Bangalore",
+     "workplaceType": "ON_SITE"
+    }
+   ],
+   "language": "en-US"
+  },
+  {
+   "id": "7300c095-6e06-4429-b2b8-89fb8a15dfc8",
+   "name": "Customer Experience Operations Manager, Business Unit",
+   "url": "https://ats.rippling.com/rippling/jobs/7300c095-6e06-4429-b2b8-89fb8a15dfc8",
+   "department": {
+    "name": "Customer Support",
+    "displayName": "Customer Support"
+   },
+   "locations": [
+    {
+     "name": "Remote (United States)",
+     "country": "United States",
+     "countryCode": "US",
+     "state": null,
+     "stateCode": null,
+     "city": null,
+     "workplaceType": "REMOTE"
+    }
+   ],
+   "language": "en-US"
+  }
+ ],
+ "page": 1,
+ "pageSize": 4,
+ "totalItems": 7,
+ "totalPages": 2
+}

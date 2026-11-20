@@ -654,6 +654,20 @@ class SearchFilters(Model):
     preferred_states: list[str] | None = Field(default=None, max_length=30)
     remote_only: bool | None = None
     excluded_companies: list[str] | None = Field(default=None, max_length=100)
+    # The two below are settings of the search itself, not candidate overrides. Stored filters and presets written
+    # before they existed have no such keys and mean the defaults.
+    ats_platforms: list[str] = Field(default=[], max_length=40)   # platform ids of GET /api/searches/options; empty = all platforms and sources
+    startup_focus: bool = False                    # startup platforms first and with the larger share of the budgets; tie-break in ranking only
+
+    @field_validator("ats_platforms")
+    @classmethod
+    def _known_platforms(cls, v: list[str]) -> list[str]:
+        from ..ats_platforms import PLATFORMS
+        out = list(dict.fromkeys(str(i).strip().lower() for i in v))
+        unknown = [i for i in out if i not in PLATFORMS]
+        if unknown:
+            raise ValueError(f"Unknown ATS platform: {', '.join(unknown)}")
+        return out
 
 
 class SearchCreate(Model):
@@ -680,7 +694,13 @@ class SearchTargetOut(Model):
     filters: dict = {}
     warnings: list[str] = []
     round: int = 1                                 # discovery round this candidate's search is in (or ended in)
-    discovery: dict = {}                           # title variants, search-engine queries, new boards, postings gained, rounds, stop reason, AI calls
+    # title variants, search-engine queries, new boards, postings gained, rounds, stop reason, AI calls. Also (counts only):
+    #   platform_filter: [platform id], startup_focus: bool, filtered_out: leads / postings dropped by the platform filter
+    #   platforms: {platform id | "other": {label, startup, coverage: full | limited | none | "", considered, verified,
+    #               unique, rejected, reasons: {not_relevant, non_us, work_mode, eligibility, ai_audit}, duplicates, matched, leads}}
+    #   providers: {name: {kind: search_engine | ai, queries, results, leads, new_boards, new_board_postings, verified, matched}}
+    #   seconds_to_first_verified, total_seconds: number | null;  coverage_warnings: [sentence]
+    discovery: dict = {}
 
 
 class SearchRunOut(Model):
@@ -744,7 +764,19 @@ class SearchResultOut(Model):
     assignment_status: AssignmentStatus | None = None
 
 
+class SearchPlatformOption(Model):
+    id: str
+    label: str
+    startup: bool = False                          # one of the startup-focused platforms
+    reader: str = ""                               # name of its board reader among `sources`, "" when there is none
+    reader_enabled: bool = False                   # a board reader for it is switched on
+    access: str = ""                               # public_api | public_pages | credentials | restricted
+    coverage: str = "full"                         # full | limited (public pages, through web search only) | none (cannot be searched)
+    hint: str = ""                                 # one sentence: what can be read, and why
+
+
 class SearchOptions(Model):
+    platforms: list[SearchPlatformOption] = []     # the ATS platforms a search can be limited to
     sources: list[dict]
     ai_providers: dict
     limits: UiSettings
@@ -1060,6 +1092,52 @@ class IntegrationsOut(Model):
     queue: dict                                    # redis reachable
     salesforce: SalesforceStatus = SalesforceStatus(configured=False)
     aws_web_search: "AwsWebSearchStatus | None" = None
+
+
+AtsState = Literal["verified_working", "configured_unverified", "requires_credentials", "public_discovery_only",
+                   "temporarily_unavailable", "unsupported"]
+
+
+class AtsPlatformHealth(Model):
+    """One applicant-tracking system on GET /api/integrations/ats. `state` is computed from the evidence next to it
+    (services/ats_health.py); a platform is `verified_working` only after a read that brought postings."""
+    id: str
+    label: str
+    startup: bool
+    access: str                                    # a key of ats_platforms.ACCESS
+    access_note: str                               # the sentence for that key
+    hosts: list[str]
+    docs: str = ""
+    note: str = ""
+    reader: str = ""                               # registry source name of the board reader, "" when there is none
+    reader_enabled: bool = False                   # the reader is installed, configured and switched on
+    state: AtsState
+    reason: str
+    boards_known: int = 0
+    boards_read_ok: int = 0                        # boards read successfully, with postings, inside the window
+    boards_failed: int = 0                         # boards whose reads inside the window failed
+    open_postings: int = 0                         # postings stored by successful reads (a posting found by two queries counts twice)
+    last_success_at: datetime | None = None
+
+
+class ProviderHealth(Model):
+    """One search provider. Never "working": only whether it is set up and switched on, plus usage where it is counted."""
+    id: str
+    label: str
+    kind: Literal["ai", "web_search", "catalogue"]
+    state: Literal["configured", "not_configured", "switched_off"]
+    reason: str
+    detail: str = ""                               # the model name, or what the provider is used for
+    month: str = ""                                # AWS web search: the month the counter is for
+    used: int | None = None
+    limit: int | None = None
+
+
+class AtsHealthOut(Model):
+    generated_at: datetime
+    window_days: int                               # a successful read counts for this many days
+    platforms: list[AtsPlatformHealth]
+    providers: list[ProviderHealth]
 
 
 class HealthOut(Model):

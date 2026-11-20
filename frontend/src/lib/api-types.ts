@@ -785,6 +785,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/ats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ats Integrations
+         * @description The operational state of every applicant-tracking system and search provider, computed from what the job
+         *     index really holds (services/ats_health.py). Read-only; the index evidence is kept for a minute.
+         */
+        get: operations["ats_integrations_api_integrations_ats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invitations": {
         parameters: {
             query?: never;
@@ -2043,6 +2064,88 @@ export interface components {
              * @default 0
              */
             viewed: number;
+        };
+        /** AtsHealthOut */
+        AtsHealthOut: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Platforms */
+            platforms: components["schemas"]["AtsPlatformHealth"][];
+            /** Providers */
+            providers: components["schemas"]["ProviderHealth"][];
+            /** Window Days */
+            window_days: number;
+        };
+        /**
+         * AtsPlatformHealth
+         * @description One applicant-tracking system on GET /api/integrations/ats. `state` is computed from the evidence next to it
+         *     (services/ats_health.py); a platform is `verified_working` only after a read that brought postings.
+         */
+        AtsPlatformHealth: {
+            /** Access */
+            access: string;
+            /** Access Note */
+            access_note: string;
+            /**
+             * Boards Failed
+             * @default 0
+             */
+            boards_failed: number;
+            /**
+             * Boards Known
+             * @default 0
+             */
+            boards_known: number;
+            /**
+             * Boards Read Ok
+             * @default 0
+             */
+            boards_read_ok: number;
+            /**
+             * Docs
+             * @default
+             */
+            docs: string;
+            /** Hosts */
+            hosts: string[];
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Open Postings
+             * @default 0
+             */
+            open_postings: number;
+            /**
+             * Reader
+             * @default
+             */
+            reader: string;
+            /**
+             * Reader Enabled
+             * @default false
+             */
+            reader_enabled: boolean;
+            /** Reason */
+            reason: string;
+            /** Startup */
+            startup: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "verified_working" | "configured_unverified" | "requires_credentials" | "public_discovery_only" | "temporarily_unavailable" | "unsupported";
         };
         /** AuditOut */
         AuditOut: {
@@ -4472,6 +4575,42 @@ export interface components {
             /** Years Experience */
             years_experience?: number | null;
         };
+        /**
+         * ProviderHealth
+         * @description One search provider. Never "working": only whether it is set up and switched on, plus usage where it is counted.
+         */
+        ProviderHealth: {
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ai" | "web_search" | "catalogue";
+            /** Label */
+            label: string;
+            /** Limit */
+            limit?: number | null;
+            /**
+             * Month
+             * @default
+             */
+            month: string;
+            /** Reason */
+            reason: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "configured" | "not_configured" | "switched_off";
+            /** Used */
+            used?: number | null;
+        };
         /** QueueDelegate */
         QueueDelegate: {
             /** Job Ids */
@@ -4758,7 +4897,12 @@ export interface components {
              * @default true
              */
             deep_search: boolean;
-            /** @default {} */
+            /**
+             * @default {
+             *       "ats_platforms": [],
+             *       "startup_focus": false
+             *     }
+             */
             filters: components["schemas"]["SearchFilters"];
             /** Min Match Score */
             min_match_score?: number | null;
@@ -4790,6 +4934,11 @@ export interface components {
          * @description Shared overrides for one run. A field left out (null) means: use each candidate's own saved value.
          */
         SearchFilters: {
+            /**
+             * Ats Platforms
+             * @default []
+             */
+            ats_platforms: string[];
             /** Exclude Citizenship Required */
             exclude_citizenship_required?: boolean | null;
             /** Excluded Companies */
@@ -4802,6 +4951,11 @@ export interface components {
             remote_only?: boolean | null;
             /** Sponsorship Needed */
             sponsorship_needed?: ("Yes" | "No" | "Unknown") | null;
+            /**
+             * Startup Focus
+             * @default false
+             */
+            startup_focus: boolean;
             /** Work Authorization */
             work_authorization?: ("US Citizen" | "Green Card / US Permanent Resident" | "Current Work Visa" | "Employment Authorization Document (EAD)" | "Require Visa Sponsorship" | "Other / Prefer Not to Say") | null;
             /** Work Mode */
@@ -4818,6 +4972,11 @@ export interface components {
             /** Authorizations */
             authorizations: string[];
             limits: components["schemas"]["UiSettings"];
+            /**
+             * Platforms
+             * @default []
+             */
+            platforms: components["schemas"]["SearchPlatformOption"][];
             /** Queue Available */
             queue_available: boolean;
             /** Sources */
@@ -4826,6 +4985,43 @@ export interface components {
             }[];
             /** Work Modes */
             work_modes: string[];
+        };
+        /** SearchPlatformOption */
+        SearchPlatformOption: {
+            /**
+             * Access
+             * @default
+             */
+            access: string;
+            /**
+             * Coverage
+             * @default full
+             */
+            coverage: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Reader
+             * @default
+             */
+            reader: string;
+            /**
+             * Reader Enabled
+             * @default false
+             */
+            reader_enabled: boolean;
+            /**
+             * Startup
+             * @default false
+             */
+            startup: boolean;
         };
         /** SearchResultOut */
         SearchResultOut: {
@@ -7350,6 +7546,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrationsOut"];
+                };
+            };
+        };
+    };
+    ats_integrations_api_integrations_ats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AtsHealthOut"];
                 };
             };
         };

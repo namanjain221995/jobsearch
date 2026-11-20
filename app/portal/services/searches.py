@@ -38,6 +38,7 @@ def effective_filters(profile: CandidateProfile | None, data: SearchCreate) -> d
         "preferred_states": pick(f.preferred_states, profile.preferred_states if profile else None, []),
         "excluded_companies": pick(f.excluded_companies, profile.excluded_companies if profile else None, []),
         "skills": (profile.skills if profile else []) or [],
+        "ats_platforms": list(f.ats_platforms), "startup_focus": bool(f.startup_focus),
     }
 
 
@@ -95,9 +96,12 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
         raise HTTPException(422, "None of the selected candidates can be searched: " + "; ".join(f"{s.candidate.name}: {s.reason}" for s in skipped))
 
     team_ids = {c.team_id for c, _ in targets}
+    # Stored as before when the platform filter and the startup focus are not used (they are settings, not overrides).
+    stored_filters = {k: v for k, v in data.filters.model_dump(exclude_none=True).items()
+                      if k not in ("ats_platforms", "startup_focus") or v}
     run = SearchRun(
         initiated_by=principal.user.id, team_id=next(iter(team_ids)) if len(team_ids) == 1 else None, mode=data.mode,
-        search_filters=data.filters.model_dump(exclude_none=True), target_count=data.target_count, deep_search=data.deep_search,
+        search_filters=stored_filters, target_count=data.target_count, deep_search=data.deep_search,
         min_match_score=data.min_match_score if data.min_match_score is not None else portal.default_min_match_score,
         status="queued", progress={})
     db.add(run)
@@ -106,7 +110,8 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
         db.add(SearchTarget(search_run_id=run.id, candidate_id=candidate.id, candidate_specific_filters=filters,
                             assignment_mode=data.mode, status="queued", stats={}))
     audit(db, principal.user, "search.created", "search", run.id, run.team_id,
-          {"candidates": len(targets), "target_count": data.target_count, "mode": data.mode, "deep_search": data.deep_search}, ip)
+          {"candidates": len(targets), "target_count": data.target_count, "mode": data.mode, "deep_search": data.deep_search,
+           "ats_platforms": list(data.filters.ats_platforms), "startup_focus": data.filters.startup_focus}, ip)
     return run, skipped
 
 

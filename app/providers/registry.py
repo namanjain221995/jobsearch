@@ -73,6 +73,30 @@ from . import boards as _boards  # noqa: E402
 
 SPECS.update(_boards.extra_specs())
 
+# Startup-focused ATS boards (Recruitee, Pinpoint, Rippling): anonymous career-site endpoints, one unit per employer board.
+# The findings on robots.txt and terms are in the docstring of providers/ats_startup.py.
+from . import ats_startup as _startup  # noqa: E402
+
+SPECS.update({s.name: s for s in [
+    Spec("recruitee", "Recruitee", "board", _startup.fetch_recruitee, keyed=True, min_ttl=3 * 3600,
+         needs=lambda s: bool(getattr(s, "recruitee_enabled", True)), note="Employer boards, official Careers Site API"),
+    Spec("pinpoint", "Pinpoint", "board", _startup.fetch_pinpoint, keyed=True, min_ttl=3 * 3600,
+         needs=lambda s: bool(getattr(s, "pinpoint_enabled", False)),
+         note="Employer boards, official job postings JSON feed (off by default: most tenants disallow robots)"),
+    Spec("rippling", "Rippling", "board", _startup.fetch_rippling, keyed=True, detail=_startup.detail_rippling, min_ttl=3 * 3600,
+         needs=lambda s: bool(getattr(s, "rippling_enabled", True)),
+         note="Employer boards, the job list of Rippling's hosted career pages (description read per posting)"),
+]})
+
+# Oracle Recruiting Cloud career sites: built and verified, but OFF unless BOARD_SOURCES_ORACLE=1, because Oracle documents
+# the endpoint as "only for Oracle internal use" (providers/ats_oracle.py, docs/ats-platforms.md).
+from . import ats_oracle as _oracle  # noqa: E402
+
+if _oracle.ENABLED:
+    SPECS["oracle"] = Spec("oracle", "Oracle Recruiting Cloud", "search", _oracle.fetch, keyed=True, detail=_oracle.detail,
+                           min_ttl=3 * 3600, max_queries=1, wait=20.0,
+                           note="Employer career sites on Oracle Recruiting Cloud, searched per employer site")
+
 # Not a posting source: it only finds employer boards and posting addresses, which are then read through the
 # sources above (see providers/searxng.py). Listed here so it appears with the other sources and can be switched off.
 async def _no_fetch(ctx: Ctx, key: str, scope: str) -> list[Job]:
@@ -91,7 +115,7 @@ SPECS["serpapi"] = Spec("serpapi", "Google Jobs (SerpApi)", "discovery", _no_fet
 SPECS["aws_web_search"] = Spec("aws_web_search", "Web search (AWS)", "discovery", _no_fetch, needs=lambda s: bool(s.aws_web_search_enabled),
                                note="AWS Bedrock AgentCore Web Search: finds employer postings on the ATS hosts above, verified against the "
                                     "employer's live feed; monthly allowance; result text is never stored")
-BOARD_LEAD_SOURCES = ("greenhouse", "lever", "ashby")      # AI leads on these are checked against the employer's full board
+BOARD_LEAD_SOURCES = ("greenhouse", "lever", "ashby", "recruitee", "pinpoint", "rippling")      # AI leads on these are checked against the employer's full board
 
 
 def enabled_specs(settings: Settings) -> dict[str, Spec]:

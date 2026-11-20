@@ -1,0 +1,83 @@
+{
+ "uuid": "96601a74-e7b6-469d-8c69-6fdfd1c83bc0",
+ "name": "Account Executive, Accountant Channel (East Coast)",
+ "description": {
+  "company": "<div><body><h2 style='font-family:\"Basel Grotesk\",Arial,sans-serif;line-height:1.6;font-size:15pt;font-weight:600;letter-spacing:0.5px;margin-top:18px;margin-bottom:4px;padding-left:0px;'><b><strong style=\"white-space:pre-wrap;\">About Rippling</strong></b> ...",
+  "role": "<div><body><h2 style='font-family:\"Basel Grotesk\",Arial,sans-serif;line-height:1.6;font-size:15pt;font-weight:600;letter-spacing:0.5px;margin-top:18px;margin-bottom:4px;padding-left:0px;'><b><strong style=\"white-space:pre-wrap;\">About the role</strong></b> ..."
+ },
+ "workLocations": [
+  "AL",
+  "FL",
+  "GA",
+  "SC",
+  "NC",
+  "VA",
+  "WV",
+  "PA",
+  "New York, NY",
+  "VT",
+  "NH",
+  "ME",
+  "MA",
+  "CT",
+  "RI",
+  "NJ",
+  "DE",
+  "MD",
+  "Washington, DC"
+ ],
+ "department": {
+  "name": "Accountant",
+  "base_department": "Sales",
+  "department_tree": [
+   "Sales",
+   "Channel Sales Account Executives",
+   "Accountant"
+  ]
+ },
+ "employmentType": {
+  "label": "SALARIED_FT",
+  "id": "Salaried, full-time"
+ },
+ "createdOn": "2026-08-12T12:08:39.818000-07:00",
+ "activeJobApplication": {
+  "additionalQuestions": null,
+  "basicQuestions": [
+   {
+    "oid": "first_name",
+    "fieldType": "SHORT_ANSWER",
+    "title": "First name",
+    "required": true
+   }
+  ]
+ },
+ "eeocQuestionnaireEnabled": true,
+ "eeocQuestionnaireEnabledForJobPost": true,
+ "url": "https://ats.rippling.com/rippling/jobs/96601a74-e7b6-469d-8c69-6fdfd1c83bc0",
+ "board": {
+  "boardType": "CUSTOM",
+  "slug": "rippling",
+  "logo": null,
+  "banner": null,
+  "title": "Current Openings",
+  "subtitle": null,
+  "boardURL": "http://www.rippling.com/careers/open-roles",
+  "fontType": null,
+  "linkColor": null,
+  "buttonColor": null,
+  "buttonTextColor": null,
+  "legalNotice": "<meta name=\"rteConfig\" content=\"{&quot;version&quot;:&quot;0.410.0&quot;,&quot;producedBy&quot;:&quot;block&quot;,&quot;themeName&quot;:&quot;berry&quot;}\"><p style=\"font-family:&quot;Basel Grotesk&quot;,Arial,sans-serif;font-size:11pt;font-weight:400;line-hei ...",
+  "noOpeningsMessage": null,
+  "groupJobsByLocation": false,
+  "showBoardLogoOnJobPost": false,
+  "showCompanyInfoUnderJobPost": false,
+  "companyName": "Rippling",
+  "isTest": false
+ },
+ "payRangeDetails": [],
+ "applicationConfirmationTemplate": "6348729c5a9a6e6df0bb6f64",
+ "hasAIEvaluationsEnabled": false,
+ "companyName": "Rippling",
+ "unlistedFromSearch": false,
+ "jsonLd": null
+}

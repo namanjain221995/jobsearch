@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     prewarm_on_start: bool = True            # read employer boards in the background when the server starts
     fetch_deadline_seconds: float = 45.0     # how long one search waits for sources before using what it has
     disabled_sources: str = ""               # comma-separated source names to switch off, e.g. "amazon,jobicy"
+    # Startup ATS board readers (providers/ats_startup.py has the robots.txt / terms findings behind each default).
+    recruitee_enabled: bool = True
+    pinpoint_enabled: bool = False           # OFF: most employer tenants answer robots.txt with `Disallow: /`
+    rippling_enabled: bool = True            # terms could not be read; robots.txt allows. Set false to switch off
+    rippling_pages: int = 20                 # list pages (100 rows each) read per Rippling board
 
     # Search budgets / stop conditions.
     max_boards_per_search: int = 1500
@@ -144,7 +149,7 @@ class Settings(BaseSettings):
     searxng_new_boards_per_search_max: int = 400     # hard ceiling: employer boards one search may add to the index
     searxng_page_leads_per_search: int = 40          # direct posting addresses (non-board hosts) passed to page verification
     searxng_sites: str = ("boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co,jobs.ashbyhq.com,apply.workable.com,"
-                          "myworkdayjobs.com,jobs.smartrecruiters.com")
+                          "myworkdayjobs.com,jobs.smartrecruiters.com,recruitee.com,ats.rippling.com,applytojob.com")   # add pinpointhq.com with PINPOINT_ENABLED
 
     # ---- Paid sources. Spent only after the free ones (index, SearXNG, company model) left a search short.
     # SerpApi, Google Jobs. The plan's monthly allowance is the binding limit: every call is counted per calendar month.

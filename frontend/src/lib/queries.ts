@@ -17,6 +17,7 @@ import {
 } from "@tanstack/react-query";
 
 import { api, apiFetch, type QueryParams } from "./api";
+import type { components } from "./api-types";
 import type {
   ActivityItem,
   AdminAnalytics,
@@ -141,6 +142,7 @@ export const qk = {
   audit: (params: object) => ["audit", params] as const,
   settings: ["settings"] as const,
   integrations: ["integrations"] as const,
+  atsHealth: ["integrations", "ats"] as const,
   health: ["health"] as const,
 };
 
@@ -940,6 +942,17 @@ export function useIntegrations() {
     queryKey: qk.integrations,
     queryFn: ({ signal }) => api.get<Integrations>("/api/integrations", undefined, signal),
     refetchInterval: 30_000,
+  });
+}
+
+/** GET /api/integrations/ats (Admin): the state of every applicant-tracking system and search provider. */
+export type AtsHealth = components["schemas"]["AtsHealthOut"];
+
+export function useAtsHealth() {
+  return useQuery({
+    queryKey: qk.atsHealth,
+    queryFn: ({ signal }) => api.get<AtsHealth>("/api/integrations/ats", undefined, signal),
+    refetchInterval: 60_000,
   });
 }
 

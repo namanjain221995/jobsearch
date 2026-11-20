@@ -1,0 +1,344 @@
+{
+ "offers": [
+  {
+   "postal_code": null,
+   "location_question_visible": false,
+   "requirements": null,
+   "category_code": "information_technology",
+   "position": 240,
+   "careers_apply_url": "https://namecheap.recruitee.com/o/sr-director-incubation-hub/c/new",
+   "max_hours_per_week": "40.0",
+   "min_hours_per_week": "30.0",
+   "published_at": "2026-11-20 08:29:18 UTC",
+   "options_cv": "required",
+   "created_at": "2026-11-20 08:15:36 UTC",
+   "options_title": "off",
+   "careers_url": "https://namecheap.recruitee.com/o/sr-director-incubation-hub",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": null,
+    "currency": null
+   },
+   "min_hours": 30,
+   "on_site": false,
+   "experience_code": "executive",
+   "max_hours": 40,
+   "sharing_image": null,
+   "close_at": null,
+   "translations": {
+    "en": {
+     "description": "<p><strong><span style=\"color:#C00000\">About Namecheap</span></strong></p><p><span style=\"color:#000000\">Namecheap is in the business of opening doors to online success. We make it easy for anyone to build a winning digital presence, with simple domain registr ...",
+     "title": "Sr. Director, Incubation Hub",
+     "highlight": "<p><strong>100% remote</strong> Sr. Director, Incubation Hub, turning new ideas into AI-native products for millions of customers and 35M+ domains. </p><p><strong>Eastern US/Central EU hours overlap</strong> required.</p><p style=\"min-height: 1.7em;\"></p>",
+     "sharing_image": null,
+     "requirements": null,
+     "sharing_title": "Sr. Director, Incubation Hub",
+     "sharing_description": "100% remote, Sr. Director, Incubation Hub, to turn new ideas into AI-native products for millions of customers and 35M+ domains. \nEastern US/Central EU hours overlap required.",
+     "locations_question": "What is your preferred work location?"
+    }
+   },
+   "tags": [
+    "Remote, Europe"
+   ],
+   "state_code": "11",
+   "locations_question": "What is your preferred work location?",
+   "country": "Portugal",
+   "options_phone": "off",
+   "title": "Sr. Director, Incubation Hub",
+   "updated_at": "2026-11-20 08:29:18 UTC",
+   "employment_type_code": "fulltime_permanent",
+   "description": "<p><strong><span style=\"color:#C00000\">About Namecheap</span></strong></p><p><span style=\"color:#000000\">Namecheap is in the business of opening doors to online success. We make it easy for anyone to build a winning digital presence, with simple domain registr ...",
+   "locations_question_required": true,
+   "department": "Product",
+   "remote": true,
+   "hybrid": false,
+   "options_cover_letter": "off",
+   "company_name": "Namecheap Inc",
+   "highlight": "<p><strong>100% remote</strong> Sr. Director, Incubation Hub, turning new ideas into AI-native products for millions of customers and 35M+ domains. </p><p><strong>Eastern US/Central EU hours overlap</strong> required.</p><p style=\"min-height: 1.7em;\"></p>",
+   "dynamic_fields": [],
+   "sharing_description": "100% remote, Sr. Director, Incubation Hub, to turn new ideas into AI-native products for millions of customers and 35M+ domains. \nEastern US/Central EU hours overlap required.",
+   "id": 2834802,
+   "locations_question_type": "multiple_choice",
+   "open_questions": [
+    {
+     "id": 4518675,
+     "position": 1,
+     "options": {},
+     "required": true,
+     "body": "Please provide the hyperlink to your LinkedIn profile",
+     "kind": "string",
+     "translations": {
+      "en": {
+       "body": "Please provide the hyperlink to your LinkedIn profile"
+      }
+     },
+     "open_question_options": []
+    }
+   ],
+   "city": "Lisbon",
+   "sharing_title": "Sr. Director, Incubation Hub",
+   "slug": "sr-director-incubation-hub",
+   "guid": "gao5h",
+   "status": "published",
+   "options_photo": "off",
+   "cover_image": {
+    "url": "https://careers.recruiteecdn.com/image/upload/ats-production/offers/2834802/offer_cover_image_c5gufty42osr.png"
+   },
+   "location": "Remote job",
+   "state_name": "Lisboa",
+   "locations": [
+    {
+     "id": 214016,
+     "name": "Portugal, wider Europe, and USA East Coast time zones",
+     "state": "Lisboa",
+     "country": "Portugal",
+     "city": "Lisbon",
+     "translations": {
+      "en": {
+       "name": "Portugal, wider Europe, and USA East Coast time zones",
+       "city": "Lisbon",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "PT",
+     "postal_code": null,
+     "state_code": "11",
+     "street": null,
+     "note": null
+    }
+   ],
+   "options_salutation": "off",
+   "country_code": "PT",
+   "education_code": "bachelor_degree"
+  },
+  {
+   "postal_code": null,
+   "location_question_visible": false,
+   "requirements": null,
+   "category_code": "accountancy",
+   "position": 237,
+   "careers_apply_url": "https://namecheap.recruitee.com/o/payment-administrator/c/new",
+   "max_hours_per_week": null,
+   "min_hours_per_week": null,
+   "published_at": "2026-11-06 10:40:33 UTC",
+   "options_cv": "required",
+   "created_at": "2026-11-03 10:34:52 UTC",
+   "options_title": "off",
+   "careers_url": "https://namecheap.recruitee.com/o/payment-administrator",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": null,
+    "currency": null
+   },
+   "min_hours": null,
+   "on_site": false,
+   "experience_code": "mid_level",
+   "max_hours": null,
+   "sharing_image": null,
+   "close_at": null,
+   "translations": {
+    "en": {
+     "description": "<p style=\"text-align:justify;\"><span style=\"color:#000000\">Namecheap, Inc. is looking for a detail-oriented, service-minded payroll and payments professional to manage payments for our small employee team and our network of about 130 independent contractors. T ...",
+     "title": "Payment Administrator",
+     "highlight": null,
+     "sharing_image": null,
+     "requirements": null,
+     "sharing_title": "Payment Administrator",
+     "sharing_description": "Namecheap, Inc. is looking for a detail-oriented, service-minded payroll and payments professional to manage payments for our small employee team and our network of about 130 independent contractors. ",
+     "locations_question": "What is your preferred work location?"
+    }
+   },
+   "tags": [],
+   "state_code": "FL",
+   "locations_question": "What is your preferred work location?",
+   "country": "United States",
+   "options_phone": "required",
+   "title": "Payment Administrator",
+   "updated_at": "2026-11-09 11:26:40 UTC",
+   "employment_type_code": "parttime_fixed_term",
+   "description": "<p style=\"text-align:justify;\"><span style=\"color:#000000\">Namecheap, Inc. is looking for a detail-oriented, service-minded payroll and payments professional to manage payments for our small employee team and our network of about 130 independent contractors. T ...",
+   "locations_question_required": true,
+   "department": "Finance",
+   "remote": true,
+   "hybrid": false,
+   "options_cover_letter": "optional",
+   "company_name": "Namecheap Inc",
+   "highlight": null,
+   "dynamic_fields": [],
+   "sharing_description": "Namecheap, Inc. is looking for a detail-oriented, service-minded payroll and payments professional to manage payments for our small employee team and our network of about 130 independent contractors. ",
+   "id": 2812453,
+   "locations_question_type": "multiple_choice",
+   "open_questions": [
+    {
+     "id": 4488503,
+     "position": 1,
+     "options": {},
+     "required": true,
+     "body": "Your location: Country / State / City format ",
+     "kind": "string",
+     "translations": {
+      "en": {
+       "body": "Your location: Country / State / City format "
+      }
+     },
+     "open_question_options": []
+    }
+   ],
+   "city": "Florida",
+   "sharing_title": "Payment Administrator",
+   "slug": "payment-administrator",
+   "guid": "gba9k",
+   "status": "published",
+   "options_photo": "off",
+   "cover_image": {
+    "url": "https://careers.recruiteecdn.com/image/upload/ats-production/offers/2812453/offer_cover_image_cnn4vcrftcvw.png"
+   },
+   "location": "Remote job",
+   "state_name": "Florida",
+   "locations": [
+    {
+     "id": 307377,
+     "name": "USA (EST/CST)",
+     "state": "Florida",
+     "country": "United States",
+     "city": "Florida",
+     "translations": {
+      "en": {
+       "name": "USA (EST/CST)",
+       "city": "Florida",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "US",
+     "postal_code": null,
+     "state_code": "FL",
+     "street": null,
+     "note": null
+    }
+   ],
+   "options_salutation": "off",
+   "country_code": "US",
+   "education_code": "bachelor_degree"
+  },
+  {
+   "postal_code": null,
+   "location_question_visible": false,
+   "requirements": null,
+   "category_code": "finance",
+   "position": 232,
+   "careers_apply_url": "https://namecheap.recruitee.com/o/financial-controller-3/c/new",
+   "max_hours_per_week": null,
+   "min_hours_per_week": null,
+   "published_at": "2026-10-08 08:41:31 UTC",
+   "options_cv": "required",
+   "created_at": "2026-10-08 08:39:21 UTC",
+   "options_title": "off",
+   "careers_url": "https://namecheap.recruitee.com/o/financial-controller-3",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": "year",
+    "currency": "USD"
+   },
+   "min_hours": null,
+   "on_site": false,
+   "experience_code": "senior_manager",
+   "max_hours": null,
+   "sharing_image": null,
+   "close_at": null,
+   "translations": {
+    "en": {
+     "description": "<p style=\"text-align:start;\">Namecheap is in the business of opening doors to online success. We make it easy for anyone to build a winning web presence — with simple domain registration, affordable hosting, trusted security and privacy products, and an award- ...",
+     "title": "Financial Controller",
+     "highlight": "<p><strong>100% remote</strong> Financial Controller modernizing systems, strengthening US GAAP rigor, and reporting to the CFO. Working hours: <strong>overlap between US Eastern Time and EU business hours.</strong></p><p style=\"min-height: 1.7em;\"></p> ...",
+     "sharing_image": null,
+     "requirements": null,
+     "sharing_title": "Financial Controller (Director) Tech Industry",
+     "sharing_description": "Now, as we enter an ambitious new stage of growth, we're looking for a Financial Controller to own the integrity of our financial reporting and transform how it's produced. This is a hands-on build-an",
+     "locations_question": "What is your preferred work location?"
+    }
+   },
+   "tags": [
+    "Remote, USA"
+   ],
+   "state_code": "11",
+   "locations_question": "What is your preferred work location?",
+   "country": "Portugal",
+   "options_phone": "off",
+   "title": "Financial Controller",
+   "updated_at": "2026-11-05 13:05:17 UTC",
+   "employment_type_code": "fulltime_permanent",
+   "description": "<p style=\"text-align:start;\">Namecheap is in the business of opening doors to online success. We make it easy for anyone to build a winning web presence — with simple domain registration, affordable hosting, trusted security and privacy products, and an award- ...",
+   "locations_question_required": true,
+   "department": "Finance",
+   "remote": true,
+   "hybrid": false,
+   "options_cover_letter": "off",
+   "company_name": "Namecheap Inc",
+   "highlight": "<p><strong>100% remote</strong> Financial Controller modernizing systems, strengthening US GAAP rigor, and reporting to the CFO. Working hours: <strong>overlap between US Eastern Time and EU business hours.</strong></p><p style=\"min-height: 1.7em;\"></p> ...",
+   "dynamic_fields": [],
+   "sharing_description": "Now, as we enter an ambitious new stage of growth, we're looking for a Financial Controller to own the integrity of our financial reporting and transform how it's produced. This is a hands-on build-an",
+   "id": 2775899,
+   "locations_question_type": "multiple_choice",
+   "open_questions": [
+    {
+     "id": 4422630,
+     "position": 1,
+     "options": {},
+     "required": true,
+     "body": "Please share the hyperlink to your LinkedIn profile",
+     "kind": "string",
+     "translations": {
+      "en": {
+       "body": "Please share the hyperlink to your LinkedIn profile"
+      }
+     },
+     "open_question_options": []
+    }
+   ],
+   "city": "Lisbon",
+   "sharing_title": "Financial Controller (Director) Tech Industry",
+   "slug": "financial-controller-3",
+   "guid": "696ok",
+   "status": "published",
+   "options_photo": "off",
+   "cover_image": {
+    "url": "https://careers.recruiteecdn.com/image/upload/ats-production/offers/2775899/offer_cover_image_t1cbbsg41463.png"
+   },
+   "location": "Remote job",
+   "state_name": "Lisboa",
+   "locations": [
+    {
+     "id": 214016,
+     "name": "Portugal, wider Europe, and USA East Coast time zones",
+     "state": "Lisboa",
+     "country": "Portugal",
+     "city": "Lisbon",
+     "translations": {
+      "en": {
+       "name": "Portugal, wider Europe, and USA East Coast time zones",
+       "city": "Lisbon",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "PT",
+     "postal_code": null,
+     "state_code": "11",
+     "street": null,
+     "note": null
+    }
+   ],
+   "options_salutation": "off",
+   "country_code": "PT",
+   "education_code": "bachelor_degree"
+  }
+ ]
+}

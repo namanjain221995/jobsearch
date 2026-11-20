@@ -19,12 +19,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from .providers import ats_extra
+from .providers import ats_extra, ats_startup
 from .providers.boards import SEED_BOARDS, WORKDAY_SITES
 
 log = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).parent / "data" / "boards"
-CATALOG_ATS = ("greenhouse", "lever", "ashby", "workable", "workday", "smartrecruiters", "bamboohr")
+CATALOG_ATS = ("greenhouse", "lever", "ashby", "workable", "workday", "smartrecruiters", "bamboohr",
+               "recruitee", "pinpoint", "rippling")
 SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json"
 
 
@@ -36,7 +37,8 @@ def _env_int(name: str, default: int) -> int:
 
 
 # Settings (to be moved into app/config.py). Boards read per minute per ATS by the trickle; 0 switches an ATS off.
-DEFAULT_PER_MINUTE = {"greenhouse": 20, "lever": 8, "ashby": 8, "workable": 4, "workday": 2, "smartrecruiters": 4, "bamboohr": 6}
+DEFAULT_PER_MINUTE = {"greenhouse": 20, "lever": 8, "ashby": 8, "workable": 4, "workday": 2, "smartrecruiters": 4, "bamboohr": 6,
+                      "recruitee": 6, "pinpoint": 6, "rippling": 4}
 PER_MINUTE = {ats: _env_int(f"BOARD_CATALOG_PER_MINUTE_{ats.upper()}", n) for ats, n in DEFAULT_PER_MINUTE.items()}
 TRICKLE_ENABLED = os.environ.get("BOARD_CATALOG_TRICKLE", "1").strip().lower() not in ("0", "false", "no", "off")
 RECHECK_DAYS = _env_int("BOARD_CATALOG_RECHECK_DAYS", 7)
@@ -70,6 +72,18 @@ def normalize(ats: str, slug: str, url: str = "") -> str | None:
     if ats in ("greenhouse", "lever", "ashby", "workable"):
         slug = slug.lower()
         return slug if _SIMPLE.fullmatch(slug) and ".." not in slug else None
+    if ats in ats_startup.SLUGS:
+        # Recruitee / Pinpoint: the career-site subdomain; Rippling: the board slug. When the row has an address it must
+        # be that board's own address on the vendor's host (rows on an employer's own domain cannot be read by slug).
+        slug = slug.lower()
+        if not ats_startup.valid_key(ats, slug):
+            return None
+        if (url or "").strip():
+            from .job_normalizer import parse_ats
+            parsed = parse_ats(url)
+            if not parsed or parsed[:2] != (ats, slug) or not url.strip().startswith("https://"):
+                return None
+        return slug
     return None
 
 
@@ -122,7 +136,7 @@ def simplify_keys(listings) -> dict[str, list[str]]:
         url = str(item.get("url") or "")
         parsed = parse_ats(url)
         key = None
-        if parsed and parsed[0] in ("greenhouse", "lever", "ashby", "workable") and parsed[1]:
+        if parsed and parsed[0] in ("greenhouse", "lever", "ashby", "workable", *ats_startup.SLUGS) and parsed[1]:
             ats, key = parsed[0], normalize(parsed[0], parsed[1])
         elif parsed and parsed[0] == "workday":
             ats, key = "workday", normalize("workday", "", url)

@@ -10,10 +10,11 @@ from ...config import Settings
 from ...providers import registry
 from ..deps import Principal, admin_only, any_user, client_ip, get_db, get_settings, member_in_scope
 from ..models import AuditLog, Notification
-from ..schemas import (Day, GoLiveIn, GoLiveOut, AdminAnalytics, AuditOut, HealthOut, IntegrationsOut, MemberAnalytics, Message, NotificationOut, Page,
+from ..schemas import (AtsHealthOut, Day, GoLiveIn, GoLiveOut, AdminAnalytics, AuditOut, HealthOut, IntegrationsOut, MemberAnalytics, Message, NotificationOut, Page,
                        SettingsOut, SettingsUpdate)
 from ..security import utcnow
 from ..services import analytics
+from ..services import ats_health
 from ..services import settings as settings_service
 from ..services import web_search as web_search_service
 from ..services.audit import audit
@@ -161,6 +162,16 @@ async def integrations(request: Request, principal: Principal = Depends(admin_on
         email={"backend": request.app.state.emailer.backend, "from": settings.smtp_from if settings.smtp_configured else ""},
         queue={"redis": await queue.ping()}, salesforce=await salesforce_router.status_out(request, db, settings),
         aws_web_search=await web_search_service.status(settings, getattr(request.app.state, "aws_search", None)))
+
+
+@router.get("/integrations/ats", response_model=AtsHealthOut)
+async def ats_integrations(request: Request, principal: Principal = Depends(admin_only), db: AsyncSession = Depends(get_db),
+                           settings: Settings = Depends(get_settings)):
+    """The operational state of every applicant-tracking system and search provider, computed from what the job
+    index really holds (services/ats_health.py). Read-only; the index evidence is kept for a minute."""
+    portal = await settings_service.load(db, settings)
+    aws = await web_search_service.status(settings, getattr(request.app.state, "aws_search", None))
+    return await ats_health.report(db, settings, set(portal.disabled_sources), aws, request.app.state)
 
 
 @router.get("/health", response_model=HealthOut)

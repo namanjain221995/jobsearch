@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { assignResultText } from "@/components/jobs/assignment-dialog";
 import { JobDrawer } from "@/components/jobs/job-manager";
 import { JobFactLine, MatchScore } from "@/components/jobs/job-meta";
+import { RunOrigins } from "@/components/search/search-origins";
 import { useSearchProgress } from "@/components/search/search-progress";
 import {
   MODE_SHORT,
@@ -410,6 +411,12 @@ export function SearchDetailView({ searchId }: { searchId: string }) {
             </Panel>
           </div>
         </div>
+        <Panel
+          title="Where the jobs came from"
+          description="Counts of this search per platform and per search engine or AI provider. Nothing here is estimated."
+        >
+          <RunOrigins key={run.id} run={run} />
+        </Panel>
         <SearchResults key={run.id} run={run} />
       </div>
 

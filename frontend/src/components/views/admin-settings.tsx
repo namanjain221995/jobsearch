@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountPanels } from "@/components/views/account-settings";
+import { AtsHealthPanels } from "@/components/views/ats-health";
 import { ApiError, errorMessage } from "@/lib/api";
 import { formatDateTime, humanize } from "@/lib/format";
 import {
@@ -819,6 +820,7 @@ const TAB_DEFAULTS = { tab: "portal" };
 const TABS = [
   { value: "portal", label: "Portal" },
   { value: "integrations", label: "Integrations" },
+  { value: "ats", label: "ATS Platforms" },
   { value: "account", label: "My Account" },
 ];
 
@@ -926,6 +928,9 @@ export function AdminSettingsView() {
           ) : (
             <IntegrationsPanels data={integrations.data} settings={settings.data} />
           )}
+        </TabsContent>
+        <TabsContent value="ats">
+          <AtsHealthPanels onOpenIntegrations={() => setState({ tab: "integrations" })} />
         </TabsContent>
         <TabsContent value="account">
           <AccountPanels />

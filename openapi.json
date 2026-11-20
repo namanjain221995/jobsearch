@@ -1114,6 +1114,153 @@
     "title": "AssignmentStats",
     "type": "object"
    },
+   "AtsHealthOut": {
+    "properties": {
+     "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+     },
+     "platforms": {
+      "items": {
+       "$ref": "#/components/schemas/AtsPlatformHealth"
+      },
+      "title": "Platforms",
+      "type": "array"
+     },
+     "providers": {
+      "items": {
+       "$ref": "#/components/schemas/ProviderHealth"
+      },
+      "title": "Providers",
+      "type": "array"
+     },
+     "window_days": {
+      "title": "Window Days",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "generated_at",
+     "window_days",
+     "platforms",
+     "providers"
+    ],
+    "title": "AtsHealthOut",
+    "type": "object"
+   },
+   "AtsPlatformHealth": {
+    "description": "One applicant-tracking system on GET /api/integrations/ats. `state` is computed from the evidence next to it\n(services/ats_health.py); a platform is `verified_working` only after a read that brought postings.",
+    "properties": {
+     "access": {
+      "title": "Access",
+      "type": "string"
+     },
+     "access_note": {
+      "title": "Access Note",
+      "type": "string"
+     },
+     "boards_failed": {
+      "default": 0,
+      "title": "Boards Failed",
+      "type": "integer"
+     },
+     "boards_known": {
+      "default": 0,
+      "title": "Boards Known",
+      "type": "integer"
+     },
+     "boards_read_ok": {
+      "default": 0,
+      "title": "Boards Read Ok",
+      "type": "integer"
+     },
+     "docs": {
+      "default": "",
+      "title": "Docs",
+      "type": "string"
+     },
+     "hosts": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Hosts",
+      "type": "array"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "last_success_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Success At"
+     },
+     "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+     },
+     "open_postings": {
+      "default": 0,
+      "title": "Open Postings",
+      "type": "integer"
+     },
+     "reader": {
+      "default": "",
+      "title": "Reader",
+      "type": "string"
+     },
+     "reader_enabled": {
+      "default": false,
+      "title": "Reader Enabled",
+      "type": "boolean"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "startup": {
+      "title": "Startup",
+      "type": "boolean"
+     },
+     "state": {
+      "enum": [
+       "verified_working",
+       "configured_unverified",
+       "requires_credentials",
+       "public_discovery_only",
+       "temporarily_unavailable",
+       "unsupported"
+      ],
+      "title": "State",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "startup",
+     "access",
+     "access_note",
+     "hosts",
+     "state",
+     "reason"
+    ],
+    "title": "AtsPlatformHealth",
+    "type": "object"
+   },
    "AuditOut": {
     "properties": {
      "action": {
@@ -6553,6 +6700,82 @@
     "title": "ProfileOut",
     "type": "object"
    },
+   "ProviderHealth": {
+    "description": "One search provider. Never \"working\": only whether it is set up and switched on, plus usage where it is counted.",
+    "properties": {
+     "detail": {
+      "default": "",
+      "title": "Detail",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "ai",
+       "web_search",
+       "catalogue"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "limit": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Limit"
+     },
+     "month": {
+      "default": "",
+      "title": "Month",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "state": {
+      "enum": [
+       "configured",
+       "not_configured",
+       "switched_off"
+      ],
+      "title": "State",
+      "type": "string"
+     },
+     "used": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Used"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "kind",
+     "state",
+     "reason"
+    ],
+    "title": "ProviderHealth",
+    "type": "object"
+   },
    "QueueDelegate": {
     "properties": {
      "job_ids": {
@@ -7093,7 +7316,10 @@
      },
      "filters": {
       "$ref": "#/components/schemas/SearchFilters",
-      "default": {}
+      "default": {
+       "ats_platforms": [],
+       "startup_focus": false
+      }
      },
      "min_match_score": {
       "anyOf": [
@@ -7163,6 +7389,15 @@
    "SearchFilters": {
     "description": "Shared overrides for one run. A field left out (null) means: use each candidate's own saved value.",
     "properties": {
+     "ats_platforms": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Ats Platforms",
+      "type": "array"
+     },
      "exclude_citizenship_required": {
       "anyOf": [
        {
@@ -7246,6 +7481,11 @@
       ],
       "title": "Sponsorship Needed"
      },
+     "startup_focus": {
+      "default": false,
+      "title": "Startup Focus",
+      "type": "boolean"
+     },
      "work_authorization": {
       "anyOf": [
        {
@@ -7316,6 +7556,14 @@
      "limits": {
       "$ref": "#/components/schemas/UiSettings"
      },
+     "platforms": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/SearchPlatformOption"
+      },
+      "title": "Platforms",
+      "type": "array"
+     },
      "queue_available": {
       "title": "Queue Available",
       "type": "boolean"
@@ -7345,6 +7593,54 @@
      "queue_available"
     ],
     "title": "SearchOptions",
+    "type": "object"
+   },
+   "SearchPlatformOption": {
+    "properties": {
+     "access": {
+      "default": "",
+      "title": "Access",
+      "type": "string"
+     },
+     "coverage": {
+      "default": "full",
+      "title": "Coverage",
+      "type": "string"
+     },
+     "hint": {
+      "default": "",
+      "title": "Hint",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "reader": {
+      "default": "",
+      "title": "Reader",
+      "type": "string"
+     },
+     "reader_enabled": {
+      "default": false,
+      "title": "Reader Enabled",
+      "type": "boolean"
+     },
+     "startup": {
+      "default": false,
+      "title": "Startup",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "SearchPlatformOption",
     "type": "object"
    },
    "SearchResultOut": {
@@ -12045,6 +12341,28 @@
      }
     },
     "summary": "Integrations",
+    "tags": [
+     "admin"
+    ]
+   }
+  },
+  "/api/integrations/ats": {
+   "get": {
+    "description": "The operational state of every applicant-tracking system and search provider, computed from what the job\nindex really holds (services/ats_health.py). Read-only; the index evidence is kept for a minute.",
+    "operationId": "ats_integrations_api_integrations_ats_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AtsHealthOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Ats Integrations",
     "tags": [
      "admin"
     ]

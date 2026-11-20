@@ -25,6 +25,18 @@ class SearchRequest(BaseModel):
     work_mode: WorkMode = "All"
     deep_search: bool = True      # include AI web search + browser crawl (slower, wider coverage)
     locations: list[str] = Field(default_factory=list, max_length=30)   # preferred states: only steer discovery queries, never filter here
+    ats_platforms: list[str] = Field(default_factory=list, max_length=40)   # platform ids of app/ats_platforms.py; empty = all platforms and sources
+    startup_focus: bool = False   # startup platforms first and with the larger share of the budgets; a tie-break in ranking, never a score change
+
+    @field_validator("ats_platforms")
+    @classmethod
+    def _platforms(cls, v: list[str]) -> list[str]:
+        from . import ats_platforms
+        out = list(dict.fromkeys(str(i).strip().lower() for i in v))
+        unknown = [i for i in out if i not in ats_platforms.PLATFORMS]
+        if unknown:
+            raise ValueError(f"Unknown ATS platform: {', '.join(unknown)}")
+        return out
 
     @field_validator("job_titles")
     @classmethod

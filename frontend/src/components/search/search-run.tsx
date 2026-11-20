@@ -281,6 +281,8 @@ const FILTER_LABELS: Record<string, string> = {
   preferred_states: "Preferred states",
   remote_only: "Remote only",
   excluded_companies: "Companies left out",
+  ats_platforms: "ATS platforms",
+  startup_focus: "Startup focus",
 };
 
 function filterValue(value: unknown): string {
@@ -292,7 +294,16 @@ function filterValue(value: unknown): string {
 
 /** The settings a search ran with. An override the launcher left empty used each candidate's saved value. */
 export function RunSettings({ run }: { run: SearchRun }) {
-  const overrides = Object.entries(run.filters as Record<string, unknown>).filter(([, value]) => value !== null && value !== undefined);
+  // Where to search is a setting of the run, not an override of a candidate's profile: shown on its own lines.
+  const { ats_platforms: platformIds, startup_focus: startupFocus, ...rest } = run.filters as Record<string, unknown>;
+  const overrides = Object.entries(rest).filter(([, value]) => value !== null && value !== undefined);
+  const chosen = Array.isArray(platformIds) ? platformIds.filter((id): id is string => typeof id === "string") : [];
+  // The run stores platform ids; the names come with each candidate's statistics once that search has started.
+  const names = new Map<string, string>();
+  for (const target of run.targets) {
+    const rows = (target.discovery as { platforms?: Record<string, { label?: string }> }).platforms ?? {};
+    for (const [id, row] of Object.entries(rows)) if (row.label) names.set(id, row.label);
+  }
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 text-sm">
       <dt className="text-muted-foreground">Mode</dt>
@@ -303,6 +314,10 @@ export function RunSettings({ run }: { run: SearchRun }) {
       <dd className="tabular-nums">{run.min_match_score}</dd>
       <dt className="text-muted-foreground">Deep search</dt>
       <dd>{run.deep_search ? "On" : "Off"}</dd>
+      <dt className="text-muted-foreground">{FILTER_LABELS.ats_platforms}</dt>
+      <dd className="break-words">{chosen.length === 0 ? "All platforms" : chosen.map((id) => names.get(id) ?? humanize(id)).join(", ")}</dd>
+      <dt className="text-muted-foreground">{FILTER_LABELS.startup_focus}</dt>
+      <dd>{startupFocus === true ? "On" : "Off"}</dd>
       {run.attempts > 1 && (
         <>
           <dt className="text-muted-foreground">Attempts</dt>

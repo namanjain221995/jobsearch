@@ -15,6 +15,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ..ats_platforms import PLATFORMS
 from ..config import Settings
 from ..job_normalizer import US_STATES, norm_company
 from ..schemas import Job as EngineJob
@@ -63,7 +64,10 @@ DISCOVERY_KEYS = ("title_variants", "searx_queries", "searx_cached", "searx_resu
                   "new_board_postings", "gained_by_source", "ai_leads", "ai_ranked", "company_model_scored",
                   "company_model_explained", "ai_calls", "rounds", "stop_reason", "serp_calls", "serp_cached", "serp_jobs",
                   "serp_listed", "serp_skipped", "tiny_searches", "tiny_fetches", "tiny_usd", "tiny_skipped",
-                  "aws_budget", "aws_queries", "aws_results", "aws_duplicates", "aws_generic", "aws_leads", "aws_skipped")
+                  "aws_budget", "aws_queries", "aws_results", "aws_duplicates", "aws_generic", "aws_leads", "aws_skipped",
+                  # where the jobs came from (app/search_scope.py); counts and fixed sentences only
+                  "platform_filter", "startup_focus", "filtered_out", "platforms", "providers", "coverage_warnings",
+                  "seconds_to_first_verified", "total_seconds")
 
 
 def discovery_of(state: SearchState) -> dict:
@@ -197,6 +201,13 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
             needs_buffer = bool(filters.get("excluded_companies") or filters.get("preferred_states"))
             want = min(deps.settings.result_cap, target_count * 2 if needs_buffer else target_count)
             try:
+                # A platform id stored with an older search may have left the registry since: it is not searched.
+                # If none of the stored ids is known any more the search fails instead of silently covering everything.
+                stored = [str(p) for p in (filters.get("ats_platforms") or [])]
+                platforms = [p for p in stored if p in PLATFORMS]
+                if stored and not platforms:
+                    entry.update(status="failed", message="The ATS platforms chosen for this search are no longer available")
+                    return
                 request = SearchRequest(
                     resume_id="portal-candidate-search", job_titles=", ".join(filters.get("job_titles") or []),
                     years_experience=min(40.0, float(filters.get("years_experience") or 0)),
@@ -204,7 +215,8 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
                     sponsorship_needed=filters.get("sponsorship_needed") or "Unknown",
                     exclude_citizenship_required=bool(filters.get("exclude_citizenship_required")),
                     result_count=want, work_mode=filters.get("work_mode") or "All", deep_search=deep,
-                    locations=[str(s)[:60] for s in (filters.get("preferred_states") or [])][:30])
+                    locations=[str(s)[:60] for s in (filters.get("preferred_states") or [])][:30],
+                    ats_platforms=platforms, startup_focus=bool(filters.get("startup_focus")))
                 state = SearchState(f"{run_id}:{mid}", want)
                 states[mid] = state
                 await deps.engine.run(state, request, resumes.get(target.candidate_id) or synthetic_resume(filters, candidate))
