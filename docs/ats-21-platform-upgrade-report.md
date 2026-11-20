@@ -133,7 +133,7 @@ Notes: in search 2, two matched postings (one Recruitee) were not assigned; the 
 sources could not be opened within the time limit. All 32 assigned postings carry verification status "verified".
 The 6 Workable jobs have no separate apply address stored; their posting address is the application page.
 
-Production run (after deployment): see section 13.
+Production run after deployment: section 13.
 
 ## 9. Search performance before and after
 
@@ -176,7 +176,51 @@ Migrations: none.
 
 ## 13. Git commit and deployment status
 
-See the end of this file; it is filled in after the release.
+- Commit `a336188` on `main`, released through the pipeline on 2026-11-20 (UTC): backend tests, web app lint / types /
+  build, image build and release on the server all succeeded. Health after the release: database, Redis and worker
+  online, HTTP 200.
+- Catalogue lists imported on the server: 2,956 Recruitee and 2,660 Rippling boards.
+
+### Platform states on production (read from the health service after the release)
+
+| State | Platforms |
+| --- | --- |
+| Verified working | Greenhouse (6,629 boards read, 209,099 postings), Lever (1,772; 63,770), Ashby (3,707; 64,575), Workday (22; 61), Recruitee (30; 715), Rippling (18; 221) |
+| Configured, not verified yet | Workable: no successful read is recorded in the last 7 days on the server (it did contribute 81 verified jobs in the local run) |
+| Public pages only | Jobvite, Oracle Recruiting Cloud, JazzHR, Avature, ADP Workforce Now |
+| Needs employer credentials | Bullhorn, CEIPAL, JobDiva, SmartSearch |
+| Not supported (vendor forbids it, or reader off) | iCIMS, SmartRecruiters, SAP SuccessFactors, BambooHR, Pinpoint |
+
+Recruitee and Rippling are read progressively: 30 and 18 of their boards had been read when this was written.
+
+### Search on production
+
+The complete portal workflow could not be repeated on production: the owner had used "Switch to Real Data", so
+there were no teams, candidates or test logins left, and none were created. Instead one real search ran on the
+server's engine with a synthetic resume ("Data Engineer", 25 requested). It writes no teams, candidates or
+assignments. Assignment and member visibility are covered by the two local runs in section 8.
+
+| Measure | Value |
+| --- | --- |
+| Discovered | 178,115 |
+| Verified, US, open | 859 |
+| Rejected: not relevant / not US | 175,911 / 1,175 |
+| Matched (requested 25) | 25, scores 83 to 95, all with an https posting address |
+| By platform | Greenhouse 21, Lever 3, Ashby 1 |
+| Time to first verified results | 22 s |
+| Total time | 322 s (about 255 s of it in ranking) |
+| Employer boards checked | 1,612 |
+| AWS web search | 1 query of a budget of 4, 20 results, 17 leads, 1 verified posting |
+| SearXNG | 3 queries, 120 results, 101 leads, 40 verified postings |
+| TechSara web search | 3 queries, 13 results, 4 leads |
+| OpenAI | 12 calls, 3 web searches: 26 leads, 19 verified, 4 of the 25 matches |
+| Claude | 2 calls, 5 web searches: 38 leads, 2 verified |
+| TechSara model | 108 calls (rerank of 804 jobs, 400 explanations) |
+| SerpApi, TinyFish | 0 calls: the target was reached before paid sources were needed |
+| Errors, unavailable providers | none |
+
+Against the production search of 2026-11-18 (50 requested, 6 min 8 s): this run asked for 25 and took 5 min 22 s, so
+total time is not better; ranking dominates both. First verified results after 22 s is the improvement a user sees.
 
 ## 14. Production-readiness verdict
 
