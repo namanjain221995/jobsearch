@@ -48,6 +48,7 @@ from .providers.aws_web_search import AWS, AwsWebSearch, AwsWebSearchError, empl
 from .providers.paid import (GOOGLE_JOBS, TINYFISH, SerpApiClient, TinyFishClient, aggregator_hosts, serp_item)
 from .providers.registry import BOARD_LEAD_SOURCES, SPECS, Unit
 from .providers.searxng import SearxClient, build_queries, extract, site_hosts, valid_board
+from .providers.techsara_provider import TechsaraProvider
 from .resume_parser import heuristic_profile
 from .schemas import Candidate, Job, Profile, SearchRequest
 from .search_plan import Plan, cached_variants, clean_variants, discovery_locations, plan_for, store_variants
@@ -63,6 +64,7 @@ PACED_WAIT_SECONDS, DETAIL_WAIT_SECONDS = 25.0, 20.0            # deep search
 FAST_PACED_WAIT_SECONDS, FAST_DETAIL_WAIT_SECONDS = 2.0, 6.0   # fast search
 AI_PROVIDERS = {"OpenAI", "Claude"}          # only a lead a model named gets the relevance floor; a search-engine hit does not
 SEARX = "SearXNG"
+TECHSARA_WEB = "TechSara web search"
 WORKDAY_NEW_TENANTS_PER_ROUND = 6           # Workday is paced (one request every 1.5 s): few new tenants are queried while a search waits
 REJECT_KEYS = ("rejected_not_relevant", "rejected_non_us", "rejected_work_mode", "rejected_eligibility")
 
@@ -82,7 +84,8 @@ def new_stats(requested: int) -> dict:
             "browser_pages": 0, "crawled_links": 0, "ai_extracted": 0, "detail_fetches": 0,
             # wider searches
             "round": 1, "rounds": [], "stop_reason": "", "title_variants": 0, "searx_queries": 0, "searx_cached": 0,
-            "searx_results": 0, "searx_failed": 0, "searx_leads": 0, "new_boards": 0, "new_board_postings": 0,
+            "searx_results": 0, "searx_failed": 0, "searx_leads": 0, "tsweb_searches": 0, "tsweb_results": 0, "tsweb_failed": 0,
+            "tsweb_leads": 0, "new_boards": 0, "new_board_postings": 0,
             "gained_by_source": {}, "company_model_scored": 0, "company_model_explained": 0, "ai_calls": 0,
             # paid sources
             "serp_calls": 0, "serp_cached": 0, "serp_jobs": 0, "serp_listed": 0, "serp_skipped": "",
@@ -189,6 +192,9 @@ class SearchEngine:
         self.verifier = PageVerifier(self.client, browser=self.browser)
         self.searx = SearxClient(settings.searxng_url, self.client, self.index, settings.searxng_timeout_seconds,
                                  settings.searxng_min_interval_seconds, settings.searxng_cache_hours)
+        self.tsweb = (TechsaraProvider(settings.techsara_api_key, settings.techsara_base_url, settings.techsara_model,
+                                       settings.techsara_rerank_model, client=self.client)
+                      if settings.techsara_configured and settings.techsara_web_search_enabled else None)
         self._unit_counts: dict[Unit, int] = {}      # postings of units read by this process (statistics of new boards)
         self.serpapi = SerpApiClient(settings.serpapi_api_key, self.client, self.index, settings.serpapi_monthly_limit,
                                      settings.serpapi_monthly_reserve, settings.serpapi_cache_hours, settings.serpapi_account_check_seconds)
@@ -251,6 +257,15 @@ class SearchEngine:
     @property
     def searx_on(self) -> bool:
         return self.searx.enabled and "searxng" in self.specs
+
+    @property
+    def tsweb_on(self) -> bool:
+        return self.tsweb is not None and "techsara_web" in self.specs
+
+    @property
+    def engines_on(self) -> bool:
+        """Whether any engine that takes the `site:` queries of a search is available."""
+        return self.searx_on or self.tsweb_on
 
     @property
     def serp_on(self) -> bool:
@@ -547,7 +562,7 @@ class SearchEngine:
             parsed = parse_ats(lead.url)
             src = parsed[0] if parsed else ""
             board, job_id = (parsed[1], parsed[2]) if parsed else ("", "")
-            origin = {SEARX: "searxng", TINYFISH: "tinyfish", GOOGLE_JOBS: "serpapi", AWS: "aws_web_search"}.get(lead.provider, "ai")
+            origin = {SEARX: "searxng", TECHSARA_WEB: "techsara_web", TINYFISH: "tinyfish", GOOGLE_JOBS: "serpapi", AWS: "aws_web_search"}.get(lead.provider, "ai")
             if origin != "ai" and parsed and not (board and valid_board(src, board)):
                 stats["rejected_unverified"] += 1          # an address from a search engine is used only when well formed
                 continue
@@ -812,11 +827,56 @@ class SearchEngine:
         Only addresses are used. A board address or a posting address on a board ATS becomes a lead that the
         normal lead check resolves: the board is registered and read through its API. Never raises."""
         stats, plan = state.stats, state.plan
-        if not queries or not self.searx_on or getattr(state, "searx_down", False):
+        if not queries:
             return []
         hosts = site_hosts(self.settings.searxng_sites)
         ctx = await self._hit_context(state)
         out: dict[str, Candidate] = {}
+        model_task = asyncio.create_task(self._tsweb_round(state, queries, hosts, ctx)) if self.tsweb_on else None
+        try:
+            await self._searx_queries(state, queries, hosts, ctx, out)
+        finally:
+            if model_task is not None:
+                for url, lead in (await model_task).items():
+                    out.setdefault(url, lead)
+        stats["searx_leads"] += len(out)
+        return list(out.values())
+
+    async def _tsweb_round(self, state: SearchState, queries: list[str], hosts: list[str], ctx: tuple) -> dict[str, Candidate]:
+        """The same `site:` queries through the company model's web search tool, a few at a time. Never raises."""
+        stats, s = state.stats, self.settings
+        out: dict[str, Candidate] = {}
+        left = max(0, s.techsara_web_searches_per_search - stats["tsweb_searches"])
+        if left <= 0 or getattr(state, "tsweb_down", False):
+            return out
+
+        async def one(query: str) -> None:
+            if getattr(state, "tsweb_down", False):
+                return
+            try:
+                urls, note = await self.tsweb.web_search(query, s.techsara_web_search_timeout_seconds)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                urls, note = [], "request failed"
+            stats["tsweb_searches"] += 1
+            if note:
+                stats["tsweb_failed"] += 1
+                if stats["tsweb_failed"] >= 3 and not stats["tsweb_results"] and not getattr(state, "tsweb_down", False):
+                    state.tsweb_down = True
+                    state.warn(f"The company model's web search did not answer ({note}); the search went on without it.")
+                return
+            stats["tsweb_results"] += len(urls)
+            self._hits_to_leads(state, urls, hosts, TECHSARA_WEB, ctx, out)
+
+        await asyncio.gather(*(one(q) for q in queries[:left]))
+        stats["tsweb_leads"] += len(out)
+        return out
+
+    async def _searx_queries(self, state: SearchState, queries: list[str], hosts: list[str], ctx: tuple, out: dict) -> None:
+        stats = state.stats
+        if not self.searx_on or getattr(state, "searx_down", False):
+            return
         for query in queries:
             answer = await self.searx.search(query, self.settings.searxng_pages_per_query, useful=lambda u: extract(u, hosts) is not None)
             stats["searx_cached" if answer.cached else "searx_queries"] += 1
@@ -834,8 +894,6 @@ class SearchEngine:
             stats["searx_results"] += len(answer.urls)
             self._hits_to_leads(state, answer.urls, hosts, SEARX, ctx, out)
             state.emit(state.stage or "search", "Asking the search engine for employer job boards")
-        stats["searx_leads"] += len(out)
-        return list(out.values())
 
     async def _hit_context(self, state: SearchState) -> tuple[set, set, set]:
         keys = await self._keys()
@@ -1040,7 +1098,9 @@ class SearchEngine:
         ai_more = use_web and hasattr(ai, "discover_round") and any(
             getattr(ai, name, None) is not None and plan.per_round(total, next_round) > 0
             for name, total in (("openai", plan.openai_calls), ("claude", plan.claude_calls)))
-        searx_more = self.searx_on and not getattr(state, "searx_down", False) and queries_left > 0
+        searx_more = queries_left > 0 and ((self.searx_on and not getattr(state, "searx_down", False))
+                                           or (self.tsweb_on and not getattr(state, "tsweb_down", False)
+                                               and state.stats["tsweb_searches"] < self.settings.techsara_web_searches_per_search))
         stats = state.stats
         tiny_more = self.tiny_on and not stats["tiny_skipped"] and stats["tiny_searches"] < plan.tiny_searches and getattr(state, "tiny_left", 0) > 0
         serp_more = self.serp_on and not stats["serp_skipped"] and stats["serp_calls"] < plan.serp_calls and getattr(state, "serp_left", 0) > 0
@@ -1087,7 +1147,7 @@ class SearchEngine:
         # Search-engine discovery: the query plan of the whole search, handed out round by round.
         locations = discovery_locations(req.locations)
         all_queries = build_queries([*req.titles, *variants, *related[:8]], site_hosts(self.settings.searxng_sites), locations)
-        queries = all_queries[: plan.searx_queries] if self.searx_on else []
+        queries = all_queries[: plan.searx_queries] if self.engines_on else []
         used = plan.per_round(plan.searx_queries, 1)
         searx_task = asyncio.create_task(self._searx_round(state, queries[:used])) if queries else None
         if searx_task:

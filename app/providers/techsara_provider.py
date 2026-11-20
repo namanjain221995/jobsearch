@@ -28,6 +28,9 @@ RERANK_QUERY_CHARS = 2400
 RERANK_DOC_CHARS = 5200
 
 
+_LINK = re.compile(r"https://[^\s)\]>\"'|]{4,600}")
+
+
 class TechsaraProvider:
     name = "TechSara"
 
@@ -42,6 +45,7 @@ class TechsaraProvider:
         self._headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self._client = client or httpx.AsyncClient(timeout=timeout)
         self._sem = asyncio.Semaphore(max(1, concurrency))
+        self._web_sem = asyncio.Semaphore(2)                # web searches at once: the model's queue is shared
         self._sleep = sleep
         self.usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "retries": 0}
 
@@ -106,6 +110,36 @@ class TechsaraProvider:
         if not isinstance(parsed, dict):
             raise ProviderError("model returned invalid JSON")
         return parsed
+
+    async def web_search(self, query: str, timeout: float = 60.0) -> tuple[list[str], str]:
+        """One search through the model's own `web_search` tool (POST /v1/responses, the tool forced so the model
+        cannot answer from memory). Returns (result addresses, problem). Only addresses are taken from the answer;
+        they are untrusted and the caller checks every one. Never raises."""
+        body = {"model": self.model, "store": False, "max_output_tokens": 2500, "tools": [{"type": "web_search"}],
+                "tool_choice": {"type": "web_search"},
+                "input": f"Search the web once for: {query[:300]}\nThen list every search result as a markdown link "
+                         "[title](url), one per line. Nothing else."}
+        try:
+            async with self._web_sem:
+                r = await self._client.post(self.base_url + "/responses", json=body, headers=self._headers, timeout=timeout)
+        except httpx.TimeoutException:
+            return [], "timed out"
+        except httpx.HTTPError:
+            return [], "connection error"
+        if r.status_code != 200:
+            return [], f"HTTP {r.status_code}"
+        try:
+            data = r.json()
+            text = "".join(str(part.get("text") or "") for item in data.get("output") or [] if isinstance(item, dict)
+                           for part in item.get("content") or [] if isinstance(part, dict))
+        except (ValueError, AttributeError):
+            return [], "invalid answer"
+        self.usage["calls"] += 1
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        self.usage["input_tokens"] += int(usage.get("input_tokens") or 0)
+        self.usage["output_tokens"] += int(usage.get("output_tokens") or 0)
+        urls = [u.rstrip(".,;") for u in _LINK.findall(text)]
+        return list(dict.fromkeys(urls))[:40], ""
 
     async def rerank(self, query: str, documents: list[str], instruction: str = "") -> list[float | None]:
         """Relevance of every document to the query, in input order (None where the service returned no score).

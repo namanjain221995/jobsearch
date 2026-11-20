@@ -83,6 +83,9 @@ SPECS["searxng"] = Spec("searxng", "Web search (SearXNG)", "discovery", _no_fetc
                         note="Search-engine discovery of employer job boards on the ATS hosts above; found boards are read through their own API")
 SPECS["tinyfish"] = Spec("tinyfish", "Web search (TinyFish)", "discovery", _no_fetch, needs=lambda s: bool(s.tinyfish_api_key),
                          note="Paid second search engine for employer job boards, used after the free sources; daily spending ceiling")
+SPECS["techsara_web"] = Spec("techsara_web", "Web search (TechSara model)", "discovery", _no_fetch,
+                             needs=lambda s: bool(s.techsara_configured and s.techsara_web_search_enabled),
+                             note="The company model's own web search tool, asked the same `site:` queries; only result addresses are used")
 SPECS["serpapi"] = Spec("serpapi", "Google Jobs (SerpApi)", "discovery", _no_fetch, needs=lambda s: bool(s.serpapi_api_key),
                         note="Paid job-listing API with a monthly allowance, used after the free sources; job-board pages are never fetched")
 SPECS["aws_web_search"] = Spec("aws_web_search", "Web search (AWS)", "discovery", _no_fetch, needs=lambda s: bool(s.aws_web_search_enabled),

@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     techsara_base_url: str = "https://ai.techsarasolutions.com/v1"
     techsara_model: str = "techsara-35b"             # chat: title expansion, page extraction, explanations beyond the top slice
     techsara_rerank_model: str = "techsara-rerank"   # /v1/rerank: scores every remaining candidate against the profile
+    techsara_web_search_enabled: bool = True         # the model's web_search tool as one more search engine for employer job boards
+    techsara_web_searches_per_search: int = 40       # most web searches one job search may ask the model for
+    techsara_web_search_timeout_seconds: float = 60.0
     techsara_timeout_seconds: float = 90.0
     techsara_retries: int = 3                        # attempts after a 503 / 429 / timeout (Retry-After is honoured, capped at 20 s)
     techsara_concurrency: int = 4                    # requests to the company model at the same time (its queue is shared with the chat app)
