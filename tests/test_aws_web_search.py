@@ -197,7 +197,7 @@ def test_pacing_scales_calls_down_when_the_month_runs_low():
 
 def test_plan_scales_the_per_search_cap_with_the_request():
     s = settings()
-    assert plan_for(s, 50).aws_calls == 4 and plan_for(s, 100).aws_calls == 8 and plan_for(s, 1000).aws_calls == 10
+    assert plan_for(s, 50).aws_calls == 12 and plan_for(s, 100).aws_calls == 24 and plan_for(s, 1000).aws_calls == 30
     assert plan_for(settings(aws_web_search_enabled=False), 50).aws_calls == 0
 
 
@@ -246,7 +246,7 @@ def test_engine_uses_aws_in_round_one_verifies_against_the_feed_and_stores_no_aw
     quota = MemoryQuota()
     state = run(wide.search(aws_engine(fake, quota, db), result_count=50))
     stats = state.stats
-    assert fake.params and stats["aws_queries"] == len(fake.params) == run(quota.used()) <= stats["aws_budget"] <= 4
+    assert fake.params and stats["aws_queries"] == len(fake.params) == run(quota.used()) <= stats["aws_budget"] <= 12
     assert stats["rounds"][0]["leads"] >= 1                                              # used in round 1
     for params in fake.params:
         assert params["webSearchId"] == "web-search.v1" and 1 <= params["maxResults"] <= 25 and len(params["searchQuery"]) <= 200

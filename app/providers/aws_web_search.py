@@ -405,6 +405,30 @@ def employer_posting_address(url: str, aggregators: tuple[str, ...]) -> bool:
     return bool(_POSTING_PATH.search(p.path))
 
 
+def rotation(site_hosts: list[str], open_share: float) -> list:
+    """The order in which the queries of one search are sent: one job-board host per query (`host_groups`), and
+    between them "any site" queries (None), which ask for postings on employers' own sites. `open_share` is the share
+    of the queries that are of the second kind (0 = none, 1 = all); with any share above 0 the rotation holds at
+    least one of them, and they are spread evenly so a budget that ends early has asked both kinds."""
+    groups = host_groups(site_hosts)
+    share = min(1.0, max(0.0, float(open_share or 0.0)))
+    if share <= 0:
+        return list(groups)
+    if not groups or share >= 1:
+        return [None]
+    out: list = []
+    owed = 0.0
+    for group in groups:
+        out.append(group)
+        owed += share / (1.0 - share)                 # "any site" queries owed per job-board query
+        while owed >= 1.0 - 1e-9:
+            out.append(None)
+            owed -= 1.0
+    if None not in out:
+        out.append(None)
+    return out
+
+
 # ATS hosts, rotated: a query asks one group at a time (results are ranked; mixing every host lets one dominate).
 def host_groups(site_hosts: list[str]) -> list[list[str]]:
     """One job-board host per query, the hosts with the most postings first. Measured on 2026-11-20: a query limited

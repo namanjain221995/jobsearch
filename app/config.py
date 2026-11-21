@@ -103,20 +103,33 @@ class Settings(BaseSettings):
     workday_pages: int = 1                   # result pages (20 each) read per Workday employer
     max_detail_fetches: int = 150            # postings whose description is fetched on demand per search
     http_timeout_seconds: float = 45.0
-    openai_search_calls: int = 2
-    claude_search_calls: int = 2
-    ai_web_searches_per_call: int = 5
+    openai_search_calls: int = 6             # web-search calls on the ATS hosts, per provider, for a request of 50 or fewer: all in the first round, side by side
+    claude_search_calls: int = 6
+    ai_web_searches_per_call: int = 5        # web searches of one call on ATS hosts (one `site:host "title"` search each)
     ai_discovery_deadline_seconds: float = 120.0
     # AI web search (discovery) of one search: what each provider may do. The calls per search are OPENAI_SEARCH_CALLS /
     # CLAUDE_SEARCH_CALLS above (scaled by the request size, see search_plan.py).
     ai_discovery_call_timeout_seconds: float = 100.0  # one web-search call; a call still running then is dropped, the finished ones keep their leads
     ai_discovery_breaker_failures: int = 2            # failed web-search calls in a row that switch a provider off for the rest of that search (the other one takes over its searches)
-    openai_search_concurrency: int = 4                # web-search calls of one search running at the same time, per provider
-    claude_search_concurrency: int = 4
-    openai_search_model: str = ""                     # model for web-search discovery only; empty = OPENAI_MODEL
-    anthropic_search_model: str = ""                  # model for web-search discovery only; empty = ANTHROPIC_MODEL
-    ai_open_web_share: float = 0.5                    # share of the OpenAI / Claude web-search calls of a search that look at employers' OWN career sites (any domain) instead of the ATS hosts; 0 = none, 1 = all (always none under an ATS platform filter)
-    ai_open_web_split: str = "auto"                   # who makes those calls. auto: first the provider whose search tool holds a `site:` query to its site (Claude), the other one the ATS hosts; even: each provider alternates
+    ai_discovery_straggler_seconds: float = 20.0      # once three quarters of a round's web-search calls have returned, the others get this long and are then left behind (0 = wait until the round's time limit)
+    openai_search_concurrency: int = 12               # web-search calls of one search running at the same time, per provider
+    claude_search_concurrency: int = 12
+    openai_search_model: str = "gpt-6-luna"           # model for web-search discovery only; empty = OPENAI_MODEL
+    anthropic_search_model: str = "claude-haiku-5-5"  # model for web-search discovery only; empty = ANTHROPIC_MODEL
+    # Calls on employers' OWN career sites (any domain). They come ON TOP of the calls on ATS hosts (OPENAI_SEARCH_CALLS /
+    # CLAUDE_SEARCH_CALLS) and never take from them; none under an ATS platform filter. Request of 50 or fewer.
+    openai_open_web_calls: int = 3
+    claude_open_web_calls: int = 6
+    ai_open_web_searches_per_call: int = 10           # web searches of one open-web call (one employer's career site each)
+    openai_open_web_calls_max: int = 48               # safety ceilings of one whole search (all rounds), not budgets
+    claude_open_web_calls_max: int = 96
+    ai_open_web_followup_calls: int = 3               # further Claude open-web calls of the first round, started when the first ones returned: they search the career sites those found again, with other wording and titles
+    ai_open_web_share: float = 0.5                    # legacy switch: 0 = no open-web call or query at all; any other value = on (it no longer divides the calls)
+    ai_open_web_split: str = "auto"                   # legacy, not used: who makes the open-web calls is set by the budgets above
+    open_web_recency_words: bool = True               # open-web searches carry the current month and year, which brings pages last updated recently
+    search_engine_open_web_queries: int = 12          # open-web queries (no `site:`) one search sends through SearXNG / TinyFish; only an address that reads like ONE posting on an employer's own site becomes a lead
+    lead_verification_seconds: float = 120.0           # time box of one round's lead check (board reads, page requests, then browser and AI page checks while time is left); correct jobs come before speed, so it is generous; 0 = wait for every check, as before
+    lead_verification_background_seconds: float = 90.0  # plain page checks still running at the time box may finish this long after it; what they verify is remembered for later searches
     max_ai_calls_per_search: int = 30
     max_ai_ranked_jobs: int = 120
     ai_rank_batch_size: int = 6              # small batches answer faster; they run side by side
@@ -126,7 +139,7 @@ class Settings(BaseSettings):
     # the page. Measured on 2026-11-21 (tests/fixtures/pages/eval_set.json): the plain fetch decides 11 pages a second
     # at 32 at once (replayed with the recorded response times), the company model's page check answers about 1 page a
     # second with 4 calls at once, and a browser page takes 3 to 13 s (mean 8 s; BROWSER_CONCURRENCY at once).
-    max_page_verifications: int = 160        # page leads read per search of 50 results (grows with the request, see MAX_PAGE_VERIFICATIONS_MAX)
+    max_page_verifications: int = 400        # page leads read per search of 50 results (grows with the request, see MAX_PAGE_VERIFICATIONS_MAX)
     page_verification_concurrency: int = 32  # page leads checked at the same time (never more than two requests at a time per host)
     max_ai_page_extractions: int = 8         # pages sent to the AI page check in one call
     ai_page_extraction_calls: int = 10       # such calls per round when the company model answers them (no bill)
@@ -207,11 +220,11 @@ class Settings(BaseSettings):
     # TinyFish: TinySearch as a second discovery engine beside SearXNG, TinyFetch for pages our own browser could not render.
     # Its agent, research, browser and vault endpoints are never used.
     tinyfish_api_key: str = Field(default="", validation_alias=AliasChoices("tinyfish_api_key", "TINYFISH_API_KEY"))
-    tinyfish_search_queries_per_search: int = 20     # TinySearch queries one candidate search may send
+    tinyfish_search_queries_per_search: int = 40     # TinySearch queries one candidate search may send
     tinyfish_fetches_per_search: int = 10            # TinyFetch page reads one candidate search may request
     tinyfish_search_usd: float = 0.005               # price per query (wallet endpoint, 2026-11-18)
     tinyfish_fetch_usd: float = 0.001                # price per fetched address
-    tinyfish_daily_usd: float = 1.0                  # most that may be spent per UTC day, computed from the two prices above
+    tinyfish_daily_usd: float = 5.0                  # most that may be spent per UTC day, computed from the two prices above
     tinyfish_wallet_reserve_usd: float = 2.0         # stop using TinyFish when the wallet balance is below this
     tinyfish_wallet_check_seconds: float = 300.0
     tinyfish_timeout_seconds: float = 30.0
@@ -224,8 +237,9 @@ class Settings(BaseSettings):
     aws_web_search_id: str = "web-search.v1"
     aws_web_search_monthly_limit: int = 4000         # queries per calendar month (UTC), counted in PostgreSQL before each call
     aws_web_search_monthly_reserve: int = 300        # kept for the interactive endpoint: background searches stop at limit - reserve
-    aws_web_search_max_calls_per_search: int = 4     # per candidate search for a request of 50 or fewer (paced down when the month runs low)
-    aws_web_search_max_calls_per_search_max: int = 10  # hard ceiling for large requests
+    aws_web_search_max_calls_per_search: int = 12    # per candidate search for a request of 50 or fewer, all in the first round (paced down by the month's remaining allowance: about 4 a search at the start of a month at the pace below, the full 12 once the month is running under it)
+    aws_web_search_max_calls_per_search_max: int = 30  # hard ceiling for large requests
+    aws_web_search_open_web_share: float = 0.5       # share of those queries that ask "any site" for postings on employers' own sites (job boards and the ATS hosts excluded) instead of one ATS host; none under an ATS platform filter or with AI_OPEN_WEB_SHARE=0
     aws_web_search_expected_searches_per_day: int = 45   # pacing assumption: candidate searches per working day (15 runs x up to 3)
     aws_web_search_max_results: int = 25             # results per call (the API allows 1-25)
     aws_web_search_published_days: int = 0           # publishedAfter filter in days; 0 = off. With the filter on, job-board queries returned nothing (2026-11-20)
@@ -241,12 +255,12 @@ class Settings(BaseSettings):
     # AI_WEB_SEARCHES_PER_CALL, MAX_AI_CALLS_PER_SEARCH, MAX_AI_RANKED_JOBS) apply to a request of 50 or fewer;
     # these are the hard ceilings for large requests.
     ai_budget_scaling: bool = True
-    openai_search_calls_max: int = 16
-    claude_search_calls_max: int = 16
+    openai_search_calls_max: int = 96                # safety ceilings of one whole search (all rounds), not budgets
+    claude_search_calls_max: int = 96
     ai_web_searches_per_call_max: int = 10
-    max_ai_calls_per_search_max: int = 260
+    max_ai_calls_per_search_max: int = 1000          # safety ceiling of every OpenAI / Claude call of one search together
     max_ai_ranked_jobs_max: int = 400                # ceiling of the OpenAI/Claude-judged slice (40 % of the request, at least MAX_AI_RANKED_JOBS)
-    max_page_verifications_max: int = 1200           # page leads read by the largest searches (replayed 2026-11-21: 576 pages in 40 s, 16 ms of CPU a page; AI and browser checks keep their own limits)
+    max_page_verifications_max: int = 2400           # page leads read by the largest searches (replayed 2026-11-21: 576 pages in 40 s, 16 ms of CPU a page; AI and browser checks keep their own limits)
     max_detail_fetches_max: int = 1000
     max_audit_jobs_max: int = 200
     max_boards_per_search_max: int = 6000            # boards and source queries one search may ask to be fresh
