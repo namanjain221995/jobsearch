@@ -433,7 +433,7 @@ def step_roles(browser):
 
 # ---------------------------------------------------------------------------------------------------- Find Jobs
 def open_search_form(page, area):
-    page.goto(BASE + f"{area}/search")
+    page.goto(BASE + f"{area}/search?platforms=1")       # the platform choice is not shown on the plain form any more
     page.wait_for_load_state("networkidle")
     page.get_by_role("group", name=PICKER, exact=True).get_by_role("checkbox").first.wait_for(timeout=T)
 

@@ -314,7 +314,11 @@ function Form({ options }: { options: SearchOptions }) {
   const [adding, setAdding] = useState(false);
 
   // "Find Jobs for <candidate>" links arrive with ?candidate=<id>: start with that candidate ticked.
-  const presetCandidateId = useSearchParams().get("candidate") ?? undefined;
+  const params = useSearchParams();
+  const presetCandidateId = params.get("candidate") ?? undefined;
+  // The search covers every source and the open web by default, so the form does not ask where to search. The choice of
+  // ATS platforms and the startup focus stay available under /search?platforms=1 for the rare search that needs them.
+  const choosePlatforms = params.get("platforms") === "1";
   const presetCandidate = useCandidate(presetCandidateId);
   const [appliedPreset, setAppliedPreset] = useState<string | null>(null);
   if (presetCandidate.data && presetCandidate.data.is_active && appliedPreset !== presetCandidate.data.id) {
@@ -376,7 +380,8 @@ function Form({ options }: { options: SearchOptions }) {
       return;
     }
     setCandidatesError(null);
-    create.mutate(toRequest(values, [...selected.keys()], teamId), {
+    const sent = choosePlatforms ? values : { ...values, ats_platforms: [], startup_focus: false };      // not shown: never applied
+    create.mutate(toRequest(sent, [...selected.keys()], teamId), {
       onSuccess: (created) => progress.start(created),
       onError: (error) => {
         applyServerErrors(form, error);
@@ -597,6 +602,7 @@ function Form({ options }: { options: SearchOptions }) {
             </div>
           </Panel>
 
+          {choosePlatforms && (
           <Panel title="Where to search" description="By default every applicant-tracking platform and job board the portal reads is searched.">
             <div className="flex flex-col gap-5">
               <Controller
@@ -634,6 +640,7 @@ function Form({ options }: { options: SearchOptions }) {
               </div>
             </div>
           </Panel>
+          )}
 
           <Panel title="How much, and how thoroughly">
             <div className="flex flex-col gap-5">
@@ -761,14 +768,16 @@ function Form({ options }: { options: SearchOptions }) {
                 <p className="text-2sm text-muted-foreground">Result handling</p>
                 <p className="text-sm font-medium">{MODE_LABELS[mode]}</p>
               </div>
-              <div className="flex flex-col gap-1.5 border-t pt-3">
-                <p className="text-2sm text-muted-foreground">ATS platforms</p>
-                <p className="text-sm font-medium break-words">
-                  {chosenPlatforms.length === 0
-                    ? "All platforms"
-                    : platforms.filter((platform) => chosenPlatforms.includes(platform.id)).map((platform) => platform.label).join(", ")}
-                </p>
-              </div>
+              {choosePlatforms && (
+                <div className="flex flex-col gap-1.5 border-t pt-3">
+                  <p className="text-2sm text-muted-foreground">ATS platforms</p>
+                  <p className="text-sm font-medium break-words">
+                    {chosenPlatforms.length === 0
+                      ? "All platforms"
+                      : platforms.filter((platform) => chosenPlatforms.includes(platform.id)).map((platform) => platform.label).join(", ")}
+                  </p>
+                </div>
+              )}
               <div className="flex flex-col gap-2 border-t pt-3">
                 <p className="text-2sm text-muted-foreground">Sources that will be read ({sources.length})</p>
                 <ul className="flex flex-wrap gap-1.5">
