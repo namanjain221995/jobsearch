@@ -242,6 +242,63 @@ checks each page about once a day; a page that no longer proves an open posting 
 browser are not kept, and only US postings are. In the benchmark searches of section 6 the first search kept 3
 postings (on Meta's own career site) and the repeat 2 more (on Netflix's own career site).
 
+### Crawl4AI and other crawl tools (evaluated 2026-11-21, none added)
+
+Question: does the open-source crawler Crawl4AI (0.9.6 of 2026-11-20, Apache-2.0 with an added attribution clause,
+Python 3.10+, drives Chromium through Playwright), or another self-hosted tool, make the page verifier or the
+career-site crawler better? Measured on the 79-page evaluation set and on eight career sites, live, with robots.txt
+obeyed and one request a second per host (426 requests). Result: no dependency was added; three techniques were
+built into our own code.
+
+| The 79 evaluation pages, leads with an address only | Our reader | Crawl4AI as the browser step |
+| --- | --- | --- |
+| Open postings verified by structured data (of 29) | 19 | 19 |
+| Open postings verified with a claimed title and employer (of 29) | 29 | 27 |
+| Pages wrongly accepted (also with a model that says yes to everything) | 0 | 0 |
+| Closed pages that lost their "closed" verdict and went to the AI check | 0 | 4 |
+| Location / posting date / pay / work arrangement filled (of 19) | 19 / 19 / 11 / 10 | 19 / 19 / 11 / 9 |
+| Browser time per rendered page (20 pages), mean | 9.0 s | 5.8 s (taken before four closed notices had appeared) |
+| Peak memory of the browser, pages one after another | 482 MB | 846 MB |
+| 11 real pages, 6 at a time, on two CPU cores | 25.3 s, peak 675 MB | 24.1 s, peak 830 MB |
+
+- Bot detection. Crawl4AI's own browser always starts with `--disable-blink-features=AutomationControlled`
+  (`navigator.webdriver` reads false) and always sends a "Google Chrome" `sec-ch-ua` header; neither has a setting
+  (read in its source and observed against a local server). It also installs the "undetected" browser driver
+  (patchright), a stealth plug-in and a user-agent generator as fixed dependencies. Our pool reports
+  `navigator.webdriver` true and names itself. For the comparison the flag was patched out; without that patch the
+  library cannot be run inside this project's rules.
+- Structured data: extruct (BSD) found JobPosting data on exactly the 23 documents our reader found it on, of 85,
+  and took nine times as long. On the career sites without job data (Airbnb, Datadog, Spotify, Apple) rendering,
+  with either browser, added none.
+- Text for the AI page check, same pages, the company model: our page text 10 of 10 open pages and 19 of 22 pages
+  of sites without job data; Crawl4AI's "fit" markdown 10 (one employer and one location wrong) and 19; its raw
+  markdown 9 and 17; trafilatura 10 (four locations lost) and 19. trafilatura and readability dropped the "posting
+  closed" notice on 5 and 9 of 17 closed pages; Crawl4AI's markdown keeps text the page hides with CSS.
+- Size: Crawl4AI adds 60 Python packages, 509 MB installed (linux/arm64), among them scipy (149 MB) and patchright
+  (143 MB). Crawlee, Scrapy with Playwright, a self-hosted Firecrawl (AGPL, six services) and the agent browser-use
+  (the model writes free code against the browser; hosted stealth browser by default) were judged from their own
+  repositories and not installed: none offers an extraction step that the measurements above leave room for.
+
+Built instead, in our own code:
+
+1. A job list built by script is followed through its own "Next" / "Load more" button
+   (`browser_pool.render_list`, `CAREER_SITE_LIST_STEPS=10`, 0 = off). On a list of 2,408 jobs: 20 posting addresses
+   before, 119 with ten presses; of 8 pages then read, 8 proved a posting and 6 were US postings. The button is the
+   only thing the browser ever presses: outside any form, label matched as a whole, a pause before every press, the
+   same request rules as before. Crawl4AI reached the same 69 addresses in five presses with the same script.
+2. Phenom-hosted career sites (careers.adobe.com, careers.snowflake.com) send every posting page with the platform's
+   "this job has been filled" view in the markup. That view is now left out of the page text when the page's own job
+   data says the posting was found (`job_verifier.shown_markup`); a filled posting answers HTTP 410 with no job data
+   and stays rejected. Before: 0 of 12 postings verified. After: 12 of 12 by a plain request, 8 of them US postings.
+3. "Submit Resume" counts as an application action (jobs.apple.com): the three rendered Apple postings the model
+   had read correctly are accepted, 22 of 22 pages of the five sites without job data in all.
+
+Not solved by any tool: career sites whose posting pages carry no JobPosting data are still not stored by the
+background crawler (it asks no model). For four of the five such sites measured (Airbnb, Datadog, Roblox on
+Greenhouse, Spotify on Lever) every posting read on the site was in the ATS board the portal reads already. For a
+site with its own system (Apple) the search path verifies the pages with the browser and the AI page check; letting
+the crawler do the same is an open decision.
+
 ## 6. Benchmark
 
 Test machine, real providers (OpenAI, Claude, the company model), no SearXNG and no AWS web search (server only).

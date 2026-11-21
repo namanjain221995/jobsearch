@@ -528,6 +528,58 @@ def test_a_script_rendered_listing_is_read_in_the_browser_only_when_nothing_else
     assert (record.state, record.browser_pages) == (cs.NO_POSTINGS, 0)
 
 
+class PagingBrowser(Browser):
+    """A browser pool that can follow a list through its own "Next" button (browser_pool.render_list)."""
+
+    def __init__(self, first: RenderResult, links: list[str], steps: int):
+        super().__init__({first.url: first})
+        self.first, self.links, self.steps, self.asked = first, links, steps, []
+
+    async def render_list(self, url, steps, pause):
+        self.asked.append((url, steps, pause))
+        pressed = min(steps, self.steps)
+        return RenderResult(self.first.status, self.first.url, self.first.html, links=tuple(self.links) if pressed else (), steps=pressed)
+
+
+def test_a_script_built_list_is_followed_through_its_own_paging_button():
+    """2026-11-21: a career site listed 2,408 jobs, 20 at a time behind a "Next jobs" button; only the first 20 were reached."""
+    shell = "<html><head><title>Careers</title></head><body><div id='root'></div><script src='/app.js'></script></body></html>"
+    first = RenderResult(200, f"{BASE}/jobs", "<html><head><title>Careers</title></head><body>"
+                         "<a href='/jobs/4471823/senior-robotics-engineer'>Senior Robotics Engineer</a><button aria-label='Next jobs'></button></body></html>")
+    further = [f"{BASE}/jobs/4471824/controls-engineer", f"{BASE}/jobs/4471825/field-technician-toronto", f"{BASE}/jobs", f"{BASE}/jobs/search?q=robot",
+               f"{BASE}/apply/4471824", "https://www.linkedin.com/jobs/view/4471828", "https://careers-acme.icims.com/jobs/4471829/job",
+               "https://other-company.com/jobs/4471830/intruder", "javascript:void(0)", "http://10.0.0.5/jobs/4471831/internal"]
+
+    def build(**settings):
+        web = a_site_with_a_sitemap({f"{BASE}/robots.txt": (404, ""), f"{BASE}/jobs": (200, shell)})
+        del web.routes[f"{BASE}/sitemap_index.xml"]
+        browser = PagingBrowser(first, further, steps=3)
+        crawler, _store, kept, client = make(web, browser=browser, fast=False, **settings)
+        return web, browser, kept, run(crawl(crawler, client, site(listing=f"{BASE}/jobs")))
+
+    web, browser, kept, record = build()
+    assert browser.asked == [(f"{BASE}/jobs", 10, 1.0)] and browser.rendered == []       # ten presses at most, a second apart (the host's pause)
+    assert (record.method, record.candidates, record.browser_pages, record.list_steps, record.state) == (cs.BROWSER, 3, 1, 3, cs.OK)
+    assert sorted(j.title for j in kept) == ["Controls Engineer", "Senior Robotics Engineer"]      # each one verified on its own page; Toronto is not the US
+    asked = set(web.asked())
+    assert f"{BASE}/jobs/4471824/controls-engineer" in asked and not any("linkedin" in u or "icims" in u or "other-company" in u or "10.0.0.5" in u
+                                                                             or "/apply/" in u or "search" in u for u in asked)
+    plain = sum(1 for u in web.asked() if not u.endswith("robots.txt"))
+    assert record.requests >= plain + 1 + 3                             # the page view and every press count as requests of the crawl
+
+    # CAREER_SITE_LIST_STEPS=0 is the off switch: the first part of the list only, by the same render() as before.
+    web, browser, kept, record = build(career_site_list_steps=0)
+    assert browser.asked == [] and browser.rendered == [f"{BASE}/jobs"]
+    assert (record.candidates, record.list_steps) == (1, 0) and [j.title for j in kept] == ["Senior Robotics Engineer"]
+    # A pool without render_list (an older build, a test double) is used as before as well.
+    web = a_site_with_a_sitemap({f"{BASE}/robots.txt": (404, ""), f"{BASE}/jobs": (200, shell)})
+    del web.routes[f"{BASE}/sitemap_index.xml"]
+    old = Browser({f"{BASE}/jobs": first})
+    crawler, _store, kept, client = make(web, browser=old)
+    assert run(crawl(crawler, client, site(listing=f"{BASE}/jobs"))).candidates == 1 and old.rendered == [f"{BASE}/jobs"]
+    assert Settings(_env_file=None).career_site_list_steps == 10
+
+
 def test_a_site_that_answers_403_or_a_robot_check_is_recorded_as_not_readable_and_left_alone():
     challenge = "<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>"
     for answer in ((403, "Forbidden"), (200, challenge)):

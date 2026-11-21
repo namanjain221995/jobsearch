@@ -85,7 +85,9 @@ _SITE_NAME = re.compile(r"(?is)<meta[^>]+property=[\"']og:site_name[\"'][^>]+con
 _META_TITLE = re.compile(r"(?is)<meta\b[^>]*\b(?:property|name)\s*=\s*[\"'](?:og:title|twitter:title)[\"'][^>]*>")
 _CONTENT = re.compile(r"(?is)\bcontent\s*=\s*(?:\"([^\"]*)\"|'([^']*)')")
 _HEADING = re.compile(r"(?is)<(title|h1|h2)\b[^>]*>(.*?)</\1>")
-_APPLY = re.compile(r"\b(apply|i'?m interested|submit (your |an? |my )?application|start (your |an? |my )?application)\b", re.I)
+# The page offers an application. "Submit Resume" is the application button of jobs.apple.com (read on 2026-11-21:
+# three open postings failed on "No application action found" for want of the word "apply").
+_APPLY = re.compile(r"\b(apply|i'?m interested|submit (your |an? |my )?(application|resume|résumé|cv)|start (your |an? |my )?application)\b", re.I)
 # The words of a link that IS the application ("Apply", "Apply now", "Apply for this job"), as opposed to a sentence about applying.
 _APPLY_LINK = re.compile(r"^\W*(apply(\s+(now|here|today|online|for (this|the) (job|position|role|opening)))?|start (your |my )?application|"
                          r"submit (your |an |my )?application|i'?m interested)\W*$", re.I)
@@ -257,12 +259,54 @@ def _tidy(text: str) -> str:
     return re.sub(r"(?:\s*\.){2,}\s*", ". ", re.sub(r"\s+\.", ".", text)).strip(" .")
 
 
+# Phenom-hosted career sites send every posting page with the platform's "posting expired" view in the markup
+# (<section ... original-view="job-expire-view">: "We're sorry… the job you are trying to apply for has been filled",
+# "OH SNAP! THIS JOB HAS BEEN CLOSED") and let a script show either that view or the posting. What decides is the
+# page's own job data: an open posting carries "jobDetail":{"status":200,"hits":1,...} and JobPosting data, a filled one
+# answers HTTP 410 with "hits":0 and no JobPosting data. Read on 2026-11-21 on careers.adobe.com and
+# careers.snowflake.com: 12 of 12 open postings were rejected as "marked closed" by a plain request, while the
+# rendered pages showed the postings and no such sentence.
+_PHENOM_FOUND = re.compile(r'"jobDetail"\s*:\s*\{\s*"status"\s*:\s*200\s*,\s*"hits"\s*:\s*[1-9]')
+_PHENOM_EXPIRED = re.compile(r'(?is)<(section|div)\b[^>]*\boriginal-view\s*=\s*["\']job-expire-view["\'][^>]*>')
+
+
+def _element_end(markup: str, start: int, tag: str) -> int:
+    """Where the element of `tag` whose opening tag ends at `start` closes (-1 when the markup does not say)."""
+    depth = 1
+    for m in re.finditer(rf"(?i)<(/?){tag}\b[^>]*>", markup[start: start + 400_000]):
+        depth += -1 if m.group(1) else 1
+        if depth == 0:
+            return start + m.end()
+    return -1
+
+
+def shown_markup(markup: str) -> str:
+    """The markup without a view that the page's own data says is not shown: the "posting expired" view of a Phenom
+    career site on a page whose job data says the posting was found. Anything else comes back unchanged, and so does
+    a page whose markup cannot be followed: when in doubt the sentence stays and the page is rejected."""
+    if not markup or "job-expire-view" not in markup or not _PHENOM_FOUND.search(markup):
+        return markup
+    out, pos = [], 0
+    for m in _PHENOM_EXPIRED.finditer(markup):
+        if m.start() < pos:
+            continue
+        end = _element_end(markup, m.end(), m.group(1).lower())
+        if end < 0:
+            return markup
+        out.append(markup[pos: m.start()])
+        pos = end
+    out.append(markup[pos:])
+    return "".join(out)
+
+
 def page_text(markup: str) -> str:
     """Readable text of a page: its title, then its own content, then navigation and footer. Scripts, styles,
     templates and form option lists are left out; attribute values never leak into the text (a ">" inside an attribute
-    does not end the tag here, as it does for a regular expression)."""
+    does not end the tag here, as it does for a regular expression). A view the page's own data says is not shown is
+    left out as well (shown_markup)."""
     if not markup:
         return ""
+    markup = shown_markup(markup)
     parser = _TextParser()
     try:
         parser.feed(markup)

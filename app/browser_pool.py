@@ -7,8 +7,11 @@ time (bounded). It behaves as a plain, honest browser:
 - all of its traffic goes through a local guard proxy (netguard.GuardProxy), so no page, redirect, iframe or
   script can make it contact localhost or an internal network; the host check that guards every request also
   refuses the hosts this app never fetches, so a rendered page cannot make the crawler talk to them either;
-- it only reads: it never clicks or types, a page cannot make it submit a form (a navigation with a method other
-  than GET is refused) and a script's write request leaves only to the page's own host or as JSON (see _reads_only);
+- it only reads: it never types and never presses anything, with one exception that is asked for explicitly
+  (render_list, used by the career-site crawler on listing pages): a job list's own "Next" / "Load more" button, a
+  button outside any form whose whole label is a paging label. A page cannot make it submit a form (a navigation with
+  a method other than GET is refused, also when a pressed button sets it off) and a script's write request leaves only
+  to the page's own host or as JSON (see _reads_only);
 - images, media and fonts are not downloaded (speed), downloads and service workers are off. Stylesheets are
   loaded: the text a page shows (RenderResult.text) is only right when the page's own rules for hiding apply;
 - each page gets a fresh, cookie-less context that is destroyed afterwards.
@@ -52,6 +55,56 @@ _LOOK = """() => {
   return [body ? (body.innerText || '').length : 0, posting];
 }"""
 _TEXT = "(limit) => (document.body ? (document.body.innerText || '') : '').slice(0, limit)"
+# Paging through a list that is built by script (render_list). The words of a control that shows the next part of a
+# list, as its whole label: "Next", "Next jobs", "Load more jobs", "Show more results". Read on live career sites on
+# 2026-11-21: <button aria-label="Next jobs"> (a list of 2,408 jobs shown 20 at a time) and
+# <button aria-label="Load more jobs"> (83 jobs shown 5 at a time). "Next similar jobs" and "Next step" do not match.
+PAGING_LABEL = (r"^\W*(next( page| jobs| results| openings| positions| roles)?|(load|show|view|see) more( jobs| results| openings| positions| roles)?|"
+                r"more (jobs|results|openings|positions|roles))\W*$")
+MAX_PAGING_STEPS = 40               # never more controls pressed on one page, whatever the caller asks for
+MAX_LIST_LINKS = 5000               # link addresses kept from the further parts of one list
+STEP_WAIT, STEP_STILL = 8.0, 0.9    # seconds a pressed control is given to change the list / the list must then stand still
+# The one control this crawler may press: a button (or a link without an address) whose own label is a paging label,
+# enabled, visible, and not part of any form. It is marked, never pressed, here.
+_PAGING_CONTROL = """(pattern) => {
+  const rx = new RegExp(pattern, 'i');
+  for (const old of document.querySelectorAll('[data-list-next]')) old.removeAttribute('data-list-next');
+  for (const el of document.querySelectorAll('button, [role="button"], a')) {
+    if (el.tagName === 'A') {
+      const href = (el.getAttribute('href') || '').trim();
+      if (href && href !== '#' && !href.toLowerCase().startsWith('javascript:')) continue;   // a link with an address is read as a link
+    }
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+    if (el.closest('form') || el.form) continue;
+    if ((el.getAttribute('type') || '').toLowerCase() === 'submit') continue;
+    const text = (el.innerText || '').trim(), aria = (el.getAttribute('aria-label') || '').trim();
+    const label = text || aria || (el.getAttribute('title') || '').trim();
+    if (!label || label.length > 40 || !(rx.test(label) || (aria && rx.test(aria)))) continue;
+    const box = el.getBoundingClientRect(), style = getComputedStyle(el);
+    if (box.width < 1 || box.height < 1 || style.visibility === 'hidden' || style.display === 'none') continue;
+    el.setAttribute('data-list-next', '1');
+    return label;
+  }
+  return '';
+}"""
+_PRESS = "() => { const el = document.querySelector('[data-list-next=\"1\"]'); if (!el) return false; el.removeAttribute('data-list-next'); el.click(); return true; }"
+# What the list shows now, as one short value: the amount of text, the number of links and a hash of their addresses.
+_LIST_STATE = """() => {
+  let hash = 0, count = 0;
+  for (const a of document.querySelectorAll('a[href]')) {
+    const h = a.href; count += 1;
+    for (let i = 0; i < h.length; i += 1) hash = (hash * 31 + h.charCodeAt(i)) | 0;
+  }
+  return (document.body ? (document.body.innerText || '').length : 0) + ':' + count + ':' + hash;
+}"""
+_LIST_LINKS = """(limit) => {
+  const out = [], seen = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    const h = a.href;
+    if (h && !seen.has(h)) { seen.add(h); out.push(h); if (out.length >= limit) break; }
+  }
+  return out;
+}"""
 
 
 @dataclass
@@ -61,6 +114,8 @@ class RenderResult:
     html: str = ""
     error: str = ""          # "" on success; otherwise a short reason ("blocked", "timeout", ...)
     text: str = ""           # what a reader of the rendered page sees (hidden elements left out); "" when unknown
+    links: tuple = ()        # render_list only: link addresses of the further parts of the list, in the order they appeared
+    steps: int = 0           # render_list only: how often the list's own "next" / "load more" control was pressed
 
 
 def _related(a: str, b: str) -> bool:
@@ -96,6 +151,7 @@ class BrowserPool:
         self.guard = guard
         self.resolver = resolver
         self.pages_rendered = 0
+        self.paging_steps = 0               # "next" / "load more" controls pressed by render_list
         self.blocked_writes = 0             # requests refused by _reads_only (counted for the tests and the health view)
         self.unavailable_reason = "" if enabled else "disabled by configuration"
         self._sem = asyncio.Semaphore(self.concurrency)
@@ -233,6 +289,90 @@ class BrowserPool:
             except Exception as exc:
                 return RenderResult(error=type(exc).__name__)
 
+    async def render_list(self, url: str, steps: int = 0, pause: float = 1.0) -> RenderResult:
+        """render() for a page that lists jobs, followed through its own paging control: after the first view the
+        list's "Next" / "Load more" button is pressed up to `steps` times and the link addresses of every further
+        part are returned in RenderResult.links (the first view is RenderResult.html, as always).
+
+        This is the only thing the crawler ever presses, and it stays a reader: the control is a button whose whole
+        label is a paging label (PAGING_LABEL), outside any form and not a submit button; nothing is typed; the
+        request rules of render() apply to whatever the press sets off (a form submission and a write to another site
+        are refused, hosts that are never fetched are not contacted); `pause` seconds (never less than one) pass
+        before every press, so the site gets one request series at a time at the crawler's pace; paging stops when
+        there is no such control, when a press changes nothing, or when the page leaves its site."""
+        steps = max(0, min(int(steps), MAX_PAGING_STEPS))
+        if steps == 0:
+            return await self.render(url)
+        if not await self.start():
+            return RenderResult(error=self.unavailable_reason or "browser unavailable")
+        if not await self._host_allowed(url):
+            return RenderResult(error="URL rejected by the network safety check")
+        pause = max(1.0, pause)
+        async with self._sem:
+            try:
+                limit = self.nav_timeout + self.max_wait + 8 + steps * (pause + STEP_WAIT + STEP_STILL + 2)
+                return await asyncio.wait_for(self._render(url, steps, pause), timeout=limit)
+            except asyncio.TimeoutError:
+                return RenderResult(error="timeout")
+            except Exception as exc:
+                return RenderResult(error=type(exc).__name__)
+
+    async def _list_changed(self, page, before: str) -> bool:
+        """Whether the list shows something else than `before` and has come to rest (STEP_STILL without a change)."""
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        last, since, moved = before, started, False
+        while loop.time() - started < STEP_WAIT + STEP_STILL:
+            await asyncio.sleep(0.3)
+            try:
+                state = await page.evaluate(_LIST_STATE)
+            except Exception:
+                state = last                             # the document is being replaced: look again
+            now = loop.time()
+            if state != last:
+                last, since, moved = state, now, True
+            elif moved and now - since >= STEP_STILL:
+                return True
+            if not moved and now - started >= STEP_WAIT:
+                return False
+        return moved
+
+    async def _page_on(self, page, steps: int, pause: float) -> tuple[list[str], int]:
+        """Press the list's own paging control up to `steps` times. Returns (link addresses seen after the presses, presses)."""
+        home = urlsplit(page.url).hostname or ""
+        links: dict[str, None] = {}
+        pressed = 0
+        for _ in range(steps):
+            try:
+                before = await page.evaluate(_LIST_STATE)
+                label = await page.evaluate(_PAGING_CONTROL, PAGING_LABEL)
+            except Exception:
+                break
+            if not label:
+                break
+            await asyncio.sleep(pause)                   # the crawler's pace: a pause before every further request to the site
+            try:
+                if not await page.evaluate(_PRESS):
+                    break
+            except Exception:
+                break
+            pressed += 1
+            self.paging_steps += 1
+            if not await self._list_changed(page, before):
+                break
+            if not _related(urlsplit(page.url).hostname or "", home) or not await self._host_allowed(page.url):
+                break                                    # the control led away from the site: nothing there is read
+            try:
+                found = await page.evaluate(_LIST_LINKS, MAX_LIST_LINKS)
+            except Exception:
+                break
+            for href in found if isinstance(found, list) else []:
+                if isinstance(href, str) and len(href) <= 2000:
+                    links.setdefault(href)
+            if len(links) >= MAX_LIST_LINKS:
+                break
+        return list(links)[:MAX_LIST_LINKS], pressed
+
     @staticmethod
     def _watch_network(page) -> dict:
         """Counts the page's requests in flight and notes when the last one started or ended."""
@@ -275,7 +415,7 @@ class BrowserPool:
                 return
             await asyncio.sleep(0.4)
 
-    async def _render(self, url: str) -> RenderResult:
+    async def _render(self, url: str, steps: int = 0, pause: float = 1.0) -> RenderResult:
         from playwright.async_api import TimeoutError as PlaywrightTimeout
         context = await self._browser.new_context(
             user_agent=self._user_agent, service_workers="block", accept_downloads=False, locale="en-US",
@@ -307,6 +447,10 @@ class BrowserPool:
                 return RenderResult(status=status, url=final_url, error="blocked")   # never worked around
             if not await self._host_allowed(final_url):
                 return RenderResult(status=status, url=final_url, error="redirected to a rejected address")
-            return RenderResult(status=status, url=final_url, html=html, text=text if isinstance(text, str) else "")
+            result = RenderResult(status=status, url=final_url, html=html, text=text if isinstance(text, str) else "")
+            if steps > 0:
+                links, pressed = await self._page_on(page, steps, pause)
+                result.links, result.steps = tuple(links), pressed
+            return result
         finally:
             await context.close()

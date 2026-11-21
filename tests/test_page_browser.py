@@ -58,6 +58,33 @@ PAGES = {
                          "<form id='f' method='post' action='/apply'><input name='name' value='x'></form>"
                          "<script>setTimeout(() => document.getElementById('f').submit(), 300);</script></body></html>"),
 }
+# Job lists built by script, as on the career sites read on 2026-11-21: three jobs at a time, the next part behind a
+# button without an address. Around the list stand the controls a crawler must never press: a carousel's "Next
+# similar jobs", an "Apply" button, and a form whose submit button says "Next".
+_LIST_HEAD = ("<html><head><title>Jobs at Fake Employer</title></head><body><h1>Open positions</h1><p>" + "We build things. " * 120 + "</p>"
+              "<ul id='jobs'></ul><script>const ids = [1001,1002,1003,1004,1005,1006,1007,1008,1009]; let shown = 0;"
+              "const add = (id) => { const li = document.createElement('li'); li.innerHTML = '<a href=\"/jobs/' + id + '\">Engineer ' + id + '</a>';"
+              " document.getElementById('jobs').appendChild(li); };"
+              "const trap = (name) => { const a = document.createElement('a'); a.href = '/trap/' + name; a.textContent = name; document.body.appendChild(a); };")
+_DECOYS = ("<button aria-label='Previous jobs' disabled>&lt;</button><button aria-label='Next similar jobs' onclick=\"trap('carousel')\">&gt;</button>"
+           "<button onclick=\"trap('apply')\">Apply</button>"
+           "<form method='post' action='/apply-next'><input name='email' value='a@example.com'><button type='submit'>Next</button></form>")
+PAGES.update({
+    # "Next jobs" (an icon button: the words are its aria-label) replaces the three jobs shown with the next three
+    "/list": (_LIST_HEAD + "const show = () => { document.getElementById('jobs').innerHTML = ''; ids.slice(shown, shown + 3).forEach(add); };"
+              "show(); function next() { fetch('/api/jobs?start=' + (shown + 3)).then(() => { shown += 3; show();"
+              " if (shown + 3 >= ids.length) document.getElementById('n').setAttribute('aria-disabled', 'true'); }); }</script>"
+              + _DECOYS + "<button id='n' aria-label='Next jobs' onclick='next()'><svg width='10' height='10'></svg>&gt;</button></body></html>"),
+    # "Load more jobs" adds three jobs to the list and goes away when there are no more
+    "/list-more": (_LIST_HEAD + "const more = () => { ids.slice(shown, shown + 3).forEach(add); shown += 3;"
+                   " if (shown >= ids.length) document.getElementById('m').remove(); }; more();</script>"
+                   + _DECOYS + "<button id='m' onclick='setTimeout(more, 200)'>Load more jobs</button></body></html>"),
+    # the only "Next" belongs to a form: it is never pressed
+    "/list-form": (_LIST_HEAD + "ids.slice(0, 3).forEach(add);</script>" + _DECOYS + "</body></html>"),
+    # a "Next jobs" button that tries to send a form when it is pressed
+    "/list-post": (_LIST_HEAD + "ids.slice(0, 3).forEach(add);</script><form id='f' method='post' action='/collect'><input name='q' value='x'></form>"
+                   "<button aria-label='Next jobs' onclick=\"document.getElementById('f').submit()\">&gt;</button></body></html>"),
+})
 
 
 class Site:
@@ -172,6 +199,74 @@ def test_a_form_that_submits_itself_is_never_sent(site, path):
     result, _, pool = render(site, path)
     assert not any(method == "POST" for method, _, _ in site.seen) and pool.blocked_writes >= 1
     assert result.error and not result.html            # the page left itself for an error page: it is not read as a posting
+
+
+def render_list(site, path, steps, **kw):
+    async def go():
+        pool = BrowserPool(concurrency=2, guard=guard, resolver=site.resolver, **kw)
+        try:
+            started = time.time()
+            result = await pool.render_list(f"http://{SITE}{path}", steps, pause=1.0)
+            return result, time.time() - started, pool
+        finally:
+            await pool.aclose()
+    site.seen.clear()
+    result, seconds, pool = asyncio.run(go())
+    if result.error and "Chromium could not start" in result.error:
+        pytest.skip(result.error)
+    return result, seconds, pool
+
+
+def job_links(links) -> list[str]:
+    return sorted({link.rsplit("/", 1)[-1] for link in links if "/jobs/" in link})
+
+
+def test_a_script_built_list_is_followed_through_its_own_next_button(site):
+    result, seconds, pool = render_list(site, "/list", 5)
+    assert not result.error and all(f'href="/jobs/{n}"' in result.html for n in (1001, 1002, 1003))      # the first view, as always
+    assert result.steps == 2 and pool.paging_steps == 2                 # nine jobs, three at a time: after two presses the button is disabled
+    assert job_links(result.links) == ["1004", "1005", "1006", "1007", "1008", "1009"]
+    assert seconds >= 2.0                                               # a pause of at least a second before every press
+    assert not any("/trap/" in link for link in result.links)           # the carousel and "Apply" were not pressed
+    assert not any(method != "GET" for method, _, _ in site.seen)       # ... and neither was the form's "Next"
+    assert [path for _, _, path in site.seen if path.startswith("/api/jobs")] == ["/api/jobs?start=3", "/api/jobs?start=6"]
+
+
+def test_a_load_more_button_is_pressed_until_it_is_gone_and_never_more_often_than_asked(site):
+    result, _, _ = render_list(site, "/list-more", 5)
+    assert result.steps == 2 and job_links(result.links) == [str(n) for n in range(1001, 1010)]
+    result, _, _ = render_list(site, "/list-more", 1)
+    assert result.steps == 1 and job_links(result.links) == [str(n) for n in range(1001, 1007)]
+    assert not any(method != "GET" for method, _, _ in site.seen) and not any("/trap/" in link for link in result.links)
+
+
+def test_nothing_is_pressed_unless_paging_is_asked_for_and_never_a_forms_button(site):
+    result, _, pool = render_list(site, "/list", 0)                     # the off switch: exactly render()
+    assert not result.error and result.steps == 0 and result.links == () and pool.paging_steps == 0
+    assert not any(path.startswith("/api/jobs") for _, _, path in site.seen)
+    result, _, pool = render_list(site, "/list-form", 5)                # "Next" is there, but it submits a form
+    assert not result.error and result.steps == 0 and pool.paging_steps == 0
+    assert not any(method != "GET" for method, _, _ in site.seen) and not any(path.startswith("/apply-next") for _, _, path in site.seen)
+
+
+def test_a_paging_button_cannot_be_used_to_send_a_form(site):
+    result, _, pool = render_list(site, "/list-post", 3)
+    assert result.steps == 1 and pool.blocked_writes >= 1               # pressed once; what it tried to send was refused
+    assert not any(method == "POST" for method, _, _ in site.seen) and result.links == ()
+    assert all(f'href="/jobs/{n}"' in result.html for n in (1001, 1002, 1003))      # the first view is still what was read
+
+
+def test_which_labels_are_a_paging_control():
+    import re
+    from app.browser_pool import MAX_PAGING_STEPS, PAGING_LABEL
+    rx = re.compile(PAGING_LABEL, re.I)
+    for label in ("Next", "next page", "Next jobs", "Load more", "Load more jobs", "Show more", "Show more results", "View more jobs", "More jobs",
+                  "Next ›", "› Next"):
+        assert rx.match(label), label
+    for label in ("Next similar jobs", "Next step", "Apply", "Apply now", "Submit", "Search", "Sign in", "Continue", "Next: your details",
+                  "Load more filters", "More", "Accept all", "Send application", "Upload resume", "Save and next", "Next month"):
+        assert not rx.match(label), label
+    assert 0 < MAX_PAGING_STEPS <= 50
 
 
 def test_which_requests_may_leave():
