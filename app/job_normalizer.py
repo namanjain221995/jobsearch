@@ -229,6 +229,8 @@ _FOREIGN = re.compile(
     r"cork|belfast|luxembourg city|tallinn|riga|vilnius|kyiv|belgrade|zagreb|sofia|athens|istanbul)\b",
     re.I,
 )
+# "Toronto, ON, CA" / "ON,CA": a Canadian province code before the country code CA is Canada, not California.
+_CANADA_CODE = re.compile(r"\b(ON|BC|QC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU)\s*,\s*CA\b")
 _STATE_ABBR = re.compile(r"(?:,\s*|-\s+|\(\s*|^\s*)(" + "|".join(US_STATES) + r")\b(?!\.)")
 _STATE_NAME = re.compile(r"\b(" + "|".join(n for n in US_STATES.values()) + r")\b", re.I)
 _US_CITY = re.compile(r"\b(" + _US_CITIES + r")\b", re.I)
@@ -243,17 +245,23 @@ def classify_location(segment: str) -> str:
         return "unknown"
     if _US_TOKEN.search(s) or _US_TOKEN_CI.search(s) or re.search(r"\bnew mexico\b", s, re.I):
         return "us"
-    foreign = _FOREIGN.search(s)
+    foreign = _FOREIGN.search(s) or _CANADA_CODE.search(s)
     if foreign:
         # "Paris, TX" style: an unambiguous US state abbreviation after a foreign-looking city.
         m = _STATE_ABBR.search(s)
-        if m and m.group(1) in {"TX", "NY", "NJ", "OH", "FL", "WA", "VA", "NC", "TN", "KY", "MN", "WI", "MI", "OK", "KS", "UT", "NV", "AZ", "NM", "OR", "IA", "MO", "CT", "RI", "NH", "VT", "WV", "WY", "ND", "SD", "HI", "AK", "MS", "GA", "IL", "MA", "MD", "PA", "CO", "SC", "LA", "AL", "AR", "ID", "MT", "NE", "ME"} \
+        if m and m.group(1) in {"TX", "NY", "NJ", "OH", "FL", "WA", "VA", "NC", "TN", "KY", "MN", "WI", "MI", "OK", "KS", "UT", "NV", "AZ", "NM", "OR", "IA", "MO", "CT", "RI", "NH", "VT", "WV", "WY", "ND", "SD", "HI", "AK", "MS", "GA", "IL", "MA", "MD", "PA", "SC", "LA", "AL", "AR", "ID", "MT", "NE", "ME"} \
                 and not re.search(r"\b(canada|uk|india|germany|france)\b", s, re.I):
             return "us"
         return "foreign"
     if _STATE_ABBR.search(s) or _STATE_NAME.search(s) or _US_CITY.search(s):
         return "us"
     return "unknown"
+
+
+def _strong_us(segment: str) -> bool:
+    """US evidence that does not rest on a two-letter code: the country in words, a state name or a known US city."""
+    s = segment or ""
+    return bool(_US_TOKEN.search(s) or _US_TOKEN_CI.search(s) or _STATE_NAME.search(s) or _US_CITY.search(s)) and not _FOREIGN.search(s)
 
 
 def us_location_status(location: str, country_hint: str = "", description: str = "") -> tuple[bool, str]:
@@ -266,6 +274,11 @@ def us_location_status(location: str, country_hint: str = "", description: str =
     segments = [s for s in _SPLIT.split(location or "") if s.strip()]
     kinds = [classify_location(s) for s in segments]
     if "us" in kinds:
+        # Two-letter codes are ambiguous (CO is Colorado and Colombia, CA California and Canada, IN Indiana and India).
+        # When the source itself names another country, a bare state code is not evidence of a US location: the
+        # location then needs a US state name, a known US city or "United States" in words.
+        if hint and hint not in _US_COUNTRY_CODES and not any(_strong_us(seg) for seg in segments):
+            return False, "Source lists a non-US country"
         return True, "US location listed"
     if hint in _US_COUNTRY_CODES and "foreign" not in kinds:
         return True, "Source lists country as United States"

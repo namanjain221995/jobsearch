@@ -86,3 +86,15 @@ def test_experience_and_salary_are_never_invented():
 
 def test_html_to_text_removes_scripts():
     assert html_to_text("&lt;p&gt;Hello &lt;script&gt;alert(1)&lt;/script&gt;world&lt;/p&gt;") == "Hello world."
+
+
+def test_two_letter_codes_that_are_also_countries_do_not_make_a_job_american():
+    """CO is Colorado and Colombia, CA California and Canada, IN Indiana and India. Found on 2026-11-21: three postings in
+    Bogota and Ontario were stored as US jobs."""
+    from app.job_normalizer import us_location_status as us
+    for location, hint in [("Bogota,CO", ""), ("Bogota, CO, Colombia", ""), ("ON,CA", ""), ("Toronto, ON, CA", ""),
+                           ("Medellin, CO", "Colombia"), ("Bogota,CO", "CO"), ("Remote, CA", "CA"), ("Bangalore, IN", "IN")]:
+        assert us(location, hint)[0] is False, (location, hint)
+    for location, hint in [("Denver, CO", ""), ("Denver, CO", "CO"), ("Boulder, CO", "US"), ("San Jose, CA", ""), ("San Francisco, CA", "CA"),
+                           ("Indianapolis, IN", "IN"), ("Paris, TX", ""), ("Austin, TX", "MX"), ("New York, NY", "United States")]:
+        assert us(location, hint)[0] is True, (location, hint)
