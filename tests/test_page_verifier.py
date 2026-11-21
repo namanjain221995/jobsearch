@@ -1178,3 +1178,75 @@ def test_a_page_whose_title_or_share_text_names_another_country_than_its_job_dat
             ('<title>Engineer in Berlin</title>', "Berlin, Germany", "DE")]            # not claimed as US: nothing to contradict
     for markup, location, hint in fine:
         assert place_conflict(markup, location, hint) == "", markup
+
+
+# ---------------------------------------------------------------- a view the page's own data says is not shown
+# The skeleton of a posting page of a Phenom-hosted career site as read on 2026-11-21 (careers.adobe.com,
+# careers.snowflake.com): the "posting expired" view is in every first response, the page's own job data says whether
+# the posting was found, and a script shows one or the other. A filled posting answered HTTP 410 with "hits":0.
+def phenom_page(hits: int = 1, posting: bool = True, sentence: str = "We're sorry… the job you are trying to apply for has been filled.",
+                after: str = "", closed_section: bool = True) -> str:
+    data = ld({**BASE, "title": "Senior Enterprise Architect", "hiringOrganization": {"@type": "Organization", "name": "Adobe"},
+               "jobLocation": {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": "Lehi", "addressRegion": "Utah",
+                                                             "addressCountry": "United States of America"}}}) if posting else ""
+    job = '"data":{"job":{"title":"Senior Enterprise Architect","reqId":"R170831"}}' if hits else '"data":{}'
+    return ('<html><head><title>Senior Enterprise Architect in Lehi, Utah, United States of America | Sales at Adobe</title>' + data
+            + '<script>var phApp = phApp || {}; phApp.ddo = {"jobDetail":{"status":200,"hits":%d,"totalHits":%d,%s}};</script></head><body>' % (hits, hits, job)
+            + '<section class="ph-widget phw-widget" view="v4ixyy-job-expire-view" type="static" instance-id="v4ixyy" original-view="job-expire-view">'
+              '<div class="ph-widget-target job-expire-view-default"><div class="expire-job-view" data-ph-at-id="job-expire-block">'
+              '<section class="inner"><figure><img alt="Job completion image"></figure></section>'
+              f'<h2><ppc-content data-ph-at-id="job-completion-info">{sentence}</ppc-content></h2>'
+              '<p>Maybe you would like to consider the Categories below :</p></div></div>' + ("</section>" if closed_section else "")
+            + '<section class="ph-widget" view="job-info" original-view="job-info"><h1>Senior Enterprise Architect</h1>'
+              f'<p>Lehi, Utah, United States of America</p><a href="/us/en/apply?jobSeqNo=R170831">Apply now</a></section>{after}</body></html>')
+
+
+def test_a_view_the_pages_own_data_says_is_not_shown_does_not_close_the_posting():
+    url = "https://careers.adobe.example/us/en/job/R170831/Senior-Enterprise-Architect"
+
+    def serve(body: str, status: int = 200):
+        def handler(request):
+            return httpx.Response(404) if request.url.path == "/robots.txt" else httpx.Response(status, text=body)
+        return verify(url, handler)
+
+    verdict = serve(phenom_page())                      # the page's data found the posting: the expired view is not what the page says
+    assert verdict.job is not None, verdict.reason
+    assert (verdict.job.title, verdict.job.company) == ("Senior Enterprise Architect", "Adobe") and "Lehi" in verdict.job.location
+    assert "has been filled" not in jv.page_text(phenom_page()) and "Apply now" in jv.page_text(phenom_page())
+    assert "has been filled" in phenom_page()           # still in the markup: only the text leaves it out
+    verdict = serve(phenom_page(sentence="OH SNAP! THIS JOB HAS BEEN CLOSED."))
+    assert verdict.job is not None, verdict.reason
+
+    # Everything else stays closed: the wording is left out only when the page's own data says the posting was found.
+    assert "Posting not found" in serve(phenom_page(hits=0, posting=False), status=410).reason          # as the filled posting answered
+    gone = serve(phenom_page(hits=0))                   # the data found nothing: the view is what the page shows, whatever else it carries
+    assert gone.job is None and gone.reason == "Posting is marked closed"
+    twice = serve(phenom_page(after="<p>This position has been filled.</p>"))      # said outside the expired view as well
+    assert twice.job is None and twice.reason == "Posting is marked closed"
+    broken = serve(phenom_page(closed_section=False))   # the view's element never ends: where the markup cannot be followed,
+    assert broken.job is None and broken.reason == "Posting is marked closed"      # nothing is left out
+    unclosed = phenom_page().replace("</section>", "")
+    assert jv.shown_markup(unclosed) == unclosed and jv.closed_reason(jv.page_text(unclosed)) == "Posting is marked closed"
+    plain = '<html><body><section original-view="job-expire-view"><h2>This job has been filled.</h2></section><h1>Engineer</h1></body></html>'
+    assert jv.shown_markup(plain) == plain and jv.closed_reason(jv.page_text(plain))      # no job data of the page's own: unchanged
+    assert jv.shown_markup("") == "" and jv.shown_markup(POSTING) == POSTING
+    late = phenom_page().replace("</body>", "<p>Applications are now closed.</p></body>")
+    assert jv.closed_reason(jv.page_text(late)) == "Posting is marked closed"
+
+
+def test_submit_resume_is_an_application_action():
+    """2026-11-21: three open postings on jobs.apple.com (rendered, no JobPosting data) answered correctly by the model
+    were refused with "No application action found on page": the page's button says "Submit Resume"."""
+    body = ("<html><head><title>Software Engineer, Embedded Software - Jobs - Careers at Acme</title></head><body><h1>Software Engineer, Embedded Software</h1>"
+            "<p>Cupertino, California, United States</p><button>Submit Resume</button><p>Acme designs hardware. " + "Build firmware. " * 40 + "</p></body></html>")
+    page = jv.Page("https://jobs.acme.example/en-us/details/200696251/software-engineer-embedded-software", 200, body, jv.page_text(body))
+    answer = {"closed_quote": "", "page_kind": "one_open_job_posting", "is_open_job_posting": True, "title": "Software Engineer, Embedded Software",
+              "company": "Acme", "location": "Cupertino, California, United States"}
+    job, reason = jv.job_from_extraction(page, Candidate(url=page.url, provider="TechSara web search", cited=True), answer)
+    assert job is not None and job.location == "Cupertino, California, United States", reason
+    for words in ("Submit your résumé", "Submit CV", "submit my resume", "Apply now", "Start your application"):
+        assert jv._APPLY.search(words), words
+    for words in ("Resume your search", "Our resume tips", "Submit feedback", "We reviewed 300 applications"):
+        assert not jv._APPLY.search(words), words
+    bare = jv.Page(page.url, 200, body.replace("<button>Submit Resume</button>", ""), jv.page_text(body.replace("<button>Submit Resume</button>", "")))
+    assert jv.job_from_extraction(bare, Candidate(url=page.url, provider="TechSara web search", cited=True), answer) == (None, "No application action found on page")

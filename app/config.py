@@ -180,6 +180,7 @@ class Settings(BaseSettings):
     career_site_request_gap_seconds: float = 1.0     # pause between two requests to one host (never less than 1 s; a longer Crawl-delay in robots.txt wins)
     career_site_sitemaps_per_crawl: int = 12         # sitemap files read on one site in one crawl
     career_site_browser_pages: int = 4               # pages rendered in the headless browser on one site in one crawl (listing pages; 0 = never)
+    career_site_list_steps: int = 10                 # times a rendered listing's own "Next" / "Load more" button is pressed in one crawl, one pause apart (0 = never: the first part of the list only, as before)
     career_site_concurrency: int = 2                 # sites crawled at the same time (each at its own one-request pace)
     career_site_crawl_seconds: float = 1200.0        # one crawl stops reading new pages after this long
     career_site_max_backoff_days: float = 90.0       # a site that fails, is not readable or has no US postings waits longer each time, never longer than this

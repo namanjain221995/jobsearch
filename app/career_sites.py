@@ -16,8 +16,12 @@ site itself is remembered and read in the background, without any ATS platform:
       list, search, category, home or form address never), newest `lastmod` first;
    b. the site's listing page by a plain request: addresses in JobPosting data, in embedded JSON and in its links; a
       career home page that only points to its job list ("View all jobs") is followed there;
-   c. only when (a) and (b) gave nothing: the listing page rendered in the headless browser (browser_pool: it only
-      reads, never clicks or types), with "next" / "load more" followed where it is a plain link.
+   c. only when (a) and (b) gave nothing: the listing page rendered in the headless browser, with "next" / "load
+      more" followed where it is a plain link, and, where it is a button of the list without an address, by pressing
+      that button up to CAREER_SITE_LIST_STEPS times with the host's pause before each press (browser_pool.render_list:
+      the only control the browser ever presses; never a form's button, nothing is typed; 0 switches it off). Measured
+      on 2026-11-21 on a list of 2,408 jobs shown behind a "Next jobs" button: 20 posting addresses without it, 119
+      with ten presses.
    When what the sitemaps named proved no posting at all (a sitemap of marketing pages), (b) and (c) are tried too.
    Nothing is submitted, no login, no CAPTCHA, no evasion: a site that answers 401 / 403 / 429 or a robot check, or
    whose robots.txt disallows the pages, is recorded as not readable and left alone for a long time. A listing that
@@ -489,6 +493,7 @@ class CrawlRecord:
     us_postings: int = 0              # of those, postings in the United States that were stored
     requests: int = 0                 # every request of this crawl: robots.txt, sitemaps, listing pages, posting pages, redirects
     browser_pages: int = 0
+    list_steps: int = 0               # "next" / "load more" controls pressed on rendered listing pages (each is counted in `requests`)
     error: str = ""                   # why nothing (more) was read
     known: int = 0                    # candidates already in the index (kept current by the page reader, not read here)
     sitemaps: int = 0
@@ -538,6 +543,24 @@ class _PacedBrowser:
             if record is not None:
                 record.browser_pages += 1
             return await self.pool.render(url)
+
+    async def render_list(self, url: str, steps: int):
+        """A listing page, followed through its own "Next" / "Load more" control up to `steps` times (browser_pool.
+        render_list). The host's slot is held for the whole time, so no other request of this crawler goes to the site
+        meanwhile; every press waits the host's pause and is counted as a request of the crawl."""
+        paged = getattr(self.pool, "render_list", None)
+        if steps <= 0 or paged is None:
+            return await self.render(url)
+        host = (urlsplit(url).hostname or "").lower()
+        async with self.reader._slot(url):
+            record = _CRAWL.get()
+            if record is not None:
+                record.browser_pages += 1
+            result = await paged(url, steps, max(self.reader.host_gap, self.reader.gaps.get(host, 0.0)))
+            if record is not None:
+                record.requests += int(getattr(result, "steps", 0) or 0)
+                record.list_steps += int(getattr(result, "steps", 0) or 0)
+            return result
 
 
 class SiteReader(PageVerifier):
@@ -653,6 +676,7 @@ class Crawler:
         self.per_day = max(0, int(getattr(settings, "career_site_pages_per_day", 2000)))
         self.max_sitemaps = max(1, int(getattr(settings, "career_site_sitemaps_per_crawl", 12)))
         self.browser_pages = max(0, int(getattr(settings, "career_site_browser_pages", 4)))
+        self.list_steps = max(0, int(getattr(settings, "career_site_list_steps", 10)))
         self.concurrency = max(1, int(getattr(settings, "career_site_concurrency", 2)))
         self.seconds = max(30.0, float(getattr(settings, "career_site_crawl_seconds", 1200.0)))
         self.aggregators = aggregator_hosts(getattr(settings, "aggregator_hosts", ""))
@@ -957,7 +981,7 @@ class Crawler:
             queue = [*hints, *queue]
         if not answered or not reader.browser.available or record.browser_pages >= self.browser_pages:
             return {}, ""
-        # (c) The listing shows its jobs only with scripts: look at it in the browser. It reads, it never clicks or types.
+        # (c) The listing shows its jobs only with scripts: look at it in the browser. It reads; the one thing it may press is the list's own paging button.
         found: dict[str, str] = {}
         todo = [*[u for u in answered if u in hinted][-1:], *answered[:1]]
         rendered: set[str] = set()
@@ -969,7 +993,9 @@ class Crawler:
             if not await reader.robots.allowed(reader.client, url):
                 record.disallowed += 1
                 continue
-            result = await reader.browser.render(url)
+            # A list built by script often shows its first part only (20 of 2,408 jobs on one site read on 2026-11-21):
+            # its own "Next" / "Load more" control is pressed up to CAREER_SITE_LIST_STEPS times (0 = never).
+            result = await reader.browser.render_list(url, self.list_steps)
             if result.error:
                 record.blocked += result.error == "blocked"
                 break
@@ -979,6 +1005,10 @@ class Crawler:
             rendered.add(final)
             page = Page(final, result.status or 200, result.html, result.text or page_text(result.html), rendered=True)
             extra, _ = self._candidates(page, addresses)
+            for link in getattr(result, "links", ()) or ():          # the further parts of the list: each address is judged like any other
+                clean = addresses.clean(link)
+                if clean:
+                    extra.setdefault(clean, "")
             new = set(extra) - set(found)
             found.update(extra)
             if new:
