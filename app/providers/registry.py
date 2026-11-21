@@ -124,6 +124,7 @@ SPECS["aws_web_search"] = Spec("aws_web_search", "Web search (AWS)", "discovery"
 # no model). So jobs the AI web search found once stay in the index, are kept current by the background reader and are
 # found by later searches without any web search: the index grows beyond the ATS platforms. The engine supplies the
 # reader, because the page verifier is its own (Ctx.options["career_page_reader"]).
+# The career-site crawler (app/career_sites.py) stores what it finds on a company's site as units of this same source.
 CAREER_PAGE = "career_page"
 
 
@@ -137,7 +138,7 @@ async def _career_page(ctx: Ctx, key: str, scope: str) -> list[Job]:
 
 SPECS[CAREER_PAGE] = Spec(CAREER_PAGE, "Company career sites", "board", _career_page, keyed=True, min_ttl=3 * 3600,
                           needs=lambda s: bool(getattr(s, "career_page_memory", True)),
-                          note="Postings on employers' own career sites that an earlier search verified; each is checked again on its own page")
+                          note="Postings on employers' own career sites that a search verified or the career-site crawler found; each is checked again on its own page")
 BOARD_LEAD_SOURCES = ("greenhouse", "lever", "ashby", "recruitee", "pinpoint", "rippling")      # AI leads on these are checked against the employer's full board
 
 

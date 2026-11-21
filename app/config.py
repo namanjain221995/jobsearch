@@ -158,6 +158,18 @@ class Settings(BaseSettings):
     techsara_rerank_wait_seconds: float = 20.0       # time the ranking stage then waits for it at most; jobs it did not reach (the weakest keyword matches) keep their keyword score
     ai_rank_seconds: float = 150.0                   # time one search may spend on OpenAI / Claude judging the shortlist; unjudged jobs keep their other score
     career_page_memory: bool = True                  # postings verified on employers' own career sites are kept in the index and checked again later (source "career_page")
+    # Career-site crawler (app/career_sites.py): an employer's own career site, once a search verified a posting on it
+    # (or once it was imported from a file), is read in the background for all its US postings. Never during a search.
+    career_site_crawl: bool = True                   # false: sites are still remembered, none is crawled
+    career_site_crawl_days: float = 7.0              # one site is crawled at most once in this many days
+    career_site_pages_per_crawl: int = 150           # new posting pages read on one site in one crawl
+    career_site_pages_per_day: int = 2000            # new posting pages read on all sites together in 24 hours
+    career_site_request_gap_seconds: float = 1.0     # pause between two requests to one host (never less than 1 s; a longer Crawl-delay in robots.txt wins)
+    career_site_sitemaps_per_crawl: int = 12         # sitemap files read on one site in one crawl
+    career_site_browser_pages: int = 4               # pages rendered in the headless browser on one site in one crawl (listing pages; 0 = never)
+    career_site_concurrency: int = 2                 # sites crawled at the same time (each at its own one-request pace)
+    career_site_crawl_seconds: float = 1200.0        # one crawl stops reading new pages after this long
+    career_site_max_backoff_days: float = 90.0       # a site that fails, is not readable or has no US postings waits longer each time, never longer than this
     rank_cache_days: float = 7.0                     # a model's judgement of the same candidate and the same posting text is reused this long; 0 = never
 
     title_expansion: bool = True                     # one AI call per search: real-world variants of the requested titles
