@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ... import ats_platforms
+from ... import ats_platforms, career_sites
 from ...config import Settings
 from ...providers import registry
 from ..schemas import AtsHealthOut, AtsPlatformHealth, AwsWebSearchStatus, ProviderHealth
@@ -74,7 +74,23 @@ async def load_evidence(db: AsyncSession, now: float | None = None) -> tuple[dic
                                last_ok=float(r[5]) if r[5] is not None else None, postings=int(r[6]), error=r[7] or "")
                 for r in rows}
     crawl = (await db.execute(text(_CRAWL_SQL))).one()
-    return evidence, {"boards": int(crawl[0]), "read": int(crawl[1]), "live": int(crawl[2])}
+    counts = {"boards": int(crawl[0]), "read": int(crawl[1]), "live": int(crawl[2])}
+    counts.update(await _career_sites(db, since))
+    return evidence, counts
+
+
+async def _career_sites(db: AsyncSession, since: float) -> dict[str, int]:
+    """Company career sites (app/career_sites.py): sites known, sites crawled inside the window, sites not readable, and
+    company-site postings in the index. Two statements, inside a savepoint: a database whose migration a8c5e3f1d2b7 has
+    not run yet shows no sites instead of failing the whole view."""
+    try:
+        async with db.begin_nested():
+            sites = (await db.execute(text(career_sites.SITE_STATS_SQL), {"since": since})).one()
+            pages = (await db.execute(text(career_sites.PAGE_STATS_SQL))).scalar_one()
+    except Exception:
+        return {}
+    return {"career_sites": int(sites[0]), "career_sites_read": int(sites[1]), "career_sites_ok": int(sites[2]),
+            "career_sites_blocked": int(sites[3]), "career_postings": int(pages)}
 
 
 async def cached_evidence(db: AsyncSession, holder) -> tuple[dict[str, Evidence], dict[str, int]]:
@@ -198,7 +214,31 @@ def providers(settings: Settings, off: set[str], aws: AwsWebSearchStatus | None,
         detail="Employer boards found in the open Common Crawl address index; each is read through its platform's reader.",
         reason=(f"{_n(boards, 'board')} imported, {crawl.get('read', 0):,} read so far, {crawl.get('live', 0):,} with postings."
                 if boards else "No boards have been imported from Common Crawl.")))
+    out.append(_career_site_line(settings, off, crawl))
     return out
+
+
+def _career_site_line(settings: Settings, off: set[str], counts: dict[str, int]) -> ProviderHealth:
+    """"Company career sites": employers' own sites the crawler reads without any ATS platform. Counts only."""
+    spec = registry.SPECS.get(registry.CAREER_PAGE)
+    sites, read, postings = counts.get("career_sites", 0), counts.get("career_sites_read", 0), counts.get("career_postings", 0)
+    if registry.CAREER_PAGE in off:
+        state, why = "switched_off", "Switched off under Job sources."
+    elif spec is None or not spec.needs(settings):
+        state, why = "switched_off", "Company-site postings are not kept (CAREER_PAGE_MEMORY is off)."
+    elif not getattr(settings, "career_site_crawl", True):
+        state, why = "switched_off", "The crawler is switched off in the server settings (CAREER_SITE_CRAWL)."
+    else:
+        state, why = ("configured" if sites else "not_configured"), ""
+    blocked = counts.get("career_sites_blocked", 0)
+    figures = (f"{_n(sites, 'site')} known, {read:,} read in the last {WINDOW_DAYS} days, {_n(postings, 'posting')} in the index"
+               + (f"; {_n(blocked, 'site')} not readable (left alone)." if blocked else "."))
+    if not sites and not postings:
+        figures = "No company career site is known yet: a site is added when a search verifies a posting on it, or from a file."
+    return ProviderHealth(
+        id="career_sites", label="Company career sites", kind="catalogue", state=state, reason=f"{why} {figures}".strip(),
+        detail="Employers' own career sites, read in the background without any ATS platform: sitemaps, job data on the "
+               "listing page, then the browser; each posting is verified on its own page. One site at most once a week.")
 
 
 async def report(db: AsyncSession, settings: Settings, off: set[str], aws: AwsWebSearchStatus | None, holder) -> AtsHealthOut:

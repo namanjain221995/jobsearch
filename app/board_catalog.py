@@ -223,6 +223,11 @@ async def catalog_tick(engine, per_minute: dict[str, int] | None = None) -> int:
     index = engine.index
     if not hasattr(index, "catalog_due") or len(getattr(engine, "_inflight", {})) > MAX_INFLIGHT:
         return 0
+    # Employers' own career sites (app/career_sites.py): the sites that are due start their crawl here, in the
+    # background and under their own limits (one request at a time per site, pages per crawl and per day).
+    crawler = getattr(engine, "career_sites", None)
+    if crawler is not None:
+        await crawler.tick()                             # never raises
     rates = per_minute or PER_MINUTE
     wanted = {ats: n for ats, n in rates.items()
               if n > 0 and ats in engine.specs and (engine.specs[ats].keyed or ats in ACCOUNT_SOURCES)}

@@ -2,6 +2,7 @@
 
     python -m app.portal.import_boards [--dry-run] [--only greenhouse,lever] [--validate N] [--simplify] [--dsn postgresql://...]
     python -m app.portal.import_boards --common-crawl [N] [--cc-state PATH] [--cc-max-pages M] [--only ...] [--dry-run]
+    python -m app.portal.import_boards --career-sites FILE.csv [--dry-run]
 
 Registration fetches nothing: boards are read later by the engine's paced catalogue trickle (app/board_catalog.py).
 --validate N reads N random new boards per ATS now (paced, public feeds only) and reports the live ratio and postings per
@@ -9,6 +10,11 @@ board; without --dry-run those boards are recorded (live / empty / dead) and the
 --common-crawl [N] (default 2) reads board ids from the Common Crawl URL index of the N most recent crawls
 (app/portal/common_crawl.py) instead of the shipped CSV lists, and registers the new ones with origin 'commoncrawl'
 through the same dedupe and register_catalog path; the trickle reads them like any other catalogue board.
+--career-sites FILE registers employers' own career sites for the career-site crawler (app/career_sites.py) and does
+nothing else. The file is CSV with a header: host, employer and optionally listing (the page that lists the openings);
+app/data/career_sites.example.csv shows the form. Every host is validated: a public https host name that resolves to
+public addresses only, and not a job board, a career platform or a host that is never fetched. Nothing is crawled at
+that moment; the background reader crawls each site within its limits.
 Idempotent: a second run registers nothing new."""
 import argparse
 import asyncio
@@ -93,6 +99,7 @@ async def main(argv: list[str] | None = None, index=None, client: httpx.AsyncCli
                     help="discover board ids from the Common Crawl index of the N most recent crawls (default 2)")
     ap.add_argument("--cc-state", default="", help="resume file for --common-crawl (default ~/.cache/jobsearch/common_crawl_state.json)")
     ap.add_argument("--cc-max-pages", type=int, default=0, metavar="M", help="read at most M index pages per crawl and pattern")
+    ap.add_argument("--career-sites", default="", metavar="FILE", help="register company career sites from a CSV file (host, employer[, listing])")
     args = ap.parse_args(argv)
     only = [a.strip() for a in args.only.split(",") if a.strip()] or None
     bad = [a for a in only or [] if a not in board_catalog.CATALOG_ATS]
@@ -106,6 +113,12 @@ async def main(argv: list[str] | None = None, index=None, client: httpx.AsyncCli
             from ..config import get_settings
             dsn = get_settings().postgres_dsn
         index = await PgJobIndex(dsn, max_size=4).connect()
+    if args.career_sites:
+        try:
+            return await import_career_sites(args.career_sites, index, args.dry_run)
+        finally:
+            if own_index:
+                await index.close()
     own_client = client is None
     client = client or httpx.AsyncClient(follow_redirects=False)
     try:
@@ -147,7 +160,39 @@ async def main(argv: list[str] | None = None, index=None, client: httpx.AsyncCli
             await index.close()
 
 
+async def import_career_sites(path: str, index, dry_run: bool = False) -> dict:
+    """Register the sites of a seed file. Each host is validated by its form and the never-crawled lists
+    (career_sites.read_seed_file) and must resolve to public addresses only (netguard); nothing is fetched."""
+    from .. import career_sites
+    from ..config import get_settings
+    from ..providers.paid import aggregator_hosts
+    rows, refused = career_sites.read_seed_file(path, aggregator_hosts(get_settings().aggregator_hosts))
+    store = career_sites.PgStore(index)
+    report = {"dry_run": dry_run, "career_sites": {"rows": len(rows) + len(refused), "valid": 0, "registered": 0, "existing": 0,
+                                                    "refused": refused}}
+    out = report["career_sites"]
+    for key, base, employer, listing in rows:
+        try:
+            await netguard.assert_public_url(base + "/")
+        except netguard.UnsafeURL as exc:
+            refused.append(f"{key}: {exc}")
+            continue
+        out["valid"] += 1
+        if dry_run:
+            continue
+        new = await store.register(key, base, employer, "file", "", listing)
+        out["registered" if new else "existing"] += 1
+    return report
+
+
 def _print(report: dict) -> None:
+    sites = report.get("career_sites")
+    if sites is not None:
+        print(("DRY RUN - nothing written\n" if report["dry_run"] else "") + f"career sites: {sites['rows']} rows, {sites['valid']} valid, "
+              f"{sites['registered']} registered, {sites['existing']} already known, {len(sites['refused'])} refused")
+        for line in sites["refused"][:50]:
+            print("  refused " + line)
+        return
     print(("DRY RUN - nothing written\n" if report["dry_run"] else "") + f"{'ats':16} {'new':>7} {'existing':>9} {'skipped':>8} {'registered':>11}")
     for ats, r in report["ats"].items():
         print(f"{ats:16} {r['new']:>7} {r['existing']:>9} {r['skipped']:>8} {r['registered']:>11}")

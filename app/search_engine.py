@@ -42,6 +42,7 @@ from .job_ranker import (MIN_ANCHORS, SCORER_ORDER, apply_ai_ranking, apply_expl
                          index_tokens, query_tokens, static_related_titles, work_mode_rejects)
 from .job_verifier import Budget, PageVerifier, job_from_extraction
 from .rank_cache import RankCache
+from . import career_sites
 from .providers import registry, workday
 from .providers.base import BoardNotFound, Ctx, HostLimiter, RobotsCache, SourceError, now_iso
 from .providers.boards import seed_pairs
@@ -233,6 +234,8 @@ class SearchEngine:
             settings.browser_concurrency, enabled=settings.browser_enabled, guard=_guard)
         self.verifier = PageVerifier(self.client, browser=self.browser)
         self.ctx.options["career_page_reader"] = self._read_career_page
+        # The site of a remembered posting is read for its other openings, in the background only (career_sites.py).
+        self.career_sites = career_sites.Crawler.for_engine(self)
         self._page_gate = asyncio.Semaphore(24)      # remembered pages checked at the same time (the verifier paces each host itself)
         self.searx = SearxClient(settings.searxng_url, self.client, self.index, settings.searxng_timeout_seconds,
                                  settings.searxng_min_interval_seconds, settings.searxng_cache_hours)
@@ -351,6 +354,8 @@ class SearchEngine:
                 await self.index.record_board(CAREER_PAGE, url, True, 1, "catalog")
                 await board_catalog.note_read(self.index, unit, [job])
                 kept += 1
+                if self.career_sites is not None:
+                    await self.career_sites.note_posting(job)       # one INSERT for a host seen for the first time; never raises
             except asyncio.CancelledError:
                 raise
             except Exception:
