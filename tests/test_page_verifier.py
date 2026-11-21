@@ -1157,3 +1157,24 @@ def test_the_engine_sends_page_checks_a_few_at_a_time_and_lets_one_call_fall_bac
     # the model answered nothing: every page that bears out its lead is verified on the claim, with the place the page states
     assert state.stats["ai_extracted"] == 0 and len(state.results) == count
     assert {j.location for j in state.results} == {"Austin, TX"} and all("no closed marker" in j.verification for j in state.results)
+
+
+def test_a_page_whose_title_or_share_text_names_another_country_than_its_job_data_is_not_a_us_job():
+    """2026-11-21: a posting in Brasilia carried job data "Brazil, Indiana, United States" and was delivered as a US job."""
+    from app.job_verifier import place_conflict
+    wrong = ('<html><head><title>Strong Junior Java Developer | Sigma Software</title>'
+             '<meta property="og:description" content="Strong Junior Java Developer in Brasília, Brazil. Apply now."></head></html>')
+    assert place_conflict(wrong, "Brazil, Indiana, United States", "United States")
+    assert place_conflict('<title>Nurse - Toronto, Canada</title>', "Toronto, OH, US", "US")
+    fine = [('<title>Welder - Brazil, IN | Acme</title><meta name="description" content="Welder in Brazil, Indiana. Apply today.">',
+             "Brazil, Indiana, United States", "US"),
+            ('<title>Data Engineer - Dublin, OH</title><meta property="og:description" content="Data Engineer at Cardinal in Dublin, Ohio">',
+             "Dublin, OH", "US"),
+            ('<title>Data Engineer | Stripe</title><meta name="description" content="Join Stripe in Seattle, WA or remote in the United States">',
+             "Seattle, WA", "US"),
+            ('<title>Data Engineer - Austin, TX</title><meta name="description" content="A global company with offices in London and '
+             'Singapore. This role is in Austin, TX">', "Austin, TX", "US"),
+            ('<title>Data Engineer</title>', "Austin, TX", "US"),
+            ('<title>Engineer in Berlin</title>', "Berlin, Germany", "DE")]            # not claimed as US: nothing to contradict
+    for markup, location, hint in fine:
+        assert place_conflict(markup, location, hint) == "", markup

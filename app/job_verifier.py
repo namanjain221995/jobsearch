@@ -34,8 +34,8 @@ from urllib.parse import parse_qsl, urljoin, urlsplit
 import httpx
 
 from . import ats_platforms
-from .job_normalizer import (analyze_authorization, detect_work_mode, extract_experience, extract_salary,
-                             html_to_text, parse_ats)
+from .job_normalizer import (_STATE_ABBR, _STATE_NAME, analyze_authorization, classify_location, detect_work_mode,
+                             extract_experience, extract_salary, html_to_text, parse_ats)
 from .job_ranker import best_title_relevance
 from .netguard import UnsafeURL, assert_public_url, pinned  # noqa: F401  (assert_public_url is looked up on this module at call time)
 from .providers import ats_pages
@@ -738,6 +738,31 @@ def _source(cand: Candidate) -> str:
     return f"{cand.provider} web search" if cand.provider in ("OpenAI", "Claude", "SearXNG") else (cand.provider or "Web crawl")
 
 
+_HEAD_PLACES = re.compile(
+    r"<title[^>]*>(.*?)</title>|<meta[^>]+(?:property|name)=[\"'](?:og:title|og:description|twitter:title|twitter:description|description)[\"']"
+    r"[^>]*content=[\"']([^\"']{0,400})|<meta[^>]+content=[\"']([^\"']{0,400})[\"'][^>]*(?:property|name)=[\"'](?:og:title|og:description|"
+    r"twitter:title|twitter:description|description)[\"']", re.I | re.S)
+
+
+def place_conflict(markup: str, location: str, hint: str) -> str:
+    """'' unless the page's own title and share texts name a place outside the United States while its job data says
+    United States. Found on 2026-11-21: a posting in Brasilia whose job data read "Brazil, Indiana, United States"
+    (locality "Brazil", region "Indiana") was delivered as a US job. The title and description tags are written for
+    people and say where the job is; when they and the job data disagree about the country, the page proves nothing
+    about a US job. Only those few short texts are read, so an office list further down the page does not count."""
+    says_us = (hint or "").strip().lower() in ("us", "usa", "united states", "united states of america") or classify_location(location) == "us"
+    if not says_us:
+        return ""
+    for match in _HEAD_PLACES.finditer((markup or "")[:60000]):
+        text = html_to_text(next((g for g in match.groups() if g), ""))[:400]
+        parts = [p for p in re.split(r"[|\u2013\u2014\u00b7]| - | in | at ", text) if p.strip()]
+        # "Brazil, Indiana" and "Dublin, Ohio" are US towns: a US state beside the name outweighs the foreign-sounding word.
+        kinds = ["us" if (_STATE_NAME.search(p) or _STATE_ABBR.search(p)) else classify_location(p) for p in parts]
+        if "foreign" in kinds and "us" not in kinds:
+            return "The page's own title or share text names a place outside the United States, its job data says United States"
+    return ""
+
+
 def _job_from_posting(posting: dict, by_id: dict, cand: Candidate, page: Page) -> tuple[Job | None, str]:
     title = _text_of(posting.get("title") or posting.get("name"))
     company = _organization(posting, by_id, cand, page)
@@ -763,6 +788,9 @@ def _job_from_posting(posting: dict, by_id: dict, cand: Candidate, page: Page) -
         description, markup = page.text[:20000], ""
     remote = "TELECOMMUTE" in str(posting.get("jobLocationType") or "").upper()
     location, hint = _places(posting)
+    conflict = place_conflict(page.html, location, hint)
+    if conflict:
+        return None, conflict
     salary = _base_salary(posting)
     if salary == "Not listed":
         salary = _salary(description)
