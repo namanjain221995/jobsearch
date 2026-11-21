@@ -10,8 +10,8 @@ import httpx
 import openai
 import pytest
 
-from app.ai_orchestrator import (DISCOVERY_SYSTEM, EMPLOYER_KINDS, OPEN_WEB_DEPTHS, OPEN_WEB_MAX_AGE_DAYS, PAGE_LEADS_PER_CALL, SITES_SCHEMA,
-                                 SITES_SYSTEM, AIOrchestrator, DiscoverySlice)
+from app.ai_orchestrator import (DISCOVERY_SYSTEM, EMPLOYER_KINDS, FOLLOW_UP, OPEN_WEB_DEPTHS, OPEN_WEB_MAX_AGE_DAYS, PAGE_LEADS_PER_CALL,
+                                 SITES_SCHEMA, SITES_SYSTEM, AIOrchestrator, DiscoverySlice, recency_words)
 from app.config import Settings
 from app.providers.claude_provider import SEARCH_HOW as CLAUDE_HOW
 from app.providers.claude_provider import WEB_SEARCH_TOOLS, ClaudeProvider
@@ -315,8 +315,13 @@ class Recorder:
             self.running -= 1
 
 
+# The tests name the calls of a round themselves: one call on the ATS hosts per provider, no open-web call and no
+# follow-up call unless a test asks for them. (A request of 300 makes twice a round's calls, see search_plan.ROUND_GROWTH.)
+ROUND = dict(openai_search_calls=1, claude_search_calls=1, openai_open_web_calls=0, claude_open_web_calls=0, ai_open_web_followup_calls=0)
+
+
 def orchestrator(target=300, openai=None, claude=None, chosen=(), focus=False, readers=READERS, hosts=None, **settings):
-    s = Settings(_env_file=None, **settings)
+    s = Settings(_env_file=None, **{**ROUND, **settings})
     ai = AIOrchestrator(s, openai if openai is not None else Recorder("OpenAI"), claude if claude is not None else Recorder("Claude"))
     ai.configure(plan_for(s, target))
     scope = Scope.of(list(chosen), focus, readers)
@@ -332,16 +337,17 @@ def test_every_search_of_a_search_belongs_to_one_call_of_one_provider():
     later = run(ai.discover_round(2, Profile(), req, ["AI Engineer", "ML Engineer", "LLM Engineer", "MLOps Engineer", "NLP Engineer"],
                                   ["Texas", "remote", "Ohio"], []))
     calls = [*ai.openai.calls, *ai.claude.calls]
-    assert len(ai.openai.calls) == len(ai.claude.calls) == 6 and len(first) == 6 and len(later) == 6 and ai.calls == ai.discovery_calls == 12
+    # A round of a 300-job search makes two calls a provider; the second round makes them again, with other searches.
+    assert len(ai.openai.calls) == len(ai.claude.calls) == 4 and len(first) == 4 and len(later) == 4 and ai.calls == ai.discovery_calls == 8
     hosted = [c for c in calls if c["restrict"]]
     asked = [q for c in hosted for q in searches_of(c["prompt"])]
-    assert len(hosted) == 6 and len(asked) == len(set(asked)) == 10 * len(hosted)        # no search twice, in any call, provider or round
+    assert len(hosted) == 8 and len(asked) == len(set(asked)) == 10 * len(hosted)        # no search twice, in any call, provider or round
     assert not {q for c in ai.openai.calls for q in searches_of(c["prompt"])} & {q for c in ai.claude.calls for q in searches_of(c["prompt"])}
     for call in hosted:                                                           # a call is held to the hosts of its own searches
         assert {q.split(" ", 1)[0].removeprefix("site:") for q in searches_of(call["prompt"])} == set(call["allowed_domains"]) <= set(HOSTS)
         assert "blocked_domains" not in call and "listed_only" not in call and call["searches"] == 10
         assert f"Run exactly these {len(searches_of(call['prompt']))} web searches" in call["prompt"]
-    start = searches_of(ai.claude.calls[0]["prompt"])                             # the first call on the ATS hosts
+    start = searches_of(ai.openai.calls[0]["prompt"])                             # the first call on the ATS hosts
     assert start[:len(HOSTS)] == [f'site:{h} "AI Engineer"' for h in HOSTS]       # the requested title on every host first
     texas = [q for q in asked if q.endswith('"AI Engineer" Texas')]
     assert texas and sum("myworkdayjobs.com" in q for q in asked) == 1            # the candidate's states next; a paced host only once
@@ -353,18 +359,25 @@ def test_every_search_of_a_search_belongs_to_one_call_of_one_provider():
     assert DiscoverySlice((), ("T",), "Texas", EMPLOYER_KINDS[0]).region == "Texas" and DiscoverySlice((), ("T",), "remote").region == ""
 
 
-def test_half_of_the_calls_of_each_provider_look_at_employers_own_career_sites():
-    ai = orchestrator()
+def test_open_web_calls_come_on_top_of_the_calls_on_ats_hosts_for_both_providers():
+    budgets = dict(openai_search_calls=1, claude_search_calls=1, openai_open_web_calls=1, claude_open_web_calls=2)
+    ai = orchestrator(**budgets)
     req = make_request(result_count=300, locations=["Texas"])
     run(ai.discover(Profile(skills=["Python"]), req, ["ML Engineer"], ["lever:acme", "greenhouse:beta"]))
-    kinds = lambda provider: ["open" if "blocked_domains" in c else "ats" for c in provider.calls]
-    # Round 1 of a 300-job search has three calls a provider. The providers are out of step, so the round has both kinds.
-    assert kinds(ai.openai) == ["open", "ats", "open"] and kinds(ai.claude) == ["ats", "open", "ats"]
+    kinds = lambda provider: sorted("open" if "blocked_domains" in c else "ats" for c in provider.calls)
+    # One round of a 300-job search: two calls a provider on the ATS hosts, and on top of them two (OpenAI) and four
+    # (Claude) calls on employers' own career sites.
+    assert kinds(ai.openai) == ["ats", "ats", "open", "open"] and kinds(ai.claude) == ["ats", "ats", "open", "open", "open", "open"]
+    # The open-web calls take nothing from the ATS hosts: the same searches are asked there with the open web switched off.
+    plain = orchestrator(**budgets, ai_open_web_share=0)
+    run(plain.discover(Profile(skills=["Python"]), req, ["ML Engineer"], ["lever:acme", "greenhouse:beta"]))
+    on_hosts = lambda o: sorted(q for c in [*o.openai.calls, *o.claude.calls] if c["restrict"] for q in searches_of(c["prompt"]))
+    assert on_hosts(ai) == on_hosts(plain) and len(on_hosts(ai)) == 40 and all(c["restrict"] for c in [*plain.openai.calls, *plain.claude.calls])
+    # Every further round makes the round's calls again.
     run(ai.discover_round(2, Profile(), req, ["AI Engineer", "ML Engineer", "LLM Engineer"], ["Texas", "remote"], []))
-    assert kinds(ai.openai) == ["open", "ats", "open", "ats", "open", "ats"] and kinds(ai.claude) == ["ats", "open", "ats", "open", "ats", "open"]
-    assert ai._opened == {"OpenAI": 3, "Claude": 3} and ai._made == {"OpenAI": 6, "Claude": 6}        # half of each provider's calls
+    assert ai._opened == {"OpenAI": 4, "Claude": 8} and ai._made == {"OpenAI": 8, "Claude": 12}
     open_web = [c for c in [*ai.openai.calls, *ai.claude.calls] if not c["restrict"]]
-    assert len(open_web) == 6 and all("allowed_domains" not in c and c["searches"] == 10 and c["own_searches"] for c in open_web)
+    assert len(open_web) == 12 and all("allowed_domains" not in c and c["searches"] == 10 and c["own_searches"] for c in open_web)
     assert not any(c["own_searches"] for c in [*ai.openai.calls, *ai.claude.calls] if c["restrict"])
     # An open-web call blocks what the other calls and the `site:` engines search, what may not be read, and the job boards.
     never = {"icims.com", "successfactors.com", "successfactors.eu", "bamboohr.com", "pinpointhq.com", "ats.rippling.com", "careers.smartrecruiters.com"}
@@ -373,41 +386,51 @@ def test_half_of_the_calls_of_each_provider_look_at_employers_own_career_sites()
         assert len(call["blocked_domains"]) <= 100 and "jobs.jobvite.com" not in call["blocked_domains"]      # page-verified career pages stay open
         assert "employers' OWN career sites" in call["prompt"] and "DIRECT posting pages" in call["prompt"]
         slots = [line for line in call["prompt"].splitlines() if re.match(r"\d+\. site:<career site of employer \d+> ", line)]
-        assert len(slots) == 10 and slots[0] == '1. site:<career site of employer 1> "AI Engineer"'      # one search per employer, numbered
+        # One search per employer, numbered; the searches for the requested title carry the current month and year.
+        assert len(slots) == 10 and slots[0] == f'1. site:<career site of employer 1> "AI Engineer" {recency_words()}'
         assert sum('"AI Engineer"' in line for line in slots) == 5 and '2. site:<career site of employer 2> "ML Engineer"' in slots
         assert "run exactly these 10 web searches" in call["prompt"] and "Run no other searches." in call["prompt"]
         assert "requisition or job number" in call["prompt"]
-        assert "choose other employers: acme, beta." in call["prompt"] or call in ai.openai.calls[3:] + ai.claude.calls[3:]   # round 2 was told none
-    # Every open-web call looks at another kind of employer, so no two of them look at the same employers.
-    named = [next(k for k in EMPLOYER_KINDS if f"Employers for this call: {k}; {OPEN_WEB_DEPTHS[0]}." in c["prompt"])
-             for c in sorted(open_web, key=lambda c: c["prompt"])]
-    assert sorted(named) == sorted(EMPLOYER_KINDS[:6]) and len({c["prompt"] for c in open_web}) == 6
+    assert sum("choose other employers: acme, beta." in c["prompt"] for c in open_web) == 6        # round 1 was told; round 2 was told none
+    # Every open-web call looks at another kind of employer (after all eight, one step further down each kind).
+    named = [(k, d) for c in open_web for k in EMPLOYER_KINDS for d in OPEN_WEB_DEPTHS if f"Employers for this call: {k}; {d}." in c["prompt"]]
+    assert len(set(named)) == 12 and {k for k, d in named if d == OPEN_WEB_DEPTHS[0]} == set(EMPLOYER_KINDS)
     assert any("Prefer openings in Texas." in c["prompt"] for c in open_web) and any(c["region"] == "Texas" for c in open_web)
     assert "banks, insurers" in EMPLOYER_KINDS[1] and "hospital systems" in EMPLOYER_KINDS[2] and "universities" in EMPLOYER_KINDS[-1]
+    assert recency_words().startswith("posted ") and re.fullmatch(r"posted [A-Z][a-z]+ 20\d\d", recency_words())
+    quiet = orchestrator(target=50, claude_open_web_calls=1, open_web_recency_words=False)
+    run(quiet.discover(Profile(), make_request(), [], []))
+    assert '1. site:<career site of employer 1> "AI Engineer"\n' in next(c for c in quiet.claude.calls if not c["restrict"])["prompt"]
 
 
-def test_the_open_web_share_is_a_setting_and_goes_one_step_further_after_every_kind():
-    none = orchestrator(ai_open_web_share=0)
+def test_the_old_share_setting_is_only_a_switch_and_every_kind_of_employer_goes_one_step_further():
+    none = orchestrator(ai_open_web_share=0, openai_open_web_calls=2, claude_open_web_calls=3, ai_open_web_followup_calls=2)
     run(none.discover(Profile(), make_request(result_count=300), [], []))
-    assert all(c["restrict"] for c in [*none.openai.calls, *none.claude.calls])
-    every = orchestrator(target=50, ai_open_web_share=1.0)
-    run(every.discover(Profile(), make_request(), [], []))
-    assert [c["restrict"] for c in [*every.openai.calls, *every.claude.calls]] == [False, False]
+    assert len(none.openai.calls) == len(none.claude.calls) == 2 and all(c["restrict"] for c in [*none.openai.calls, *none.claude.calls])
+    # Any other value of an old .env (it used to be the share of the calls) means "on": the number of open-web calls is
+    # their own setting, and the calls on the ATS hosts stay what they are.
     assert Settings(_env_file=None).ai_open_web_share == 0.5
-    # One provider alone: at least half of its calls, from its first call on.
-    alone = AIOrchestrator(Settings(_env_file=None), None, Recorder("Claude"))
-    alone.configure(plan_for(alone.settings, 300))
-    run(alone.discover(Profile(), make_request(result_count=300), [], []))
-    assert [c["restrict"] for c in alone.claude.calls] == [False, True, False]
+    for share in (0.25, 0.5, 1.0):
+        on = orchestrator(target=50, ai_open_web_share=share, claude_open_web_calls=2)
+        run(on.discover(Profile(), make_request(), [], []))
+        assert [c["restrict"] for c in on.openai.calls] == [True] and sorted(c["restrict"] for c in on.claude.calls) == [False, False, True]
+    # One provider alone makes both kinds.
+    alone = AIOrchestrator(Settings(_env_file=None, **{**ROUND, "claude_open_web_calls": 1}), None, Recorder("Claude"))
+    alone.configure(plan_for(alone.settings, 50))
+    run(alone.discover(Profile(), make_request(), [], []))
+    assert sorted(c["restrict"] for c in alone.claude.calls) == [False, True]
     # More open-web calls than kinds of employer: the second turn asks for the less obvious employers of each kind;
-    # when every kind was asked at every depth, the calls go back to the ATS cells.
-    deep = orchestrator(ai_open_web_share=1.0)
+    # when every kind was asked at every depth, there is nothing left to ask and no call is paid for.
+    deep = orchestrator(claude_open_web_calls=1)
     slices = [deep._open_slice(["AI Engineer"], ["ML Engineer", "LLM Engineer", "NLP Engineer"], ["Texas"]) for _ in range(3 * len(EMPLOYER_KINDS) + 1)]
     assert slices[-1] is None and [s.depth for s in slices[:-1]] == [d for d in range(3) for _ in EMPLOYER_KINDS]
     assert slices[0].kind == slices[len(EMPLOYER_KINDS)].kind and slices[0].titles != slices[1].titles          # further title variants each time
     assert OPEN_WEB_DEPTHS[1] in deep._slice_prompt(slices[len(EMPLOYER_KINDS)], "Candidate.", [], 5)
-    # Under a platform filter no call looks at the open web, whatever the share.
-    held = orchestrator(chosen=["lever"], ai_open_web_share=1.0)
+    before = deep.calls
+    run(deep.discover(Profile(), make_request(result_count=300), [], []))
+    assert all(c["restrict"] for c in deep.claude.calls) and deep.calls - before == 4      # the four calls on ATS hosts; no unit for an open-web call
+    # Under a platform filter no call looks at the open web, whatever the settings.
+    held = orchestrator(chosen=["lever"], openai_open_web_calls=2, claude_open_web_calls=2, ai_open_web_followup_calls=2)
     run(held.discover(Profile(), make_request(result_count=300, ats_platforms=["lever"]), [], []))
     assert held.openai.calls and all(c["allowed_domains"] == ["jobs.lever.co"] and "blocked_domains" not in c for c in [*held.openai.calls, *held.claude.calls])
 
@@ -421,17 +444,17 @@ def test_open_web_leads_are_the_models_picks_and_further_postings_on_the_sites_i
                 "https://jobs.hospital.example/jobs/987654-ai-engineer",         # reads like a posting; nobody said this site is an employer's
                 "https://blog.example.com/how-to-become-an-ai-engineer",
                 "https://www.indeed.com/viewjob?jk=1", "https://www.bigbank.example/careers/job/55-ai-engineer"]
-    ai = orchestrator(target=50, openai=Recorder("OpenAI", [*picks, *unpicked], picks=len(picks)), claude=Recorder("Claude", []))
+    ai = orchestrator(target=50, openai=Recorder("OpenAI", [*picks, *unpicked], picks=len(picks)), claude=Recorder("Claude", []), openai_search_calls=0, openai_open_web_calls=1)
     leads = run(ai.discover(Profile(), make_request(), [], []))
-    assert not ai.openai.calls[0]["restrict"]                                    # the first call of the first provider is an open-web call
+    assert not ai.openai.calls[0]["restrict"]                                    # OpenAI's call of this round is an open-web call
     assert [lead.url for lead in leads] == [picks[0], picks[1], unpicked[0], unpicked[5]]      # picks first; then postings on their sites
     st = ai.status["OpenAI"]
     assert st["leads_refused"] == 6 and st["leads_not_a_posting"] == 3 and st["open_web_leads"] == 4 and st["open_web_calls"] == 1
     assert ai._open_sites == {"careers.bigbank.example": 2, "bigbank.example": 2}
     # A later open-web call is told which career sites this search already has postings from.
     run(ai.discover_round(2, Profile(), make_request(), ["AI Engineer"], [], []))
-    later = next(c for c in ai.claude.calls if not c["restrict"])
-    assert "choose other employers: careers.bigbank.example, bigbank.example." in later["prompt"]
+    later = ai.openai.calls[1]
+    assert not later["restrict"] and "choose other employers: careers.bigbank.example, bigbank.example." in later["prompt"]
     # The same addresses from a call on the ATS hosts are all leads (there, every address is a board or a posting),
     # except the platforms that may not be read: those are refused wherever they come from.
     hosted = orchestrator(target=50, ai_open_web_share=0, openai=Recorder("OpenAI", [*picks, *unpicked], picks=0), claude=Recorder("Claude", []))
@@ -464,7 +487,7 @@ def test_a_search_tool_that_ignores_site_gets_its_career_sites_named_first():
                 "https://megastore.example/search?q=ai",                          # a search page
                 "https://other.example/jobs/5-ai-engineer"]                       # not a site of this call
     openai = SiteLister("OpenAI", sites=named, leads=returned, picks=1)
-    ai = orchestrator(target=50, openai=openai, claude=Recorder("Claude", []), ai_open_web_split="even")
+    ai = orchestrator(target=50, openai=openai, claude=Recorder("Claude", []), openai_search_calls=0, openai_open_web_calls=1, ai_open_web_searches_per_call=5)
     leads = run(ai.discover(Profile(), make_request(locations=["Texas"]), ["ML Engineer"], ["lever:acme"]))
     plan, call = openai.plans[0], openai.calls[0]
     assert plan["system"] == SITES_SYSTEM and plan["schema"] == SITES_SCHEMA and plan["name"] == "career_sites"
@@ -480,22 +503,22 @@ def test_a_search_tool_that_ignores_site_gets_its_career_sites_named_first():
     st = ai.status["OpenAI"]
     assert st["site_plans"] == 1 and st["open_web_calls"] == 1 and st["open_web_leads"] == 2 and st["leads_not_a_posting"] == 2
     assert ai.calls == 3 and ai.discovery_calls == 2                              # naming the sites is one more unit of the AI call budget
-    assert ai._opened == {"OpenAI": 1, "Claude": 0}                               # the other provider's first call is on the ATS hosts
+    assert ai._opened == {"OpenAI": 1, "Claude": 0}                               # the other provider's call is on the ATS hosts
     # A site is searched by one call of a search only (two calls of a round run side by side: the code keeps their
     # sites apart), and an open-web call of a later round is told which sites were taken.
     again = SiteLister("OpenAI", sites=[f"careers.employer{i}.example" for i in range(14)])       # every time the same fourteen
-    twice = orchestrator(openai=again, claude=Recorder("Claude"), ai_open_web_split="even")
+    twice = orchestrator(openai=again, claude=Recorder("Claude"), openai_search_calls=0, openai_open_web_calls=1)        # a 300-job search: two open-web calls a round
     run(twice.discover(Profile(), make_request(result_count=300), [], []))
     first, second = [c for c in again.calls if c["restrict"] and "OWN career sites" in c["prompt"]]
     assert sorted([len(first["allowed_domains"]), len(second["allowed_domains"])]) == [4, 10]
     assert not set(first["allowed_domains"]) & set(second["allowed_domains"])
     run(twice.discover_round(2, Profile(), make_request(result_count=300), ["AI Engineer", "ML Engineer", "LLM Engineer", "NLP Engineer", "MLOps Engineer"],
                              ["Texas", "Ohio"], []))
-    assert len(again.plans) == 3 and "they were searched already: careers.employer0.example, careers.employer1.example" in again.plans[2]["user"]
-    assert sorted(c["restrict"] for c in again.calls[3:]) == [False, True, True]    # no new site was named: that call ran as it was handed out
+    assert len(again.plans) == 4 and "they were searched already: careers.employer0.example, careers.employer1.example" in again.plans[2]["user"]
+    assert [c["restrict"] for c in again.calls[2:]] == [False, False]             # no new site was named: those calls ran as they were handed out
     # The model call fails, or names fewer than two usable sites: the call runs the way it was handed out.
     for broken in (SiteLister("OpenAI", plan_fails=True), SiteLister("OpenAI", sites=["jobs.lever.co", "careers.only-one.example"])):
-        plain = orchestrator(target=50, openai=broken, claude=Recorder("Claude"), ai_open_web_split="even")
+        plain = orchestrator(target=50, openai=broken, claude=Recorder("Claude"), openai_search_calls=0, openai_open_web_calls=1)
         run(plain.discover(Profile(), make_request(), [], []))
         assert broken.calls[0]["restrict"] is False and "blocked_domains" in broken.calls[0] and broken.calls[0]["own_searches"] is True
         assert '1. site:<career site of employer 1> "AI Engineer"' in broken.calls[0]["prompt"] and plain._down == {}
@@ -507,37 +530,29 @@ def test_a_search_tool_that_ignores_site_gets_its_career_sites_named_first():
             found.sites = frozenset({"megastore.example"})
             return found, searches
 
-    direct = AIOrchestrator(Settings(_env_file=None), None, Sited("Claude", returned, picks=0))
+    direct = AIOrchestrator(Settings(_env_file=None, **{**ROUND, "claude_search_calls": 0, "claude_open_web_calls": 1}), None,
+                            Sited("Claude", returned, picks=0))
     direct.configure(plan_for(direct.settings, 50))
     kept = run(direct.discover(Profile(), make_request(), [], []))
     assert [lead.url for lead in kept] == [returned[1]] and direct.claude.calls[0]["restrict"] is False and not hasattr(direct.claude, "plans")
 
 
-def test_open_web_calls_go_first_to_the_provider_whose_search_tool_does_them_well():
-    kinds = lambda provider: ["open" if "OWN career sites" in c["prompt"] else "ats" for c in provider.calls]
-    # OpenAI's tool needs its sites named beforehand and returned few postings from them (see _open_turns); Claude's
-    # holds a `site:` query to its site. By default Claude makes the open-web calls and OpenAI keeps the ATS hosts.
-    ai = orchestrator(openai=SiteLister("OpenAI"), claude=Recorder("Claude"))
-    req = make_request(result_count=300)
-    run(ai.discover(Profile(), req, ["ML Engineer"], []))
-    assert kinds(ai.openai) == ["ats"] * 3 and kinds(ai.claude) == ["open"] * 3 and ai.openai.plans == []
-    run(ai.discover_round(2, Profile(), req, ["AI Engineer", "ML Engineer", "LLM Engineer", "NLP Engineer"], ["Texas"], []))
-    assert ai._opened == {"OpenAI": 0, "Claude": 6} and ai._made == {"OpenAI": 6, "Claude": 6}        # half of all calls, as the share says
-    assert Settings(_env_file=None).ai_open_web_split == "auto"
-    # A share above what that provider's calls can carry: the other one makes the rest (in two requests).
-    more = orchestrator(openai=SiteLister("OpenAI"), claude=Recorder("Claude"), ai_open_web_share=0.75)
-    run(more.discover(Profile(), req, [], []))
-    assert kinds(more.claude) == ["open"] * 3 and sorted(kinds(more.openai)) == ["ats", "open", "open"] and len(more.openai.plans) == 2
-    # That provider is switched off: the other one makes the open-web calls too, so the share still holds.
-    alone = orchestrator(openai=SiteLister("OpenAI"), claude=Recorder("Claude", fail=99, fatal=True), claude_search_concurrency=1)
-    run(alone.discover(Profile(), req, [], []))
-    run(alone.discover_round(2, Profile(), req, ["AI Engineer", "ML Engineer", "LLM Engineer", "NLP Engineer"], ["Texas"], []))
-    later = alone.openai.calls[-6:]                                              # round 2: OpenAI makes Claude's calls as well
-    assert set(alone._down) == {"Claude"} and sum("OWN career sites" in c["prompt"] for c in later) >= 3
-    # "even": every provider alternates, out of step with the other.
-    even = orchestrator(openai=SiteLister("OpenAI"), claude=Recorder("Claude"), ai_open_web_split="even")
-    run(even.discover(Profile(), req, [], []))
-    assert sorted(kinds(even.openai)) == ["ats", "open", "open"] and kinds(even.claude) == ["ats", "open", "ats"]
+def test_both_providers_make_open_web_calls_and_one_takes_over_the_others():
+    kinds = lambda provider: sorted("open" if "OWN career sites" in c["prompt"] else "ats" for c in provider.calls)
+    budgets = dict(openai_open_web_calls=1, claude_open_web_calls=2)
+    # Measured on 2026-11-21: per call both search tools verified about as many postings on employers' own sites (on
+    # different employers), so both make such calls. OpenAI's tool needs its sites named beforehand (one model call more).
+    ai = orchestrator(target=50, openai=SiteLister("OpenAI"), claude=Recorder("Claude"), **budgets)
+    run(ai.discover(Profile(), make_request(), ["ML Engineer"], []))
+    assert kinds(ai.openai) == ["ats", "open"] and kinds(ai.claude) == ["ats", "open", "open"] and len(ai.openai.plans) == 1
+    assert ai._opened == {"OpenAI": 1, "Claude": 2} and ai._made == {"OpenAI": 2, "Claude": 3}
+    assert Settings(_env_file=None).openai_open_web_calls == 3 and Settings(_env_file=None).claude_open_web_calls == 6
+    # A provider is switched off: the other one makes its calls of both kinds too.
+    alone = orchestrator(target=50, openai=SiteLister("OpenAI"), claude=Recorder("Claude", fail=99, fatal=True), claude_search_concurrency=1, **budgets)
+    run(alone.discover(Profile(), make_request(), [], []))
+    run(alone.discover_round(2, Profile(), make_request(), ["AI Engineer", "ML Engineer", "LLM Engineer", "NLP Engineer"], ["Texas"], []))
+    later = alone.openai.calls[-5:]                                              # round 2: OpenAI makes Claude's calls as well
+    assert set(alone._down) == {"Claude"} and sum("OWN career sites" in c["prompt"] for c in later) == 3
 
 
 def test_a_posting_page_the_search_tool_dates_long_ago_is_checked_last():
@@ -547,19 +562,41 @@ def test_a_posting_page_the_search_tool_dates_long_ago_is_checked_last():
     class Dated(Recorder):
         async def web_discover(self, *args, **kwargs):
             found, searches = await super().web_discover(*args, **kwargs)
-            found.ages = {urls[0]: 3, urls[1]: OPEN_WEB_MAX_AGE_DAYS, urls[2]: OPEN_WEB_MAX_AGE_DAYS + 1, urls[3]: 400, urls[5]: 814}
+            found.ages = {u: age for u, age in {urls[0]: 3, urls[1]: OPEN_WEB_MAX_AGE_DAYS, urls[2]: OPEN_WEB_MAX_AGE_DAYS + 1, urls[3]: 400,
+                                               urls[5]: 814, LEVER_JOB: 900}.items() if any(c.url == u for c in found)}
             return found, searches
 
     other = "https://jobs.lever.co/acme"
-    ai = orchestrator(target=50, openai=Dated("OpenAI", urls, picks=4), claude=Recorder("Claude", [other]))
+    ai = orchestrator(target=50, openai=Dated("OpenAI", urls, picks=4), claude=Recorder("Claude", [other]), openai_search_calls=0, openai_open_web_calls=1)
     leads = run(ai.discover(Profile(), make_request(), [], []))
-    # The picks of both calls in turn (fresh, and at the limit), the address without a date, and last the pages dated
-    # 61, 400 and 814 days ago, picked or not.
-    assert OPEN_WEB_MAX_AGE_DAYS == 60 and [lead.url for lead in leads] == [urls[0], other, urls[1], urls[4], urls[2], urls[3], urls[5]]
+    # First the employer board (one API read, no page is opened); then the page updated three days ago; then the page at
+    # the limit and the one without a date; last the pages dated 61, 400 and 814 days ago, picked or not.
+    assert OPEN_WEB_MAX_AGE_DAYS == 60 and [lead.url for lead in leads] == [other, urls[0], urls[1], urls[4], urls[2], urls[3], urls[5]]
     assert ai.status["OpenAI"]["leads_dated_long_ago"] == 3 and ai.status["OpenAI"]["open_web_leads"] == 6 and ai.status["OpenAI"]["leads"] == 6
-    # On an ATS host an old posting still names a live employer board: the order is not touched there.
-    hosted = orchestrator(target=50, ai_open_web_share=0, openai=Dated("OpenAI", urls, picks=4), claude=Recorder("Claude", []))
-    assert [lead.url for lead in run(hosted.discover(Profile(), make_request(), [], []))] == urls and "leads_dated_long_ago" not in hosted.status["OpenAI"]
+    # On an ATS host with a board reader an old posting still names a live employer board: the order is not touched there.
+    boards = [LEVER_JOB, GH_JOB, "https://jobs.lever.co/zeta"]
+    hosted = orchestrator(target=50, openai=Dated("OpenAI", boards, picks=1), claude=Recorder("Claude", []))
+    assert [lead.url for lead in run(hosted.discover(Profile(), make_request(), [], []))] == boards and "leads_dated_long_ago" not in hosted.status["OpenAI"]
+
+
+def test_page_leads_on_a_site_whose_pages_were_verified_before_are_checked_first():
+    """The site decides most of all whether a page lead verifies (see AIOrchestrator._lead_rank for the measurement)."""
+    known, fresh, plain, old = ("https://jobs.known.example/job/1-ai-engineer", "https://careers.new.example/job/2-ai-engineer",
+                                "https://careers.other.example/job/3-ai-engineer", "https://jobs.known.example/job/4-ai-engineer")
+
+    class Dated(Recorder):
+        async def web_discover(self, *args, **kwargs):
+            found, searches = await super().web_discover(*args, **kwargs)
+            found.ages = {fresh: 5, old: 200}
+            return found, searches
+
+    ai = orchestrator(target=50, openai=Dated("OpenAI", [plain, old, fresh, known, GH_JOB], picks=5), claude=Recorder("Claude", []),
+                      openai_search_calls=0, openai_open_web_calls=1)
+    ai.note_verified(["https://jobs.known.example/job/77-data-engineer", "not an address", ""])
+    leads = [lead.url for lead in run(ai.discover(Profile(), make_request(), [], []))]
+    assert ai.verified_sites == {"jobs.known.example"} and ai.relevant_sites == {}
+    assert leads == [GH_JOB, known, fresh, plain, old]         # a board first; the verified site; the fresh page; the rest; a page dated long ago last
+    assert [ai._lead_rank(Candidate(url=u)) for u in (GH_JOB, known, fresh, plain, old)] == [0, 2, 4, 5, 9]
 
 
 def test_cells_put_the_requested_title_first_and_never_repeat():
@@ -659,18 +696,18 @@ def test_known_employers_are_named_per_platform_and_never_as_free_text():
 # ---------------------------------------------------------------- budgets, deadline, breaker
 def test_a_failing_provider_is_switched_off_and_the_other_takes_over_its_searches():
     openai, claude = Recorder("OpenAI", fail=99), Recorder("Claude")
-    ai = orchestrator(openai=openai, claude=claude, openai_search_concurrency=1)
+    ai = orchestrator(openai=openai, claude=claude, openai_search_concurrency=1, openai_search_calls=2, claude_search_calls=2)
     req = make_request(result_count=300)
     first = run(ai.discover(Profile(), req, [], []))
-    # Round 1 has 3 + 3 calls. OpenAI fails twice in a row and is switched off (its third call is not sent any more);
-    # all three of its slices are asked of Claude.
-    assert len(openai.calls) == 2 and len(claude.calls) == 6 and len(first) == 6 and ai.status["OpenAI"]["failed_calls"] == 2
-    assert ai.status["Claude"]["takeovers"] == 3 and ai.status["Claude"]["ok_calls"] == 6
+    # Round 1 has 4 + 4 calls. OpenAI fails twice in a row and is switched off (its other calls are not sent any more);
+    # all four of its slices are asked of Claude.
+    assert len(openai.calls) == 2 and len(claude.calls) == 8 and len(first) == 8 and ai.status["OpenAI"]["failed_calls"] == 2
+    assert ai.status["Claude"]["takeovers"] == 4 and ai.status["Claude"]["ok_calls"] == 8
     assert {c["prompt"] for c in openai.calls} <= {c["prompt"] for c in claude.calls}      # the very same searches, not lost
-    assert ai.calls == 6 + 2 and ai.discovery_calls == 6 + 2                     # only a call that was really sent twice costs a second unit
+    assert ai.calls == 8 + 2 and ai.discovery_calls == 8 + 2                     # only a call that was really sent twice costs a second unit
     assert len(ai.discovery_notes) == 1 and "OpenAI web search was switched off" in ai.discovery_notes[0] and "Claude took over" in ai.discovery_notes[0]
     second = run(ai.discover_round(2, Profile(), req, ["AI Engineer", "ML Engineer", "LLM Engineer", "MLOps Engineer"], ["Texas"], []))
-    assert len(openai.calls) == 2 and len(claude.calls) == 12 and len(second) == 6          # later rounds: Claude makes OpenAI's calls too
+    assert len(openai.calls) == 2 and len(claude.calls) == 16 and len(second) == 8          # later rounds: Claude makes OpenAI's calls too
     assert ai.discovery_left(3) is True
     asked = [q for c in claude.calls for q in searches_of(c["prompt"])]
     assert len(asked) == len(set(asked))
@@ -693,8 +730,22 @@ def test_breaker_opens_at_once_when_asking_again_is_pointless_and_both_can_be_do
 def test_a_call_still_running_at_the_deadline_is_dropped_and_the_others_keep_their_leads():
     ai = orchestrator(openai=Recorder("OpenAI"), claude=Recorder("Claude", delay=5.0), ai_discovery_deadline_seconds=16.0)
     started = asyncio.run(asyncio.wait_for(ai.discover(Profile(), make_request(result_count=300), [], []), timeout=4.0))
-    assert len(started) == 3 and {lead.provider for lead in started} == {"OpenAI"}        # collected 15 s before the engine's own limit
+    assert len(started) == 2 and {lead.provider for lead in started} == {"OpenAI"}        # collected 15 s before the engine's own limit
     assert any("still running at the time limit" in note for note in ai.discovery_notes)
+    # A straggler does not hold the round until its time limit: once three quarters of the calls have returned, the
+    # others get AI_DISCOVERY_STRAGGLER_SECONDS more.
+    class OneHangs(Recorder):
+        async def web_discover(self, *args, **kwargs):
+            if len(self.calls) == 0:
+                self.calls.append({})
+                await asyncio.sleep(30)
+            return await super().web_discover(*args, **kwargs)
+
+    hung = orchestrator(openai=Recorder("OpenAI"), claude=OneHangs("Claude"), openai_search_calls=2, claude_search_calls=2,
+                        ai_discovery_straggler_seconds=0.2)                      # 4 + 4 calls, one of them hangs
+    kept = asyncio.run(asyncio.wait_for(hung.discover(Profile(), make_request(result_count=300), [], []), timeout=5.0))
+    assert len(kept) == 7 and any("1 AI web-search call(s) were still running" in note for note in hung.discovery_notes)
+    assert Settings(_env_file=None).ai_discovery_straggler_seconds == 20.0
     slow = orchestrator(openai=Recorder("OpenAI", delay=3.0), ai_discovery_call_timeout_seconds=1.0, ai_discovery_deadline_seconds=60)
     slow.openai.web_discover, inner = (lambda *a, **kw: asyncio.sleep(30)), slow.openai.web_discover       # ignores its own timeout
     leads = run(slow.discover(Profile(), make_request(result_count=50), [], []))
@@ -704,19 +755,30 @@ def test_a_call_still_running_at_the_deadline_is_dropped_and_the_others_keep_the
 
 def test_per_provider_concurrency_and_call_budget_are_respected():
     openai, claude = Recorder("OpenAI", delay=0.02), Recorder("Claude", delay=0.02)
-    ai = orchestrator(target=1000, openai=openai, claude=claude, openai_search_concurrency=2, claude_search_concurrency=1)
+    ai = orchestrator(target=1000, openai=openai, claude=claude, openai_search_concurrency=2, claude_search_concurrency=1,
+                      openai_search_calls=2, claude_search_calls=2)
     run(ai.discover(Profile(), make_request(result_count=1000), [], []))
     assert len(openai.calls) == len(claude.calls) == 4 and openai.peak == 2 and claude.peak == 1
     assert all(c["timeout"] == 100.0 for c in openai.calls)
     tight = orchestrator(target=300, max_ai_calls_per_search=4, max_ai_calls_per_search_max=4)
     run(tight.discover(Profile(), make_request(result_count=300), [], []))
-    assert tight.calls == 4 and len(tight.openai.calls) + len(tight.claude.calls) == 4          # the search's AI call budget is a hard stop
+    # The ceiling of all OpenAI / Claude calls of a search is a hard stop, and the web search leaves what the judging of
+    # the result list needs (Plan.ai_reserve): with a ceiling of 4 it makes one call.
+    assert tight.calls == 1 and len(tight.openai.calls) + len(tight.claude.calls) == 1 and tight.plan.ai_reserve == 3
     assert tight.discovery_left(2) is False
     s = Settings(_env_file=None)
-    assert (s.ai_discovery_call_timeout_seconds, s.ai_discovery_breaker_failures, s.openai_search_concurrency, s.claude_search_concurrency) == (100.0, 2, 4, 4)
-    assert (s.openai_search_model, s.anthropic_search_model, s.ai_open_web_share) == ("", "", 0.5)
-    # The AI call budget of a large search has room for the model calls that name the career sites (one per open-web call).
-    assert plan_for(s, 300).ai_calls - plan_for(Settings(_env_file=None, ai_open_web_share=0), 300).ai_calls == 6
+    assert (s.ai_discovery_call_timeout_seconds, s.ai_discovery_breaker_failures, s.openai_search_concurrency, s.claude_search_concurrency) == (100.0, 2, 12, 12)
+    # The web search runs on the cheapest current model of each provider whose yield of verified postings matched the
+    # large one (measured 2026-11-21); an empty value means the provider's main model.
+    assert (s.openai_search_model, s.anthropic_search_model, s.ai_open_web_share) == ("gpt-6-luna", "claude-haiku-5-5", 0.5)
+    empty = AIOrchestrator.from_settings(Settings(_env_file=None, openai_api_key="sk-x", anthropic_api_key="sk-y", openai_search_model="",
+                                                  anthropic_search_model=""))
+    assert (empty.openai.search_model, empty.claude.search_model) == (empty.openai.model, empty.claude.model)
+    # The ceiling of a normal search is far above what its rounds use: a round's calls (one model call more for each
+    # open-web call of OpenAI, whose career sites are named first) and the follow-up calls fit many times.
+    plan = plan_for(s, 25)
+    one_round = sum(plan.base) + plan.base[2] + plan.followup_calls
+    assert plan.base == (6, 6, 3, 6) and plan.followup_calls == 3 and one_round == 27 and plan.ai_calls - plan.ai_reserve >= 8 * one_round
     with_model = AIOrchestrator.from_settings(Settings(_env_file=None, openai_api_key="sk-x", anthropic_api_key="sk-y", openai_search_model="gpt-s",
                                                        anthropic_search_model="claude-s"))
     assert (with_model.openai.search_model, with_model.claude.search_model) == ("gpt-s", "claude-s")

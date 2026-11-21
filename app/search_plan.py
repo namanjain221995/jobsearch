@@ -5,6 +5,15 @@ request of 50 results or fewer. A larger request scales them linearly (a request
 base) up to the hard ceiling of each setting (`*_MAX`). Discovery budgets are totals for the whole search and
 are handed out round by round, so a search that reaches its target early does not spend the rest.
 
+The AI web search is not held back by cost. It has two kinds of calls per provider that do not take from each other:
+calls on the ATS hosts (OPENAI_SEARCH_CALLS, CLAUDE_SEARCH_CALLS) and, on top of them, calls on employers' own career
+sites (OPENAI_OPEN_WEB_CALLS, CLAUDE_OPEN_WEB_CALLS). These settings are what ONE ROUND makes, side by side, for a
+request of 50 or fewer (a larger request makes up to twice as many a round). Every further round makes them again with
+new searches (`Plan.ai_round`), for as long as the engine's round loop goes on: until the requested number of verified
+matching jobs is reached, two rounds in a row brought nothing new, or the time ceiling of a search is reached. The
+`*_MAX` settings are safety ceilings of one whole search, far above what a normal search uses; they are not budgets.
+AWS web search spends its paced share of the month's allowance in the first round (`Plan.first_round`).
+
 Title expansion: variants proposed by a model are only ever used to *find* postings (index matching and
 discovery queries). Every posting found is still screened and scored against the candidate.
 
@@ -25,6 +34,7 @@ from .config import Settings
 from .job_ranker import _ROLE_FAMILY, title_tokens
 
 BASE_REQUEST = 50
+ROUND_GROWTH = 2.0                 # a round of a large request makes at most this many times the calls of a round of a small one
 EXPANSION_PREFIX = "titlex:"
 _TITLE_OK = re.compile(r"[A-Za-z][A-Za-z0-9 .,&/+#()'-]{1,58}[A-Za-z0-9+#)]")
 _NOT_A_TITLE = re.compile(r"(?i)(https?:|www\.|\b(ignore|instructions?|prompt|salary|hiring|apply|jobs?|careers?|vacanc(y|ies))\b)")
@@ -55,11 +65,42 @@ class Plan:
     tiny_fetches: int = 0
     aws_calls: int = 0          # AWS web search queries (also paced by the month's remaining allowance)
     tsweb_searches: int = 0     # web searches through the company model (no bill; its queue is shared with the chat app)
+    openai_open_calls: int = 0  # web-search calls on employers' own career sites, on top of the calls on ATS hosts
+    claude_open_calls: int = 0
+    open_searches: int = 0      # live web searches one open-web call may run (0: as many as a call on ATS hosts)
+    followup_calls: int = 0     # further open-web calls of the first round, started when the first ones returned (see ai_orchestrator)
+    open_engine_queries: int = 0   # open-web queries (no `site:`) of the plain search engines, first round
+    aws_open_share: float = 0.0    # share of the AWS web search queries that ask "any site" for employers' own posting pages
+    ai_reserve: int = 0         # OpenAI / Claude calls the AI web search leaves for the rest of the search (judging, audit, ...)
+    lead_seconds: float = 0.0   # time box of one round's lead check (0 = none); grows with a round, up to twice
+    base: tuple = ()            # calls of ONE round: (OpenAI on ATS hosts, Claude on ATS hosts, OpenAI open web, Claude open web)
 
     def per_round(self, total: int, round_no: int) -> int:
         """How much of a search-wide budget round `round_no` (1-based) may use."""
         share = math.ceil(total / max(1, self.rounds))
         return max(0, min(share, total - share * (round_no - 1)))
+
+    def first_round(self, total: int, base: int, round_no: int) -> int:
+        """How much of a budget round `round_no` may use when its base part (`base`: what a request of 50 or fewer
+        gets) is spent at once in the first round and the rest, which only a larger request has, over the later
+        rounds. A single-round plan spends everything in its one round."""
+        first = total if self.rounds <= 1 else max(0, min(total, base))
+        if round_no <= 1:
+            return first
+        rest = total - first
+        share = math.ceil(rest / max(1, self.rounds - 1))
+        return max(0, min(share, rest - share * (round_no - 2)))
+
+    def ai_round(self, provider: str, round_no: int) -> tuple[int, int]:
+        """(calls on ATS hosts, calls on employers' own career sites) of `provider` ("OpenAI" / "Claude") in a round:
+        the round's calls (`base`) in every round, until the ceiling of the whole search is reached. A plan without
+        base values (built by hand) spreads the totals evenly over the rounds, as before."""
+        i = 0 if provider == "OpenAI" else 1
+        ats, own = (self.openai_calls, self.openai_open_calls) if i == 0 else (self.claude_calls, self.claude_open_calls)
+        if len(self.base) != 4:
+            return self.per_round(ats, round_no), self.per_round(own, round_no)
+        take = lambda total, each: max(0, min(each, total - each * (max(1, round_no) - 1)))
+        return take(ats, self.base[i]), take(own, self.base[2 + i])
 
 
 def _scaled(base: int, ceiling: int, target: int, scaling: bool) -> int:
@@ -68,11 +109,31 @@ def _scaled(base: int, ceiling: int, target: int, scaling: bool) -> int:
     return max(0, min(max(base, ceiling), math.ceil(base * target / BASE_REQUEST)))
 
 
+def open_web_on(settings: Settings) -> bool:
+    """Whether a search looks at employers' own career sites at all. AI_OPEN_WEB_SHARE used to be the share of the
+    web-search calls taken away from the ATS hosts; the open-web calls now come on top (budgets of their own), and
+    the old setting is kept as the switch it also was: 0 = no open-web call or query, anything else = on."""
+    return float(settings.ai_open_web_share) > 0
+
+
 def plan_for(settings: Settings, target: int, deep: bool = True) -> Plan:
     s = settings
     on = bool(s.ai_budget_scaling)
-    openai_calls = _scaled(s.openai_search_calls, s.openai_search_calls_max, target, on)
-    claude_calls = _scaled(s.claude_search_calls, s.claude_search_calls_max, target, on)
+    own = open_web_on(s)
+    single = s.search_max_rounds <= 1
+    # One round: the settings for a request of 50 or fewer, up to twice as many for a larger one (more would only queue
+    # behind the per-provider concurrency and run into the round's time limit; a larger request gets more rounds instead).
+    grow = min(ROUND_GROWTH, max(1.0, target / BASE_REQUEST)) if on else 1.0
+    each = lambda value: math.ceil(max(0, value) * grow)
+    base = (each(s.openai_search_calls), each(s.claude_search_calls),
+            each(s.openai_open_web_calls) if own else 0, each(s.claude_open_web_calls) if own else 0)
+    # The whole search: the round's calls again in every round, up to the safety ceilings (`*_MAX`). Without scaling,
+    # or with a single round, a search makes one round's calls and no more.
+    whole = lambda one, ceiling: max(one, ceiling) if one and on and not single else one
+    openai_calls, claude_calls = whole(base[0], s.openai_search_calls_max), whole(base[1], s.claude_search_calls_max)
+    openai_open, claude_open = whole(base[2], s.openai_open_web_calls_max), whole(base[3], s.claude_open_web_calls_max)
+    followups = each(s.ai_open_web_followup_calls) if own and base[2] + base[3] > 0 else 0
+    rounds_cap = max(1, s.search_max_rounds)
     # The judged slice: 40 % of the request, never below the old fixed size, within the ceiling.
     slice_cap = max(target * 2, target + 30)
     ai_ranked = s.max_ai_ranked_jobs
@@ -82,13 +143,15 @@ def plan_for(settings: Settings, target: int, deep: bool = True) -> Plan:
     rank_calls = math.ceil(ai_ranked / max(1, s.ai_rank_batch_size))
     # + one model call for each open-web call of a provider whose search tool needs its career sites named beforehand
     # (ai_orchestrator._site_slice), + profile, expansion, audit, page extraction, retries on the other provider
-    site_plans = math.ceil(max(openai_calls, claude_calls) * min(1.0, max(0.0, s.ai_open_web_share)))
-    needed = openai_calls + claude_calls + site_plans + rank_calls + 12
+    reserve = rank_calls + 12
+    needed = openai_calls + claude_calls + 2 * openai_open + claude_open + followups * rounds_cap + reserve
+    # The ceiling of all OpenAI / Claude calls follows what these budgets need (within its own ceiling), for a small
+    # request too; and the web search never takes the calls the rest of the search needs (Plan.ai_reserve).
     ai_calls = s.max_ai_calls_per_search
-    if on and target > BASE_REQUEST:
+    if on:
         ai_calls = min(max(s.max_ai_calls_per_search, s.max_ai_calls_per_search_max), max(s.max_ai_calls_per_search, needed))
     return Plan(
-        target=target, rounds=1 if s.search_max_rounds <= 1 else max(1, s.search_budget_rounds),
+        target=target, rounds=1 if single else max(1, s.search_budget_rounds),
         openai_calls=openai_calls if deep else 0, claude_calls=claude_calls if deep else 0,
         web_searches=_scaled(s.ai_web_searches_per_call, s.ai_web_searches_per_call_max, target, on),
         ai_calls=ai_calls, ai_ranked=ai_ranked,
@@ -106,6 +169,12 @@ def plan_for(settings: Settings, target: int, deep: bool = True) -> Plan:
         tsweb_searches=min(max(0, s.techsara_web_searches_per_search),
                            _scaled(s.techsara_web_searches_base, s.techsara_web_searches_per_search, target, on))
         if s.techsara_configured and s.techsara_web_search_enabled else 0,
+        openai_open_calls=openai_open if deep else 0, claude_open_calls=claude_open if deep else 0,
+        open_searches=max(1, s.ai_open_web_searches_per_call), followup_calls=followups if deep else 0,
+        open_engine_queries=max(0, s.search_engine_open_web_queries) if deep and own else 0,
+        aws_open_share=min(1.0, max(0.0, float(s.aws_web_search_open_web_share))) if own else 0.0,
+        ai_reserve=min(reserve, max(0, ai_calls - 1)), base=base,
+        lead_seconds=max(0.0, float(s.lead_verification_seconds)) * grow,
     )
 
 

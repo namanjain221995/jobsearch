@@ -102,7 +102,7 @@ def test_filter_applies_to_postings_the_index_already_holds():
 def test_no_filter_is_the_search_as_before():
     state = run(search(wide_engine(sources=ALL, seeds=SEEDS), result_count=50))
     assert state.stats["platform_filter"] == [] and state.stats["filtered_out"] == 0 and state.stats["coverage_warnings"] == []
-    sites = {site_of(q) for q, _ in SEARX_LOG}
+    sites = {site_of(q) for q, _ in SEARX_LOG if q.startswith("site:")}
     assert len(sites) > 1 and sites <= set(HOSTS) and CALLS[GH_ACME] == 1 and CALLS[REMOTEOK] == 1
 
 
@@ -203,7 +203,7 @@ def test_hosts_nobody_can_use_are_never_asked():
 def test_a_reader_that_is_off_is_not_queried_by_any_search_engine():
     SEARX_ANSWERS["*"] = ["https://jobs.ashbyhq.com/someco"]
     state = run(search(wide_engine(sources=("greenhouse", "lever", "searxng"), seeds=conftest.DEFAULT_SEEDS), result_count=50))
-    sites = {site_of(q) for q, _ in SEARX_LOG}
+    sites = {site_of(q) for q, _ in SEARX_LOG if q.startswith("site:")}
     assert sites and "jobs.ashbyhq.com" not in sites and "myworkdayjobs.com" not in sites and "recruitee.com" not in sites
     assert sites <= {"boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.smartrecruiters.com", "applytojob.com"}
     assert state.status == "completed" and not any("someco" in url for url in CALLS)

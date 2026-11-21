@@ -394,10 +394,11 @@ def test_rounds_stop_on_round_limit_time_budget_and_exhausted_discovery():
     assert len(limited.stats["rounds"]) == 2 and limited.stats["stop_reason"] == "the safety limit of 2 rounds was reached"
     timed = run(search(wide_engine(WideAI(available=True), wide_settings(searxng_queries_per_search=12, search_max_seconds=0)), result_count=50))
     assert len(timed.stats["rounds"]) == 1 and "time ceiling" in timed.stats["stop_reason"]
-    # Discovery used up: no search engine, and the AI budget of a 50-job request (2 calls) is spent in two rounds.
+    # Discovery used up: no search engine, and the safety ceiling of the AI web search (here: one call) is reached.
     class Spent(WideAI):
         claude = None
-    spent = run(search(wide_engine(Spent(available=True), wide_settings(searxng_url="", search_max_rounds=2, openai_search_calls=1)), result_count=50))
+    spent = run(search(wide_engine(Spent(available=True), wide_settings(searxng_url="", search_max_rounds=2, openai_search_calls=1,
+                                                                        openai_search_calls_max=1, ai_open_web_share=0)), result_count=50))
     assert spent.stats["stop_reason"].startswith("every discovery budget of this search is used up") and len(spent.stats["rounds"]) == 1
 
 
@@ -405,15 +406,22 @@ def test_rounds_stop_on_round_limit_time_budget_and_exhausted_discovery():
 def test_budgets_scale_with_the_request_within_hard_ceilings():
     s = Settings(_env_file=None)
     small, mid, big = plan_for(s, 50), plan_for(s, 300), plan_for(s, 1000)
-    assert (small.openai_calls, small.claude_calls, small.web_searches, small.ai_calls, small.ai_ranked) == (2, 2, 5, 30, 100)
-    assert (mid.openai_calls, mid.claude_calls, mid.web_searches, mid.ai_ranked) == (12, 12, 10, 120)
-    assert (big.openai_calls, big.claude_calls, big.web_searches, big.ai_ranked) == (16, 16, 10, 400)          # ceilings
-    assert big.ai_calls >= 16 + 16 + 400 // 6 and big.ai_calls <= s.max_ai_calls_per_search_max
+    # The AI web search: what ONE round makes (OpenAI and Claude on ATS hosts, OpenAI and Claude on employers' own sites),
+    # at most twice as much for a large request; every further round makes it again (tests/test_open_web_budgets.py).
+    assert small.base == (6, 6, 3, 6) and mid.base == big.base == (12, 12, 6, 12)
+    assert (small.web_searches, mid.web_searches, small.open_searches, small.followup_calls, mid.followup_calls) == (5, 10, 10, 3, 6)
+    assert (small.ai_ranked, mid.ai_ranked, big.ai_ranked) == (100, 120, 400)
+    # The totals of a whole search are safety ceilings, far above what a normal search uses.
+    assert (small.openai_calls, small.claude_calls, small.openai_open_calls, small.claude_open_calls) == (96, 96, 48, 96)
+    assert small.ai_calls >= 96 + 96 + 48 + 96 + small.ai_reserve and big.ai_calls <= s.max_ai_calls_per_search_max == 1000
     assert (small.searx_queries, mid.searx_queries, big.searx_queries) == (12, 72, 90) and big.new_boards == 400
-    assert plan_for(s, 1000, deep=False).openai_calls == 0
-    flat = plan_for(Settings(_env_file=None, ai_budget_scaling=False), 1000)
-    assert (flat.openai_calls, flat.web_searches, flat.ai_calls, flat.ai_ranked, flat.searx_queries) == (2, 5, 30, 120, 12)
-    assert sum(mid.per_round(mid.openai_calls, r) for r in range(1, mid.rounds + 1)) == 12 and mid.per_round(12, 9) == 0
+    assert (small.page_verifications, mid.page_verifications) == (400, 2400)
+    quiet = plan_for(s, 1000, deep=False)
+    assert (quiet.openai_calls, quiet.claude_calls, quiet.openai_open_calls, quiet.claude_open_calls, quiet.followup_calls) == (0, 0, 0, 0, 0)
+    flat = plan_for(Settings(_env_file=None, ai_budget_scaling=False), 1000)          # no scaling: one round's calls, and no more
+    assert (flat.openai_calls, flat.web_searches, flat.ai_calls, flat.ai_ranked, flat.searx_queries) == (6, 5, 30, 120, 12)
+    assert flat.ai_round("OpenAI", 1) == (6, 3) and flat.ai_round("OpenAI", 2) == (0, 0)
+    assert sum(mid.per_round(mid.searx_queries, r) for r in range(1, mid.rounds + 1)) == 72 and mid.per_round(72, 9) == 0
 
 
 class RecordingProvider:
@@ -431,38 +439,40 @@ def prompts_of(*providers):
 
 
 def test_openai_and_claude_get_different_slices_and_scaled_search_counts():
-    s = Settings(_env_file=None)
+    # One round of a request of 50 or fewer: OpenAI 2 calls on ATS hosts and 1 on employers' own sites, Claude 1 and 2.
+    s = Settings(_env_file=None, openai_search_calls=2, claude_search_calls=1, openai_open_web_calls=1, claude_open_web_calls=2,
+                 ai_open_web_followup_calls=0)
     openai, claude = RecordingProvider("OpenAI"), RecordingProvider("Claude")
     ai = AIOrchestrator(s, openai, claude)
     ai.configure(plan_for(s, 300))
     req = make_request(result_count=300)
     profile = Profile(skills=["Python"])
     first = run(ai.discover(profile, req, ["ML Engineer"], ["acme"]))
-    assert len(openai.prompts) == 3 and len(claude.prompts) == 3 and len(first) == 6          # 12 calls over 4 rounds each
+    assert len(openai.prompts) == 6 and len(claude.prompts) == 6 and len(first) == 12         # a 300-job search: twice a round's calls
     assert all(n == 10 for _, n, _ in openai.prompts + claude.prompts)                         # web searches per call scaled
     more = run(ai.discover_round(2, profile, req, ["AI Engineer", "Applied AI Engineer", "LLM Engineer", "MLOps Engineer", "NLP Engineer"], ["Texas", "remote", "Ohio"], ["acme"]))
-    assert len(more) == 6 and len(openai.prompts) == 6
+    assert len(more) == 12 and len(openai.prompts) == 12                                       # the next round makes them again
     prompts = [p for p, _, _ in openai.prompts + claude.prompts]
     assert len(set(prompts)) == len(prompts)                                                   # no two calls ask the same thing
     asked = lambda calls: [line.split(". ", 1)[1] for p, _, _ in calls for line in p.splitlines() if ". site:" in line and ". site:<" not in line]
     mine, theirs = asked(openai.prompts), asked(claude.prompts)
     assert mine and theirs and not set(mine) & set(theirs) and len(set(mine + theirs)) == len(mine + theirs)     # every search has one owner
-    assert ai.calls == 12 and ai.discovery_calls == 12
-    # Half of each provider's calls name their own `site:` searches (the requested title on every host first) and are
-    # held to their hosts; the other half look at employers' own career sites with the ATS hosts and the job boards
-    # blocked. Allowed and blocked lists are never sent together (tests/test_ai_discovery.py covers the plan in detail).
+    assert ai.calls == 24 and ai.discovery_calls == 24
+    # The calls on ATS hosts name their own `site:` searches (the requested title on every host first) and are held to
+    # their hosts; the calls on employers' own career sites come on top, with the ATS hosts and the job boards blocked.
+    # Allowed and blocked lists are never sent together (tests/test_ai_discovery.py covers the plan in detail).
     extras = openai.extras + claude.extras
     hosted = [e for e in extras if "allowed_domains" in e]
-    assert len(hosted) == 6 and all("blocked_domains" not in e and set(e["allowed_domains"]) <= set(HOSTS) for e in hosted)
-    assert theirs[:len(HOSTS)] == [f'site:{h} "AI Engineer"' for h in HOSTS] and any('"LLM Engineer"' in q for q in mine + theirs)
+    assert len(hosted) == 12 and all("blocked_domains" not in e and set(e["allowed_domains"]) <= set(HOSTS) for e in hosted)
+    assert mine[:len(HOSTS)] == [f'site:{h} "AI Engineer"' for h in HOSTS] and any('"LLM Engineer"' in q for q in mine + theirs)
     open_web = [e for e in extras if "blocked_domains" in e]
-    assert len(open_web) == 6 and all({"linkedin.com", *HOSTS} <= set(e["blocked_domains"]) and "allowed_domains" not in e for e in open_web)
-    assert sum("blocked_domains" in e for e in openai.extras) == sum("blocked_domains" in e for e in claude.extras) == 3
+    assert len(open_web) == 12 and all({"linkedin.com", *HOSTS} <= set(e["blocked_domains"]) and "allowed_domains" not in e for e in open_web)
+    assert sum("blocked_domains" in e for e in openai.extras) == 4 and sum("blocked_domains" in e for e in claude.extras) == 8
     assert all("Run exactly these 10 web searches" in p and "prefer other employers in your list: acme." in p for p, _, restrict in prompts_of(openai, claude) if restrict)
     assert all("employers' OWN career sites" in p and "choose other employers: acme." in p for p, _, restrict in prompts_of(openai, claude) if not restrict)
-    small = AIOrchestrator(s, RecordingProvider("OpenAI"), RecordingProvider("Claude"))       # no plan: the base budget in one round, none later
+    small = AIOrchestrator(s, RecordingProvider("OpenAI"), RecordingProvider("Claude"))       # no plan: one round's calls, none later
     run(small.discover(profile, make_request(), [], []))
-    assert len(small.openai.prompts) == 2 and all(n == 5 for _, n, _ in small.openai.prompts) and run(small.discover_round(2, profile, req, [], [], [])) == []
+    assert sorted(n for _, n, _ in small.openai.prompts) == [5, 5, 10] and run(small.discover_round(2, profile, req, [], [], [])) == []
 
 
 def test_calibration_is_monotone_bounded_and_needs_enough_anchors():

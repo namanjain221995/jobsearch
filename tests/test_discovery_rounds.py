@@ -272,12 +272,13 @@ def test_the_engine_holds_the_ai_web_search_to_the_hosts_the_search_can_use():
     usable = {"boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.ashbyhq.com", "jobs.smartrecruiters.com", "applytojob.com"}
     assert {h for c in free.openai.calls + free.claude.calls for h in c.get("allowed_domains", [])} == usable
     assert usable < set(site_hosts(settings.searxng_sites))                       # Workable, Workday, Recruitee: their readers are off here
-    # ... and the calls about employers' own career sites (half of them by default) block those hosts, the hosts of
-    # the readers that are off, and the platforms that may not be read at all.
+    # ... and the calls about employers' own career sites (they come on top of the others) block those hosts, the hosts
+    # of the readers that are off, and the platforms that may not be read at all.
     mixed = real_ai(settings)
     run(wide.search(wide.wide_engine(mixed, settings, sources=("greenhouse", "lever", "ashby")), result_count=50))
     open_web = [c for c in mixed.openai.calls + mixed.claude.calls if "blocked_domains" in c]
-    assert open_web and len(open_web) * 2 >= len(mixed.openai.calls + mixed.claude.calls)
+    on_hosts = [c for c in mixed.openai.calls + mixed.claude.calls if "allowed_domains" in c]
+    assert open_web and on_hosts and len(open_web) + len(on_hosts) == len(mixed.openai.calls + mixed.claude.calls)
     for call in open_web:
         assert usable | {"myworkdayjobs.com", "apply.workable.com", "recruitee.com", "icims.com", "successfactors.com", "bamboohr.com",
                          "pinpointhq.com", "ats.rippling.com", "linkedin.com", "indeed.com"} <= set(call["blocked_domains"])
@@ -318,8 +319,10 @@ def test_the_first_ai_calls_are_told_which_employers_the_index_already_matches()
     db = Database(":memory:")
     cold = real_ai(settings)
     run(wide.search(wide.wide_engine(cold, settings, db=db), result_count=50))
-    assert "prefer other employers in your list: acme, beta, gamma." in cold.claude.calls[0]["prompt"]        # an empty index: the known boards
-    assert "choose other employers: acme, beta, gamma." in cold.openai.calls[0]["prompt"]                     # the open-web call is told too
+    calls = [*cold.openai.calls, *cold.claude.calls]
+    on_hosts, on_sites = [c for c in calls if "allowed_domains" in c], [c for c in calls if "blocked_domains" in c]
+    assert "prefer other employers in your list: acme, beta, gamma." in on_hosts[0]["prompt"]                             # an empty index: the known boards
+    assert on_sites and "choose other employers: acme, beta, gamma." in on_sites[0]["prompt"]                            # the open-web calls are told too
     warm = real_ai(settings)
     state = run(wide.search(wide.wide_engine(warm, settings, db=db), result_count=50, ats_platforms=["lever"]))
     assert "prefer other employers in your list: beta." in warm.openai.calls[0]["prompt"]                     # the Lever employer with matching postings

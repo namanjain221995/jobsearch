@@ -86,6 +86,13 @@ CAREER_PAGES_PER_SEARCH = 200                # how many of them one search check
 CAREER_PAGE_SOURCE = "Company career site"   # Job.source of a posting read from that memory
 RELEVANT_READ_SECONDS = 3 * 86400.0          # how old a board's last read may be to say which titles the board lists
 WORKDAY_NEW_TENANTS_PER_ROUND = 6           # Workday is paced (one request every 1.5 s): few new tenants are queried while a search waits
+# Open-web queries of the plain search engines (no `site:`): the two forms that returned postings on employers' own
+# sites in the measurement of 2026-11-21 (`intitle:` / `inurl:` forms returned none that passed the address test).
+OPEN_WEB_QUERY_FORMS = ('"{title}" job opening {place} -linkedin -indeed -glassdoor -ziprecruiter', '"{title}" careers apply {place}')
+PROBES_PER_SITE = 2                        # page leads of one site that are checked before the site has shown what it serves
+PROBE_SECONDS = 8.0                         # how long those first checks are waited for before the other leads start
+_SITE_REFUSES = re.compile(r"Page returned HTTP (401|403|429)|Disallowed by robots\.txt|Source does not permit")
+MIN_EXTRACTION_SECONDS = 4.0                # the AI page check is not started with less of the lead check's time box left
 KNOWN_EMPLOYERS_WAIT_SECONDS = 8.0          # how long the first AI web search waits to learn which employers the index already has matches for
 REJECT_KEYS = ("rejected_not_relevant", "rejected_non_us", "rejected_work_mode", "rejected_eligibility")
 
@@ -117,11 +124,18 @@ def new_stats(requested: int) -> dict:
             "rank_seconds": None, "rerank_sent": 0, "reranked": 0, "ai_ranked_reused": 0, "rank_reused": {},
             # postings verified on employers' own sites in this search and kept in the index (source "career_page")
             "pages_remembered": 0,
+            # lead check: its wall time (all rounds), page checks still running at the time box, what those verified
+            # afterwards and how many of them were remembered, browser / AI page checks the time box cut
+            "lead_check_seconds": 0.0, "pages_late": 0, "pages_late_verified": 0, "pages_late_remembered": 0, "page_checks_cut": 0,
+            "pages_site_refused": 0,                          # page leads not requested because their site had refused its first pages
             # paid sources
             "serp_calls": 0, "serp_cached": 0, "serp_jobs": 0, "serp_listed": 0, "serp_skipped": "",
             "tiny_searches": 0, "tiny_fetches": 0, "tiny_usd": 0.0, "tiny_skipped": "",
             # AWS web search (queries = units of the monthly allowance; result text is never kept)
             "aws_budget": 0, "aws_queries": 0, "aws_results": 0, "aws_duplicates": 0, "aws_generic": 0, "aws_leads": 0,
+            "aws_open_queries": 0, "aws_open_leads": 0,       # its "any site" queries and the employer-site page leads they gave
+            # open-web queries (no `site:`) of the plain search engines and the employer-site page leads they gave
+            "open_engine_queries": 0, "open_engine_results": 0, "open_engine_leads": 0,
             "aws_skipped": "",
             # ATS platform filter, startup focus and where the jobs came from (search_scope.py). Counts only.
             "platform_filter": [], "startup_focus": False, "filtered_out": 0, "platforms": {}, "providers": {},
@@ -721,6 +735,14 @@ class SearchEngine:
         new_units = [u for u in board_units if (u.src, u.key) not in known]
         deadline = min(30.0, self.settings.fetch_deadline_seconds) if stats["round"] <= 1 and not new_units else \
             max(min(30.0, self.settings.fetch_deadline_seconds), self.settings.round_fetch_deadline_seconds)
+        # The time box of this lead check (LEAD_VERIFICATION_SECONDS; 0 = none). Cheap checks come first: the board
+        # reads and one plain request per page lead, in the order the leads arrived. The browser and the AI page check
+        # get what is left of it. What is verified by then goes into this search; nothing waits beyond it.
+        # A larger request makes up to twice a round's calls and gets up to twice the time for their leads (Plan.lead_seconds).
+        box = max(0.0, float((state.plan.lead_seconds if state.plan is not None else getattr(self.settings, "lead_verification_seconds", 0.0)) or 0.0))
+        box_start = time.monotonic()
+        if box:
+            deadline = min(deadline, box)
 
         async def check_boards():
             if not board_units and not workday_new:
@@ -770,17 +792,30 @@ class SearchEngine:
         # Leads on many different hosts: the page verifier itself keeps each host to two requests at a time.
         sem = asyncio.Semaphore(max(1, getattr(self.settings, "page_verification_concurrency", 8)))
         to_extract: list[tuple[job_verifier.Page, Candidate, Job | None]] = []
+        to_render: list[Candidate] = []
         crawl_queue: dict[str, Candidate] = {}
         # With an AI page check to follow, a page that only bears out the lead's own claim waits for it: the model
         # reads the page itself (and its location) and can say no. Without one, the claim-based check decides.
         can_extract = bool(ai.available or getattr(ai, "techsara", None) is not None)
+        browser_on = bool(getattr(self.browser, "available", False))
+        # Pages TinyFetch may still read in this search when our own browser is off or could not show the page.
+        render_extra = max(0, (state.plan.tiny_fetches if state.plan else 0) - stats["tiny_fetches"]) if self.tiny_on else 0
 
-        async def check_page(cand: Candidate, follow_listing: bool):
+        def left() -> float | None:
+            """Seconds of the time box that are left (None: no time box, every check is waited for)."""
+            return max(0.0, box_start + box - time.monotonic()) if box else None
+
+        async def plain(cand: Candidate) -> job_verifier.Verdict:
+            """One plain request, never the browser: the cheap check every page lead gets first."""
+            async with sem:
+                return await self.verifier.verify(cand, None, defer_claim=can_extract)
+
+        async def rendered(cand: Candidate) -> job_verifier.Verdict:
+            """The page again with the browser (one page of the browser budget), for a page a plain request could not
+            show; and through TinyFetch when our own browser could not turn it into a posting either - never when the
+            site itself refused an automated browser."""
             async with sem:
                 verdict = await self.verifier.verify(cand, browser_budget, defer_claim=can_extract)
-                # A page our own fetch and browser could not turn into a posting (JavaScript-only, browser unavailable)
-                # may be read through TinyFetch - never when the site itself refused an automated browser, and not
-                # when the page is known not to be one posting or arrives complete without a browser anyway.
                 if (verdict.job is None and verdict.page is not None and self.tiny_on
                         and verdict.extractable and job_verifier.render_may_help(verdict.page)
                         and "blocks automated browsers" not in verdict.reason
@@ -798,6 +833,18 @@ class SearchEngine:
                         if job:
                             job.verification = job.verification.replace("rendered in a headless browser", "read through TinyFetch")
                             verdict = job_verifier.Verdict(job=job)
+            return verdict
+
+        sites: dict[str, list[int]] = {}             # site -> [pages verified as postings, pages the site refused to serve]
+
+        def site_of(url: str) -> str:
+            return (url.split("/")[2] if url.count("/") >= 2 else "").lower().removeprefix("www.")
+
+        def settle(cand: Candidate, verdict: job_verifier.Verdict, follow_listing: bool, may_render: bool) -> None:
+            """What one checked page means for this search."""
+            seen = sites.setdefault(site_of(cand.url), [0, 0])
+            seen[0] += verdict.job is not None
+            seen[1] += verdict.job is None and bool(_SITE_REFUSES.match(verdict.reason or ""))
             if verdict.job:
                 verified.append(verdict.job)
                 return
@@ -811,16 +858,44 @@ class SearchEngine:
                 for link in links:
                     if link.url not in page_leads and crawl_budget.take():
                         crawl_queue.setdefault(link.url, link)
-            elif verdict.extractable and len(to_extract) < extraction_limit:
+            elif (may_render and verdict.extractable and verdict.claimed is None and job_verifier.render_may_help(verdict.page)
+                  and len(to_render) < (browser_budget.left if browser_on else 0) + render_extra):
+                to_render.append(cand)                       # the browser (or TinyFetch) may show more than the first response did
+            elif verdict.extractable and extract_slots[0] > 0:
+                extract_slots[0] -= 1
                 to_extract.append((verdict.page, cand, verdict.claimed))
             elif verdict.extractable and verdict.claimed is not None:      # no AI slot left: the claim-based check decides
                 verified.append(verdict.claimed)
             else:
                 stats["rejected_unverified"] += 1          # also a list or home page that offered no matching job links
 
+        async def run_stage(checks: list[tuple[Candidate, asyncio.Task]], follow_listing: bool, may_render: bool,
+                            wait: float | None = None) -> list[tuple[Candidate, asyncio.Task]]:
+            """Wait for the checks until the time box ends (and at most `wait` seconds) and settle the finished ones in
+            lead order. Returns the checks that were still running."""
+            if not checks:
+                return []
+            limits = [x for x in (left(), wait) if x is not None]
+            try:
+                done, late = await asyncio.wait([task for _, task in checks], timeout=min(limits) if limits else None)
+            except asyncio.CancelledError:
+                for _, task in checks:
+                    task.cancel()
+                raise
+            for cand, task in checks:
+                if task not in done:
+                    continue
+                if task.cancelled() or task.exception() is not None:
+                    stats["rejected_unverified"] += 1
+                else:
+                    settle(cand, task.result(), follow_listing, may_render)
+            return [(cand, task) for cand, task in checks if task in late]
+
         first = list(page_leads.values())
-        # Page reads of the whole search share one budget; what an earlier round used is gone.
-        total = state.plan.page_verifications if state.plan else self.settings.max_page_verifications
+        # Page reads: every round may check its own leads (MAX_PAGE_VERIFICATIONS a round, what an earlier round left
+        # unused included), up to the ceiling of the whole search. The limit protects the sites and the round's time.
+        each = state.plan.page_verifications if state.plan else self.settings.max_page_verifications
+        total = min(each * max(1, stats["round"]), max(each, self.settings.max_page_verifications_max))
         budget = max(0, total - getattr(state, "pages_checked", 0))
         state.pages_checked = getattr(state, "pages_checked", 0) + min(budget, len(first))
         # Pages without structured data are read by a model: one call with a paid model, several with the company
@@ -828,52 +903,194 @@ class SearchEngine:
         paid_calls = max(1, getattr(self.settings, "ai_page_extraction_paid_calls", 1))
         extraction_limit = self.settings.max_ai_page_extractions * (
             max(1, getattr(self.settings, "ai_page_extraction_calls", 5)) if getattr(ai, "techsara", None) is not None else paid_calls)
+        extract_slots = [extraction_limit]           # pages the AI page check may still read in this round
+        # ... of which a model with a bill may read this many when the company model does not answer (the pages of
+        # AI_PAGE_EXTRACTION_PAID_CALLS full calls; the check runs in several passes, so pages are counted, not calls)
+        paid_pages = [paid_calls * max(1, self.settings.max_ai_page_extractions)]
+        extract_gate = asyncio.Semaphore(max(1, getattr(self.settings, "ai_page_extraction_concurrency", 4)))
         if len(first) > budget:
             state.warn(f"Verification budget reached: {len(first) - budget} web lead(s) were not checked.")
 
         async def check_pages():
-            await asyncio.gather(*(check_page(c, True) for c in first[:budget]))
-            if crawl_queue:
+            # Cheap checks first: one plain request per page lead, in the order the leads arrived (the likeliest open
+            # postings first). Whether a page verifies depends most of all on its site (see ai_orchestrator._lead_rank):
+            # so every site is asked for a few of its leads first (PROBES_PER_SITE; all leads of a site whose pages
+            # were verified before), and the rest follows where a page verified. A site that refused every one of its
+            # first pages (HTTP 401 / 403 / 429, robots.txt) is not asked for the others: no request, no time.
+            leads = first[:budget]
+            trusted = getattr(ai, "_verified_site", None)
+            taken: dict[str, int] = {}
+            probes, rest = [], []
+            for cand in leads:
+                site = site_of(cand.url)
+                taken[site] = taken.get(site, 0) + 1
+                (probes if taken[site] <= PROBES_PER_SITE or (trusted is not None and trusted(site)) else rest).append(cand)
+            late = await run_stage([(c, asyncio.create_task(plain(c))) for c in probes], True, True, PROBE_SECONDS if rest else None)
+            more = []
+            for cand in sorted(rest, key=lambda c: sites.get(site_of(c.url), [0, 0])[0] == 0):      # stable: sites with a verified page first
+                ok, refused = sites.get(site_of(cand.url), [0, 0])
+                if not ok and refused >= PROBES_PER_SITE:
+                    stats["pages_site_refused"] += 1
+                    stats["rejected_unverified"] += 1
+                else:
+                    more.append(cand)
+            late = await run_stage([*late, *((c, asyncio.create_task(plain(c))) for c in more)], True, True)
+            if crawl_queue and (left() is None or left() > 0):
                 stats["crawled_links"] += len(crawl_queue)
-                await asyncio.gather(*(check_page(c, False) for c in crawl_queue.values()))
+                late += await run_stage([(c, asyncio.create_task(plain(c))) for c in list(crawl_queue.values())], False, True)
+            if late:
+                # The search moves on. A plain request that is still on its way may finish in the background: what it
+                # verifies is remembered (source career_page), so the next search finds it in the index.
+                stats["pages_late"] += len(late)
+                self._finish_late([task for _, task in late], stats)
 
         async def check_workday_leads():
             checks = [asyncio.create_task(check_workday(b, l)) for b, l in workday_leads[:10]]
             if checks:                                   # paced source: bounded wait
-                _, late = await asyncio.wait(checks, timeout=state.detail_wait)
+                _, late = await asyncio.wait(checks, timeout=state.detail_wait if left() is None else min(state.detail_wait, left()))
                 for task in late:
                     task.cancel()
                     stats["rejected_unverified"] += 1
 
-        await asyncio.gather(check_boards(), check_pages(), check_workday_leads())
-
-        if to_extract and can_extract:
-            pages = [(str(i), job_verifier.extraction_excerpt(page)) for i, (page, _, _) in enumerate(to_extract)]
-            size = max(1, self.settings.max_ai_page_extractions)           # one call per batch of this size
-            gate = asyncio.Semaphore(max(1, getattr(self.settings, "ai_page_extraction_concurrency", 4)))
-
-            async def ask(index: int, batch: list[tuple[str, str]]) -> dict[str, dict]:
-                async with gate:
-                    # Only the first call(s) may fall back to a model with a bill when the company model does not
-                    # answer; the others are its own, and their pages go back to the claim-based check.
-                    return await (ai.extract_pages(batch) if index < paid_calls else ai.extract_pages(batch, paid=False))
+        async def extract_pages(items: list[tuple[job_verifier.Page, Candidate, Job | None]]) -> None:
+            """The AI page check of pages without structured data, within the time that is left. A page the model gave
+            no answer for (the call failed, or the time ran out) goes back to the claim-based check."""
+            if not items:
+                return
             extracted: dict[str, dict] = {}
-            for part in await asyncio.gather(*(ask(n, pages[i:i + size]) for n, i in enumerate(range(0, len(pages), size)))):
-                extracted.update(part)
-            for i, (page, cand, claimed) in enumerate(to_extract):
+            cut = False
+            timeout = left()
+            if can_extract and (timeout is None or timeout >= MIN_EXTRACTION_SECONDS):
+                pages = [(str(i), job_verifier.extraction_excerpt(page)) for i, (page, _, _) in enumerate(items)]
+                size = max(1, self.settings.max_ai_page_extractions)           # one call per batch of this size
+
+                async def ask(paid: bool, batch: list[tuple[str, str]]) -> None:
+                    async with extract_gate:
+                        # Only the first pages may fall back to a model with a bill when the company model does not
+                        # answer; the others are its own, and their pages go back to the claim-based check.
+                        extracted.update(await (ai.extract_pages(batch) if paid else ai.extract_pages(batch, paid=False)))
+                asks = []
+                for i in range(0, len(pages), size):
+                    batch = pages[i:i + size]
+                    asks.append(asyncio.create_task(ask(paid_pages[0] > 0, batch)))
+                    paid_pages[0] -= len(batch)
+                try:
+                    _, unfinished = await asyncio.wait(asks, timeout=timeout)
+                except asyncio.CancelledError:
+                    for task in asks:
+                        task.cancel()
+                    raise
+                for task in unfinished:
+                    task.cancel()
+                if unfinished:
+                    await asyncio.gather(*unfinished, return_exceptions=True)
+                cut = bool(unfinished)
+            elif not can_extract:
+                stats["rejected_unverified"] += len(items)
+                return
+            else:
+                cut = True                                   # no time was left for the model at all
+            for i, (page, cand, claimed) in enumerate(items):
                 answer = extracted.get(str(i))
                 job, _ = job_from_extraction(page, cand, answer or {})
                 if job:
                     stats["ai_extracted"] += 1
                     verified.append(job)
-                elif answer is None and claimed is not None:      # the model gave no answer for this page (call failed,
-                    verified.append(claimed)                       # page left out): the claim-based check decides
+                elif answer is None and claimed is not None and not cut:      # the model gave no answer for this page (call
+                    verified.append(claimed)                                   # failed, page left out): the claim-based check decides
                 else:
+                    # ... but never because the time ran out: a page nobody read is not a job of this search.
+                    if answer is None and cut:
+                        stats["page_checks_cut"] += 1
                     stats["rejected_unverified"] += 1
-        else:
-            stats["rejected_unverified"] += len(to_extract)
+
+        async def render_pages() -> None:
+            """The browser, only while time is left. A render still running when the time ends is stopped: what a
+            browser verifies is not remembered (see _remember_pages), so finishing it would help no search."""
+            if not to_render:
+                return
+            if left() is not None and left() <= 0:
+                stats["page_checks_cut"] += len(to_render)
+                stats["rejected_unverified"] += len(to_render)
+                return
+            checks = {asyncio.create_task(rendered(c)): c for c in to_render}
+            pending = set(checks)
+            readers: list[asyncio.Task] = []
+            size = max(1, self.settings.max_ai_page_extractions)
+            try:
+                while pending:
+                    timeout = left()
+                    if timeout is not None and timeout <= 0:
+                        break
+                    done, pending = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+                    for task in [t for t in checks if t in done]:
+                        if task.cancelled() or task.exception() is not None:
+                            stats["rejected_unverified"] += 1
+                        else:
+                            settle(checks[task], task.result(), False, False)
+                    # The model reads what the browser showed as soon as a batch is ready, not after the last render:
+                    # a slow render must not cost the pages before it their check.
+                    if len(to_extract) >= size or (not pending and to_extract):
+                        batch = list(to_extract)
+                        to_extract.clear()
+                        readers.append(asyncio.create_task(extract_pages(batch)))
+            except asyncio.CancelledError:
+                for task in [*pending, *readers]:
+                    task.cancel()
+                raise
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+                stats["page_checks_cut"] += len(pending)
+                stats["rejected_unverified"] += len(pending)
+            if to_extract:
+                batch = list(to_extract)
+                to_extract.clear()
+                readers.append(asyncio.create_task(extract_pages(batch)))
+            if readers:
+                await asyncio.gather(*readers)
+
+        await asyncio.gather(check_boards(), check_pages(), check_workday_leads())
+        # Second stage, only while time is left: the browser for the pages a plain request could not show, and beside it
+        # the AI page check, first of the pages that came complete and then of what the browser shows, batch by batch.
+        waiting = list(to_extract)
+        to_extract.clear()
+        await asyncio.gather(render_pages(), extract_pages(waiting))
         stats["browser_pages"] += browser_budget.used
+        stats["lead_check_seconds"] = round(stats["lead_check_seconds"] + time.monotonic() - box_start, 1)
+        if hasattr(ai, "note_verified"):
+            # These sites are read first by the next round; where the title fits, a follow-up call searches them again.
+            ai.note_verified((job.url for job in verified), relevant=False)
+            ai.note_verified((job.url for job in verified if best_title_relevance(job.title, req.titles, related) >= MIN_RELEVANCE),
+                             relevant=True)
         return expected, verified
+
+    def _finish_late(self, checks: list[asyncio.Task], stats: dict) -> None:
+        """Let page checks (plain requests) that were still running when a search moved on finish in the background,
+        for at most LEAD_VERIFICATION_BACKGROUND_SECONDS, and keep what they verify through _remember_pages: the next
+        search finds those postings in the index. No browser and no model is used here (the search's orchestrator is
+        closed by then), so a page that only bears out the lead's own claim is not kept. Stopped when the engine closes."""
+        async def finish() -> None:
+            try:
+                done, late = await asyncio.wait(checks, timeout=max(1.0, self.settings.lead_verification_background_seconds))
+            except asyncio.CancelledError:
+                for task in checks:
+                    task.cancel()
+                raise
+            for task in late:
+                task.cancel()
+            if late:
+                await asyncio.gather(*late, return_exceptions=True)
+            jobs = [task.result().job for task in done
+                    if not task.cancelled() and task.exception() is None and task.result().job is not None]
+            stats["pages_late_verified"] += len(jobs)
+            if jobs:
+                stats["pages_late_remembered"] += await self._remember_pages(jobs)
+
+        task = asyncio.create_task(finish())
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
 
     # ------------------------------------------------------------ which boards a search reads
     async def _reading_plan(self, units: list[Unit], titles: list[str], related: list[str], limit: int, scope: Scope) -> list[Unit]:
@@ -1010,6 +1227,9 @@ class SearchEngine:
         base_profile: Profile = heuristic_profile(resume_text)
         related0 = [t for t in static_related_titles(titles, base_profile.all_skills) if t.lower() not in wanted][:8]
         keys = await self._keys()
+        if hasattr(ai, "note_verified"):
+            # Sites on which earlier searches verified postings (the remembered career pages): their leads are checked first.
+            ai.note_verified(getattr(self, "_pages", []))
         use_web = ai.available and req.deep_search
         if not ai.available:
             state.warn("No AI provider configured: using keyword-based resume analysis and scoring. No AI web search was performed.")
@@ -1030,6 +1250,9 @@ class SearchEngine:
         pages = self._page_units() if scope.allows_source(CAREER_PAGE) else []
         units = await self._reading_plan([*registry.plan_units(specs, keys, self._queries(titles, related0)), *accounts, *pages],
                                          titles, related0, plan.boards, scope)
+        if hasattr(ai, "note_verified"):
+            # Remembered postings whose title fits this search: their sites are searched again by a follow-up call.
+            ai.note_verified([u.key for u in units if u.src == CAREER_PAGE], relevant=True)
         # Deep search runs about a minute anyway (AI web search), so paced sources get real waiting time.
         # Fast search does not wait for them: it uses what the index already holds and lets them load on.
         state.detail_wait = DETAIL_WAIT_SECONDS if use_web else FAST_DETAIL_WAIT_SECONDS
@@ -1303,6 +1526,97 @@ class SearchEngine:
                 continue                                # a board the index already reads: nothing to do
             out.setdefault(hit.url, Candidate(url=hit.url, provider=provider, cited=True))
 
+    async def _open_engine_round(self, state: SearchState, req: SearchRequest, titles: list[str], after=None) -> list[Candidate]:
+        """Open-web queries of the plain search engines (SearXNG, TinyFish): `"<title>" job opening <place>` without a
+        `site:` operator, SEARCH_ENGINE_OPEN_WEB_QUERIES per search, in the first round. Never under a platform filter.
+
+        A result becomes a lead only when its address reads like ONE posting on an employer's own site
+        (_own_site_posting: job boards, aggregators, list and search pages and every host that is never fetched are
+        dropped before anything is requested); the page then has to prove the posting like every web lead. A result on
+        an ATS host is handled like the result of a `site:` query. Measured on 2026-11-21 through TinyFish (three
+        profiles, two query forms, 6 queries): 31 of 60 results passed that test and 17 of them were verified as open
+        postings, 2.8 a query. The company model's web search is NOT used for these queries: its answer carries no
+        structured results, so an address would come from text a model wrote, and here no board API checks it.
+        `after`: the first round of `site:` queries. These queries start when it has finished, so the SearXNG instance
+        (which forwards to public engines) has one user at a time, and an instance that stopped answering is not asked.
+        Never raises."""
+        stats, scope, s = state.stats, _scope_of(state), self.settings
+        budget = state.plan.open_engine_queries if state.plan else 0
+        if after is not None:
+            await asyncio.wait([after])
+        searx_ok = self.searx_on and not getattr(state, "searx_down", False)
+        tiny_ok = self.tiny_on and not stats["tiny_skipped"]
+        if budget <= 0 or scope.filtered or not (searx_ok or tiny_ok):
+            return []
+        places = [p for p in dict.fromkeys(" ".join(str(x).split()) for x in req.locations[:4]) if p] or ["United States"]
+        if req.work_mode == "Remote":
+            places = ["remote"]
+        clean = lambda text: " ".join(re.sub(r'["\\]', " ", str(text or "")).split())
+        queries = [form.format(title=clean(title), place=place)
+                   for title in list(dict.fromkeys(t for t in titles if clean(t)))[:6] for place in places for form in OPEN_WEB_QUERY_FORMS]
+        ledger = self._ledger(state)
+        hosts = self._hosts(state)
+        ctx = await self._hit_context(state)
+        out: dict[str, Candidate] = {}
+        engines = [e for e, ok in ((SEARX, searx_ok), (TINYFISH, tiny_ok)) if ok]
+        sent = 0
+        for query in queries:
+            if sent >= budget or not engines:
+                break
+            if SEARX in engines and getattr(state, "searx_down", False):
+                engines.remove(SEARX)
+                continue
+            engine = engines[sent % len(engines)]            # both engines on: they take turns (two different indexes)
+            if engine == TINYFISH and stats["tiny_searches"] >= state.plan.tiny_searches:
+                engines.remove(TINYFISH)
+                continue
+            if not ledger.claim(engine, query):
+                continue
+            sent += 1
+            if engine == SEARX:
+                answer = await self.searx.search(query, 1, useful=lambda u: self._own_site_posting(u, scope) or extract(u, hosts) is not None)
+                stats["searx_cached" if answer.cached else "searx_queries"] += 1
+                urls, note = list(answer.urls), answer.error or ""
+                state.searx_failures = getattr(state, "searx_failures", 0) + 1 if note else 0
+                if note:
+                    stats["searx_failed"] += 1
+                    if state.searx_failures >= 3:                          # slow or down: stop asking, like the `site:` rounds do
+                        state.searx_down = True
+                        state.warn(f"Search-engine discovery (SearXNG) did not answer ({note}); the search went on without it.")
+                else:
+                    stats["searx_results"] += len(urls)
+            else:
+                urls, note = await self.tinyfish.search(query)
+                if note in ("daily spending ceiling reached", "wallet balance is at the reserve", "not configured"):
+                    stats["tiny_skipped"] = note
+                    ledger.release(TINYFISH, query)            # not sent: another engine may still take it
+                    engines.remove(TINYFISH)
+                    sent -= 1
+                    continue
+                stats["tiny_searches"] += 1
+                stats["tiny_usd"] = round(self.tinyfish.spent, 4)
+            stats["open_engine_queries"] += 1
+            if note:
+                ledger.note(query, "failed")
+                continue
+            stats["open_engine_results"] += len(urls)
+            before = len(out)
+            on_hosts = []
+            for url in urls:
+                if extract(url, hosts) is not None:
+                    on_hosts.append(url)                       # a board or posting on an ATS host: the usual handling
+                elif self._own_site_posting(url, scope):
+                    pages = state.__dict__.setdefault("searx_pages", set())
+                    if url in pages or len(pages) < s.searxng_page_leads_per_search:
+                        pages.add(url)
+                        out.setdefault(url, Candidate(url=url, provider=engine, cited=True))
+            stats["open_engine_leads"] += len(out) - before
+            self._hits_to_leads(state, on_hosts, hosts, engine, ctx, out)
+            ledger.note(query, "ok" if len(out) > before else "empty")
+            state.emit(state.stage or "search", "Asking the search engines for postings on employers' own sites")
+        stats["query_ledger"] = ledger.stats()
+        return list(out.values())
+
     async def _tiny_round(self, state: SearchState, count: int) -> list[Candidate]:
         """TinySearch (paid) as one more discovery engine: up to `count` `site:` queries that no engine asked in this
         search (the plan beyond SearXNG's budget) and, when none of those are left, queries another engine failed on
@@ -1433,11 +1747,13 @@ class SearchEngine:
         if calls <= 0 or not self.aws_on or stats["aws_skipped"]:
             return []
         hosts, scope = self._hosts(state), _scope_of(state)
-        # None: any site except job boards / aggregators (left out under a platform filter: only the chosen platforms count)
-        rotation: list = [*aws_web_search.host_groups(hosts), *([] if scope.filtered else [None])]
+        # None: an "any site" query for postings on employers' own sites (AWS_WEB_SEARCH_OPEN_WEB_SHARE of the queries;
+        # left out under a platform filter, where only the chosen platforms count). Such a query excludes the job boards
+        # and aggregators, the career platforms nothing may read, and the ATS hosts the other queries are about.
+        rotation: list = aws_web_search.rotation(hosts, 0.0 if scope.filtered else state.plan.aws_open_share)
         if not rotation:
             return []
-        exclude = [h for h in aggregator_hosts(s.aggregator_hosts)]
+        exclude = list(dict.fromkeys([*aggregator_hosts(s.aggregator_hosts), *scope.unreadable_hosts(), *hosts]))
         ctx = await self._hit_context(state)
         seen: set = state.__dict__.setdefault("aws_seen", set())          # in memory, this search only
         ledger = self._ledger(state)
@@ -1478,34 +1794,50 @@ class SearchEngine:
             state.aws_failures = 0
             stats["aws_queries"] += answer.queries
             stats["aws_results"] += len(answer.results)
+            stats["aws_open_queries"] += group is None
             urls: list[str] = []
-            for result in answer.results:
+            pages_before = len(out)
+            # Freshness: of an "any site" query the results published last come first (only their order is used, for
+            # the life of this loop), so the page leads this search may still take are the newest ones.
+            results = answer.results if group is not None else sorted(
+                answer.results, key=lambda r: -(r.published_at.timestamp() if r.published_at is not None else 0.0))
+            for result in results:
                 if result.url in seen:
                     stats["aws_duplicates"] += 1
                     continue
                 seen.add(result.url)
                 if extract(result.url, hosts) is not None or scope.page_lead(result.url):
                     urls.append(result.url)
-                elif group is None and employer_posting_address(result.url, aggregator_hosts(s.aggregator_hosts)):
+                elif group is None and self._own_site_posting(result.url, scope):
                     pages = state.__dict__.setdefault("searx_pages", set())
                     if len(pages) < s.searxng_page_leads_per_search:
                         pages.add(result.url)
                         out.setdefault(result.url, Candidate(url=result.url, provider=AWS, cited=True))
                 else:
                     stats["aws_generic"] += 1                 # a search, category or aggregator page: never a vacancy
+            stats["aws_open_leads"] += len(out) - pages_before
             self._hits_to_leads(state, urls, hosts, AWS, ctx, out)
-            ledger.note(text, "ok" if urls else "empty", where)   # an outcome only: nothing of the result is kept
+            ledger.note(text, "ok" if urls or len(out) > pages_before else "empty", where)   # an outcome only: nothing of the result is kept
             del answer                                        # nothing of the response outlives this loop
             state.emit(state.stage or "search", "Asking AWS web search for employer job postings")
         stats["aws_leads"] += len(out)
         stats["query_ledger"] = ledger.stats()
         return list(out.values())
 
+    def _own_site_posting(self, url: str, scope: Scope) -> bool:
+        """Whether a result address of a search that was NOT held to hosts may be checked as ONE posting on an
+        employer's own site. Strict, and decided before anything is requested: the address reads like one posting
+        (aws_web_search.employer_posting_address: no list, search, category or home page), it is no job board or
+        aggregator, and it is on no host that is never fetched or that this engine cannot read (iCIMS, SAP
+        SuccessFactors, BambooHR, a reader that is switched off). The page then still has to prove the posting."""
+        return bool(employer_posting_address(url, aggregator_hosts(self.settings.aggregator_hosts))
+                    and not job_verifier.never_fetched(url) and scope.readable_url(url))
+
     def _more_discovery(self, state: SearchState, ai, use_web: bool, next_round: int, queries_left: int) -> bool:
         plan, stats = state.plan, state.stats
         ai_more = (use_web and hasattr(ai, "discover_round") and any(
-            getattr(ai, name, None) is not None and plan.per_round(total, next_round) > 0
-            for name, total in (("openai", plan.openai_calls), ("claude", plan.claude_calls)))
+            getattr(ai, name.lower(), None) is not None and sum(plan.ai_round(name, next_round)) > 0
+            for name in ("OpenAI", "Claude"))
             # ... and a provider that was not switched off still has somewhere to search (ai_orchestrator.discovery_left)
             and (not hasattr(ai, "discovery_left") or ai.discovery_left(next_round)))
         unasked = self._ledger(state).free(getattr(state, "query_tail", []))      # of the plan beyond SearXNG's budget
@@ -1582,6 +1914,11 @@ class SearchEngine:
         if searx_task:
             state.side_tasks.append(searx_task)
         queries = queries[used:]
+        # The same engines are also asked a few queries that are not held to a host: postings on employers' own sites.
+        open_task = None
+        if use_web and plan.open_engine_queries > 0 and not scope.filtered and (self.searx_on or self.tiny_on):
+            open_task = asyncio.create_task(self._open_engine_round(state, req, [*req.titles, *variants], after=searx_task))
+            state.side_tasks.append(open_task)
         # Paid sources wait for round 2: they are spent only when the free ones left the search short.
         # SerpApi gets title x location pairs.
         places = [f"{p}, United States" for p in req.locations[:6]] or ["United States"]
@@ -1592,7 +1929,9 @@ class SearchEngine:
         aws_task = None
         if self.aws_on and (hosts or not scope.filtered):
             await self._aws_prepare(state, req, [*req.titles, *variants], locations)
-            first = plan.per_round(stats["aws_budget"], 1)
+            # Like the AI web search: the base budget at once in the first round (a query takes under a second and the
+            # round runs beside the reading of the sources), what a larger request adds in the later rounds.
+            first = plan.first_round(stats["aws_budget"], self.settings.aws_web_search_max_calls_per_search, 1)
             if first:
                 aws_task = asyncio.create_task(self._aws_round(state, first))
                 state.side_tasks.append(aws_task)
@@ -1636,6 +1975,8 @@ class SearchEngine:
         searx_leads: list[Candidate] = (await searx_task) if searx_task else []
         if aws_task:
             searx_leads = [*searx_leads, *(await aws_task)]
+        if open_task:
+            searx_leads = [*searx_leads, *(await open_task)]
         expected: dict[str, set[str]] = {}
         lead_jobs: list[Job] = []
         seen_leads: set[str] = set()
@@ -1764,7 +2105,7 @@ class SearchEngine:
 
             tiny_n = plan.per_round(plan.tiny_searches, round_no - 1)       # paid sources start in round 2
             serp_n = plan.per_round(plan.serp_calls, round_no - 1)
-            aws_n = plan.per_round(stats["aws_budget"], round_no) if self.aws_on else 0
+            aws_n = plan.first_round(stats["aws_budget"], self.settings.aws_web_search_max_calls_per_search, round_no) if self.aws_on else 0
             ai_leads, searx_leads, tiny_leads, (serp_leads, listed_new), aws_leads = await asyncio.gather(
                 more_ai(), self._searx_round(state, queries[:used]), self._tiny_round(state, tiny_n),
                 self._serp_round(state, serp_pairs[: max(1, serp_n)], serp_n), self._aws_round(state, aws_n))
