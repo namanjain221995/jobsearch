@@ -130,34 +130,36 @@ interface SourceCounts {
   postings?: number;
 }
 
-export function RunSources({ sources }: { sources: SearchRun["sources"] }) {
+export function RunSources({ sources, active = true }: { sources: SearchRun["sources"]; /** The run is still going on. */ active?: boolean }) {
   const entries = Object.entries(sources as Record<string, SourceCounts>);
   if (entries.length === 0) {
-    return <p className="text-sm text-muted-foreground">No source has reported yet.</p>;
+    // A finished search that read nothing: one limited to platforms without a board reader, for example.
+    return <p className="text-sm text-muted-foreground">{active ? "No source has reported yet." : "No job source was read in this search."}</p>;
   }
+  // Narrower cells below `sm`: with the usual padding the last column fell outside the box on a phone.
   return (
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full border-collapse text-sm">
         <caption className="sr-only">Job sources read by this search</caption>
         <thead>
           <tr className="border-b text-left text-2sm text-muted-foreground">
-            <th scope="col" className="px-3 py-1.5 font-label">Source</th>
-            <th scope="col" className="px-3 py-1.5 text-right font-label">Read</th>
-            <th scope="col" className="px-3 py-1.5 text-right font-label">Failed</th>
-            <th scope="col" className="px-3 py-1.5 text-right font-label">Still loading</th>
-            <th scope="col" className="px-3 py-1.5 text-right font-label">Postings</th>
+            <th scope="col" className="px-2 py-1.5 font-label sm:px-3">Source</th>
+            <th scope="col" className="px-2 py-1.5 text-right font-label sm:px-3">Read</th>
+            <th scope="col" className="px-2 py-1.5 text-right font-label sm:px-3">Failed</th>
+            <th scope="col" className="px-2 py-1.5 text-right font-label sm:px-3">Still loading</th>
+            <th scope="col" className="px-2 py-1.5 text-right font-label sm:px-3">Postings</th>
           </tr>
         </thead>
         <tbody>
           {entries.map(([name, counts]) => (
             <tr key={name} className="border-b last:border-b-0">
-              <th scope="row" className="px-3 py-1.5 text-left font-normal">{name}</th>
-              <td className="px-3 py-1.5 text-right tabular-nums">{(counts.boards_ok ?? 0).toLocaleString()}</td>
-              <td className={cn("px-3 py-1.5 text-right tabular-nums", (counts.boards_failed ?? 0) > 0 && "font-semibold text-warning")}>
+              <th scope="row" className="px-2 py-1.5 text-left font-normal sm:px-3">{name}</th>
+              <td className="px-2 py-1.5 text-right tabular-nums sm:px-3">{(counts.boards_ok ?? 0).toLocaleString()}</td>
+              <td className={cn("px-2 py-1.5 text-right tabular-nums sm:px-3", (counts.boards_failed ?? 0) > 0 && "font-semibold text-warning")}>
                 {(counts.boards_failed ?? 0).toLocaleString()}
               </td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{(counts.pending ?? 0).toLocaleString()}</td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{(counts.postings ?? 0).toLocaleString()}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums sm:px-3">{(counts.pending ?? 0).toLocaleString()}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums sm:px-3">{(counts.postings ?? 0).toLocaleString()}</td>
             </tr>
           ))}
         </tbody>

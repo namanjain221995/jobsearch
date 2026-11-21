@@ -99,6 +99,9 @@ async def go_live(db: AsyncSession, settings: Settings, actor: User, keep_sessio
                "candidates": (await db.execute(select(func.count()).select_from(Candidate))).scalar_one(),
                "searches": (await db.execute(select(func.count()).select_from(SearchRun))).scalar_one()}
     await db.execute(text("TRUNCATE " + ", ".join(TEST_DATA_TABLES)))
+    # The ranking memory (app/rank_cache.py) lives in the job index, which is kept. It holds model judgements about
+    # the test candidates under hashes: they go with the test data.
+    await db.execute(text("DELETE FROM index_meta WHERE key LIKE 'rankcache:%'"))
     await db.execute(delete(Session).where(Session.id != keep_session))       # the Admin who asked stays signed in
     await db.execute(delete(User).where(User.role != "ADMIN"))
     await db.execute(delete(Team))

@@ -317,26 +317,65 @@ def test_search_engine_results_on_these_hosts_become_board_and_posting_hits():
         assert extract(url, hosts) is None, url
     assert extract("https://namecheap.recruitee.com/", site_hosts("jobs.lever.co")) is None     # host not configured
     default = site_hosts(Settings(_env_file=None).searxng_sites)
-    assert "recruitee.com" in default and "ats.rippling.com" in default and "pinpointhq.com" not in default     # Pinpoint is off
+    assert "recruitee.com" in default
+    assert "ats.rippling.com" not in default and "pinpointhq.com" not in default     # Rippling and Pinpoint are off: no queries for them
 
 
 # ---------------------------------------------------------------- registry, switches, catalogue
-def test_registry_has_the_three_readers_and_pinpoint_is_off_by_default():
+def test_registry_has_the_three_readers_and_pinpoint_and_rippling_are_off_by_default():
     for name, label in (("recruitee", "Recruitee"), ("pinpoint", "Pinpoint"), ("rippling", "Rippling")):
         spec = registry.SPECS[name]
         assert spec.label == label and spec.kind == "board" and spec.keyed and name in registry.BOARD_LEAD_SOURCES
     assert registry.SPECS["rippling"].detail is ats_startup.detail_rippling
     assert registry.SPECS["recruitee"].detail is None and registry.SPECS["pinpoint"].detail is None
-    on = registry.enabled_specs(Settings(_env_file=None))
-    assert "recruitee" in on and "rippling" in on and "pinpoint" not in on
-    every = registry.enabled_specs(Settings(_env_file=None, pinpoint_enabled=True))
-    assert "pinpoint" in every
-    off = registry.enabled_specs(Settings(_env_file=None, recruitee_enabled=False, rippling_enabled=False))
-    assert "recruitee" not in off and "rippling" not in off
-    assert "rippling" not in registry.enabled_specs(Settings(_env_file=None, disabled_sources="rippling"))
-    units = registry.plan_units(on, {"recruitee": ["acme"], "rippling": ["acme-co"], "pinpoint": ["x"]}, ["AI Engineer"])
-    assert registry.Unit("recruitee", "acme", "") in units and registry.Unit("rippling", "acme-co", "") in units
-    assert not any(u.src == "pinpoint" for u in units)
+    assert Settings(_env_file=None).rippling_enabled is False and Settings(_env_file=None).pinpoint_enabled is False
+    default = registry.enabled_specs(Settings(_env_file=None))
+    assert "recruitee" in default and "rippling" not in default and "pinpoint" not in default
+    # Rippling is off until its terms are reviewed: nothing plans a Rippling board, even one the index knows.
+    units = registry.plan_units(default, {"recruitee": ["acme"], "rippling": ["acme-co"], "pinpoint": ["x"]}, ["AI Engineer"])
+    assert registry.Unit("recruitee", "acme", "") in units and not any(u.src in ("rippling", "pinpoint") for u in units)
+    every = registry.enabled_specs(Settings(_env_file=None, pinpoint_enabled=True, rippling_enabled=True))
+    assert "pinpoint" in every and "rippling" in every
+    on = registry.enabled_specs(Settings(_env_file=None, rippling_enabled=True))
+    assert registry.Unit("rippling", "acme-co", "") in registry.plan_units(on, {"rippling": ["acme-co"]}, ["AI Engineer"])
+    off = registry.enabled_specs(Settings(_env_file=None, recruitee_enabled=False))
+    assert "recruitee" not in off
+    assert "rippling" not in registry.enabled_specs(Settings(_env_file=None, rippling_enabled=True, disabled_sources="rippling"))
+
+
+def test_a_switched_off_reader_makes_no_detail_request_for_stored_postings():
+    """Rippling is off by default. A Rippling posting that is still in the index from the time the reader was on must
+    not be opened either: the description request goes to Rippling just like a board read."""
+    from tests import conftest, test_wider_search as wide
+    asked = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path.endswith(f"/jobs/{UUID}"):
+            return httpx.Response(200, json=load("rippling_detail.json"))
+        return httpx.Response(404, json={})
+
+    async def details(**settings):
+        ai = wide.WideAI(available=False)
+        engine = wide.SearchEngine(wide.wide_settings(searxng_url="", **settings), Database(":memory:"),
+                                   client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), seeds=[], ai_factory=lambda: ai,
+                                   browser=conftest.FakeBrowser(available=False))
+        engine.limiter.intervals = {"rippling": 0.0}
+        stored = Job(title="AI Engineer", company="Rippling", source="Rippling", url=f"https://ats.rippling.com/rippling/jobs/{UUID}",
+                     board="rippling", ats="rippling", ats_id=UUID, location="San Francisco, CA", country_hint="United States",
+                     needs_detail=True, detail_ref=UUID)
+        try:
+            return "rippling" in engine.specs, await engine._fetch_details([stored], {"rejected_non_us": 0}, None)
+        finally:
+            await engine.aclose()
+
+    enabled, opened = run(details())
+    assert not enabled and opened == [] and asked == []                           # off: not one request
+    enabled, opened = run(details(rippling_enabled=True))
+    assert enabled and len(opened) == 1 and not opened[0].needs_detail and opened[0].posted_at == "2026-08-12"
+    assert any(u.startswith("https://api.rippling.com/platform/api/ats/v1/board/rippling/jobs/") for u in asked)
 
 
 @pytest.mark.parametrize("ats,slug,url,expected", [

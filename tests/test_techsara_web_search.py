@@ -6,9 +6,13 @@ import httpx
 from app.providers.techsara_provider import TechsaraProvider
 
 
-def provider(handler) -> TechsaraProvider:
+def provider(handler, waits=None, **kw) -> TechsaraProvider:
+    async def sleep(seconds):
+        if waits is not None:
+            waits.append(seconds)
+
     return TechsaraProvider("tsk_test_x", "https://model.example/v1", "techsara-35b", "techsara-rerank",
-                            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+                            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), sleep=sleep, **kw)
 
 
 async def test_web_search_forces_the_tool_and_returns_only_addresses():
@@ -43,3 +47,36 @@ async def test_web_search_never_raises():
     assert await provider(busy).web_search("q") == ([], "HTTP 503")
     assert await provider(junk).web_search("q") == ([], "invalid answer")
     assert await provider(down).web_search("q") == ([], "connection error")
+
+
+
+async def test_web_search_repeats_a_busy_model_once_and_honours_its_settings():
+    seen, waits = [], []
+
+    def busy_then_ok(request):
+        seen.append(request.url.path)
+        if len(seen) == 1:
+            return httpx.Response(503, json={"error": {"code": "model_recovering"}}, headers={"Retry-After": "3"})
+        return httpx.Response(200, json={"output": [{"type": "message", "content": [{"type": "output_text", "text": "[a](https://jobs.lever.co/beta)"}]}],
+                                         "usage": {"input_tokens": 7, "output_tokens": 3}})
+
+    p = provider(busy_then_ok, waits, web_concurrency=5)
+    assert await p.web_search("q") == (["https://jobs.lever.co/beta"], "") and len(seen) == 2 and waits == [3.0]
+    assert p.usage["retries"] == 1 and p.usage["calls"] == 1 and p._web_sem._value == 5
+
+    def always_busy(request):
+        seen.append("busy")
+        return httpx.Response(429, json={}, headers={"Retry-After": "600"})
+
+    waits.clear()
+    seen.clear()
+    q = provider(always_busy, waits)
+    assert await q.web_search("q") == ([], "HTTP 429") and len(seen) == 2 and waits == [8.0]          # one repeat, a short wait at most
+    assert q._web_sem._value == 2
+
+    def no_retry(request):
+        seen.append("no")
+        return httpx.Response(503, json={}, headers={"x-should-retry": "false"})
+
+    seen.clear()
+    assert await provider(no_retry, waits).web_search("q") == ([], "HTTP 503") and len(seen) == 1

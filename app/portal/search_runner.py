@@ -67,7 +67,11 @@ DISCOVERY_KEYS = ("title_variants", "searx_queries", "searx_cached", "searx_resu
                   "aws_budget", "aws_queries", "aws_results", "aws_duplicates", "aws_generic", "aws_leads", "aws_skipped",
                   # where the jobs came from (app/search_scope.py); counts and fixed sentences only
                   "platform_filter", "startup_focus", "filtered_out", "platforms", "providers", "coverage_warnings",
-                  "seconds_to_first_verified", "total_seconds")
+                  "seconds_to_first_verified", "total_seconds",
+                  # ranking stage: its duration, and how many model answers of earlier searches were used again
+                  "rank_seconds", "rerank_sent", "reranked", "ai_ranked_reused", "rank_reused", "pages_remembered",
+                  # discovery: search-engine queries asked once per search (counts per engine), leads on hosts that are never read
+                  "query_ledger", "leads_not_readable")
 
 
 def discovery_of(state: SearchState) -> dict:

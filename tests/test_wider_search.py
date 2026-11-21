@@ -426,6 +426,10 @@ class RecordingProvider:
         return [Candidate(url=f"https://jobs.lever.co/{self.name.lower()}{len(self.prompts)}", provider=self.name, cited=True)], max_searches
 
 
+def prompts_of(*providers):
+    return [call for provider in providers for call in provider.prompts]
+
+
 def test_openai_and_claude_get_different_slices_and_scaled_search_counts():
     s = Settings(_env_file=None)
     openai, claude = RecordingProvider("OpenAI"), RecordingProvider("Claude")
@@ -440,18 +444,23 @@ def test_openai_and_claude_get_different_slices_and_scaled_search_counts():
     assert len(more) == 6 and len(openai.prompts) == 6
     prompts = [p for p, _, _ in openai.prompts + claude.prompts]
     assert len(set(prompts)) == len(prompts)                                                   # no two calls ask the same thing
-    focus = lambda p: p.split("Candidate level")[0]
-    assert not {focus(p) for p, _, _ in openai.prompts[3:]} & {focus(p) for p, _, _ in claude.prompts[3:]}     # different title / location slices
+    asked = lambda calls: [line.split(". ", 1)[1] for p, _, _ in calls for line in p.splitlines() if ". site:" in line and ". site:<" not in line]
+    mine, theirs = asked(openai.prompts), asked(claude.prompts)
+    assert mine and theirs and not set(mine) & set(theirs) and len(set(mine + theirs)) == len(mine + theirs)     # every search has one owner
     assert ai.calls == 12 and ai.discovery_calls == 12
-    # Tuning: the general first calls are unchanged; every further OpenAI call searches ONE ATS host (rotating), Claude
-    # alternates one host with an open search that blocks the job boards. Allowed and blocked lists are never sent together.
-    assert openai.extras[:2] == [{}, {}] and all(len(e["allowed_domains"]) <= 2 for e in openai.extras[2:])
-    assert len({e["allowed_domains"][0] for e in openai.extras[2:]}) >= 3
-    open_web = [e for e in claude.extras if "blocked_domains" in e]
-    assert open_web and all("linkedin.com" in e["blocked_domains"] and "allowed_domains" not in e for e in open_web)
-    assert any(e.get("region") in ("Texas", "Ohio") for e in openai.extras + claude.extras)
-    assert all("DISTINCT employer job-board addresses" in p and "Exclude these employers" in p for p, _, _ in openai.prompts[2:])
-    small = AIOrchestrator(s, RecordingProvider("OpenAI"), RecordingProvider("Claude"))       # no plan: exactly the old behaviour
+    # Half of each provider's calls name their own `site:` searches (the requested title on every host first) and are
+    # held to their hosts; the other half look at employers' own career sites with the ATS hosts and the job boards
+    # blocked. Allowed and blocked lists are never sent together (tests/test_ai_discovery.py covers the plan in detail).
+    extras = openai.extras + claude.extras
+    hosted = [e for e in extras if "allowed_domains" in e]
+    assert len(hosted) == 6 and all("blocked_domains" not in e and set(e["allowed_domains"]) <= set(HOSTS) for e in hosted)
+    assert theirs[:len(HOSTS)] == [f'site:{h} "AI Engineer"' for h in HOSTS] and any('"LLM Engineer"' in q for q in mine + theirs)
+    open_web = [e for e in extras if "blocked_domains" in e]
+    assert len(open_web) == 6 and all({"linkedin.com", *HOSTS} <= set(e["blocked_domains"]) and "allowed_domains" not in e for e in open_web)
+    assert sum("blocked_domains" in e for e in openai.extras) == sum("blocked_domains" in e for e in claude.extras) == 3
+    assert all("Run exactly these 10 web searches" in p and "prefer other employers in your list: acme." in p for p, _, restrict in prompts_of(openai, claude) if restrict)
+    assert all("employers' OWN career sites" in p and "choose other employers: acme." in p for p, _, restrict in prompts_of(openai, claude) if not restrict)
+    small = AIOrchestrator(s, RecordingProvider("OpenAI"), RecordingProvider("Claude"))       # no plan: the base budget in one round, none later
     run(small.discover(profile, make_request(), [], []))
     assert len(small.openai.prompts) == 2 and all(n == 5 for _, n, _ in small.openai.prompts) and run(small.discover_round(2, profile, req, [], [], [])) == []
 
@@ -591,7 +600,8 @@ def test_orchestrator_falls_back_when_the_company_model_answers_503():
     s = Settings(_env_file=None, techsara_rerank_batch=2)
     provider, seen, _ = techsara([httpx.Response(503, json={})], retries=0)
     ai = AIOrchestrator(s, None, None, provider)
-    jobs = [Job(id=str(i), title="AI Engineer", company="Acme", url=f"https://x.example/{i}", source="Greenhouse") for i in range(10)]
+    jobs = [Job(id=str(i), title="AI Engineer", company="Acme", url=f"https://x.example/{i}", source="Greenhouse", description=f"Posting {i}.")
+            for i in range(10)]                                                                # ten different texts: postings with the same text are one question
     assert run(ai.rerank(Profile(), make_request(), jobs)) == {} and len(seen) == 2          # two failed batches: the rest is not sent
     assert ai.status["TechSara"]["failed_calls"] == 2 and not ai.available and ai.can_rerank
     raw, who = run(ai.expand_titles(["AI Engineer"], Profile()))

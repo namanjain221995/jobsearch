@@ -4,10 +4,13 @@ Both options are read from the request and from app/ats_platforms.py at run time
 board readers exist (that is the registry's business: the engine passes the names of its enabled sources).
 
 - Platform filter (`ats_platforms`, empty = all): only the board readers of the chosen platforms are read,
-  search engines are asked only for hosts of those platforms, and a lead or posting of any other platform, or of
-  a source that is not an ATS platform at all, is dropped before verification. A chosen platform without an
-  enabled reader whose postings are public pages is searched through `site:` queries on its hosts; what is found
-  is verified page by page like every web lead.
+  search engines and the AI web search are asked only for hosts of those platforms (`Scope.hosts`: nothing is
+  paid for that the filter would drop afterwards), and a lead or posting of any other platform, or of a source
+  that is not an ATS platform at all, is dropped before verification. A chosen platform without an enabled
+  reader whose postings are public pages is searched through `site:` queries on its hosts; what is found is
+  verified page by page like every web lead.
+- Hosts nobody can use are never asked, with or without a filter: a platform whose board reader is switched off
+  (and whose pages are not verified one by one) gets no `site:` query and no AI web search (`Scope.readable`).
 - Startup focus (`startup_focus`): the startup platforms (ats_platforms.STARTUP_PLATFORMS) are read first and get
   the larger share of the search-engine queries and of the new-board budget; at an equal match score a job of a
   startup platform ranks first. A score is never changed. With a filter, the focus only orders within it.
@@ -21,6 +24,8 @@ from urllib.parse import urlsplit
 from . import ats_platforms
 from .job_normalizer import canonical_url, parse_ats
 from .job_verifier import host_blocked
+from .providers import ats_pages
+from .providers.searxng import PAGE_LEAD_HOSTS
 from .schemas import Job
 
 OTHER = "other"                       # statistics row of sources that are not an ATS platform
@@ -45,6 +50,12 @@ def host_platform(host: str) -> str:
     host = (host or "").lower().removeprefix("www.")
     found = ats_platforms.platform_of_host(host) or ats_platforms.platform_of_host("x." + host)
     return found.id if found else ""
+
+
+def host_reader(host: str) -> str:
+    """The registry source name of the board reader of the platform serving `host` ("" when it has none)."""
+    platform = ats_platforms.PLATFORMS.get(host_platform(host))
+    return platform.reader if platform else ""
 
 
 def platform_of_url(url: str) -> str:
@@ -123,13 +134,53 @@ class Scope:
                          and ats_platforms.PLATFORMS[i].access == "public_pages" and ats_platforms.PLATFORMS[i].hosts)
 
     # ---- search-engine hosts and queries
+    def readable(self, host: str) -> bool:
+        """Whether an address on `host` can become a lead of this engine: the platform's board reader is switched on,
+        or its posting pages are verified one by one. A host of no career platform (an employer's own site) is
+        readable. A platform that forbids automated reading or needs the employer's credentials (iCIMS, SAP
+        SuccessFactors, BambooHR, ...) is not, whatever is switched on; a platform with a public API whose reader is
+        switched off (Rippling, Pinpoint) is not either. Only a scope that was not given the engine's sources (tests,
+        tools) cannot know which readers are off and lets those through."""
+        platform = ats_platforms.PLATFORMS.get(host_platform(host))
+        if platform is None or (platform.reader and platform.reader in self.readers):
+            return True
+        bare = (host or "").lower().removeprefix("www.")
+        # ... or its single posting pages are verified page by page (providers/searxng.py, providers/ats_pages.py)
+        if platform.access == "public_pages" or bare in PAGE_LEAD_HOSTS or ats_pages.is_page_host(bare):
+            return True
+        if platform.access != "public_api":
+            return False                               # restricted or credentials only: never read, never a lead
+        return not self.readers
+
+    def readable_url(self, url: str) -> bool:
+        """`readable` for the host of an address (an address that cannot be parsed is not readable)."""
+        try:
+            host = urlsplit((url or "").strip()).hostname or ""
+        except ValueError:
+            return False
+        return bool(host) and self.readable(host)
+
+    def unreadable_hosts(self) -> list[str]:
+        """Career-platform hosts this engine can neither read nor verify (see `readable`), as bare domains: no search
+        is asked for them, and a search that is not limited to hosts blocks them."""
+        hosts = [host.lstrip(".").lower() for platform in ats_platforms.PLATFORMS.values() for host in platform.hosts]
+        return [h for h in dict.fromkeys(hosts) if h and not self.readable(h)]
+
     def hosts(self, configured: list[str]) -> list[str]:
-        """Hosts for `site:` queries: the configured ATS hosts, limited to the chosen platforms (plus the public
-        career-page hosts of chosen platforms without a reader); startup platforms first under the focus."""
-        hosts = list(configured)
+        """Hosts for `site:` queries and for the AI web search: the configured ATS hosts this engine can use (see
+        `readable`), limited to the chosen platforms. Under a filter the hosts of a chosen platform come from the
+        registry when the configured list does not name that platform (a reader that is switched on, or public
+        career pages), so a chosen platform is searched whatever SEARXNG_SITES says. Startup platforms first under
+        the focus."""
+        hosts = [h for h in configured if self.readable(h)]
         if self.chosen:
             hosts = [h for h in hosts if host_platform(h) in self.chosen]
-            for platform_id in sorted(self.page_platforms):
+            for platform_id in sorted(self.chosen):
+                paged = platform_id in self.page_platforms
+                if not (paged or self.has_reader(platform_id)):
+                    continue                           # nothing of this platform can be read or verified: never asked
+                if not paged and any(host_platform(h) == platform_id for h in hosts):
+                    continue                           # the configured list already names this platform's hosts
                 for host in ats_platforms.PLATFORMS[platform_id].hosts:
                     host = host.lstrip(".").lower()
                     if host and not host_blocked("https://" + host + "/") and host not in hosts:

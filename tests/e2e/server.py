@@ -27,7 +27,15 @@
   ready for review with one AI-drafted answer, approve it and it is submitted), and runs made by the real worker code:
   Lever (ready for review), Workable "Unknown Co" (needs input: notice period, T-shirt size), Greenhouse "Captcha Co" (blocked: visible CAPTCHA),
   Workable "Orbit Cloud" (submitted, with confirmation) and Ashby (failed, outcome unknown: stopped while submitting).
-  Hannah Kim has no consent."""
+  Hannah Kim has no consent.
+- Nothing depends on DNS either: the hosts the synthetic postings live on (tests/e2e/fixtures.POSTING_HOSTS) count as
+  public without a lookup, so "Open Job" redirects to them wherever the stack runs.
+- `--search-engine` adds a synthetic search engine (a SearXNG instance that exists only as fixtures, see
+  tests/e2e/fixtures.py) to the sources, so that a search also reports what a search engine contributed, and a search
+  limited to platforms that include JazzHR finds one posting on a platform without a board reader. That search takes a
+  few seconds on purpose. Without the flag no search asks a search engine, as before.
+- `--test-mode` starts the portal in test mode (the stored setting `test_mode`), as a freshly installed portal with
+  test data is: the Admin's settings then show the panel with "Switch to Real Data", which deletes the demo data."""
 import argparse
 import asyncio
 import hashlib
@@ -42,6 +50,7 @@ import httpx
 import uvicorn
 from sqlalchemy import select, update
 
+from app import netguard
 from app.config import Settings
 from app.portal import security
 from app.portal.app import create_app
@@ -56,9 +65,10 @@ from app.portal.security import utcnow
 from app.portal.services import assignments as assignments_service
 from app.portal.services import jobs as jobs_service
 from app.portal.services import salesforce_sync
+from app.portal.services import settings as settings_service
 from app.search_engine import SearchEngine
 from tests.conftest import RESUME, FakeAI, FakeBrowser
-from tests.e2e.fixtures import SEEDS, handler
+from tests.e2e.fixtures import JAZZHR_HOST, POSTING_HOSTS, SEARCH_ENGINE, SEEDS, handler, search_engine_handler
 from tests.e2e.salesforce_fake import IMPORTED_ALPHA, IMPORTED_BETA, FakeSalesforce
 from tests.autoapply.fake_ats import ASHBY_ID, LEVER_ID, FakeATS
 from app.autoapply import runner as autoapply_runner
@@ -83,13 +93,33 @@ CANDIDATES = {"alpha": [("Jordan Rivera", "jordan", "maya", True, True), ("Elena
                        ("Victor Hale", "victor", None, True, False)]}
 
 
-def settings() -> Settings:
+def settings(search_engine: bool = False) -> Settings:
+    extra = {}
+    if search_engine:      # the synthetic search engine: asked at once, never cached, and not about JazzHR unless it is chosen
+        sites = ",".join(h for h in Settings(_env_file=None).searxng_sites.split(",") if h.strip() != JAZZHR_HOST)
+        extra = dict(searxng_url=SEARCH_ENGINE, searxng_min_interval_seconds=0, searxng_cache_hours=0, searxng_pages_per_query=1,
+                     searxng_sites=sites)
     return Settings(_env_file=None, database_url=URL, openai_api_key="", anthropic_api_key="", app_env="e2e",
                     public_base_url=os.environ.get("E2E_PUBLIC_BASE_URL", "http://127.0.0.1:3011"),
                     allowed_origins="http://localhost:3011,http://127.0.0.1:3011,http://localhost:3010,http://127.0.0.1:3010",
                     prewarm_on_start=False, browser_enabled=False, fetch_deadline_seconds=10, login_max_failures=50,
                     auto_apply_enabled=True, auto_apply_host_interval_seconds=0, auto_apply_ai_classify=False,
-                    auto_apply_run_timeout_seconds=90)
+                    auto_apply_run_timeout_seconds=90, **extra)
+
+
+_real_resolver = netguard.resolve_public
+
+
+async def demo_resolver(host: str, port: int) -> str:
+    """The SSRF guard's resolver for this process. The hosts of the synthetic postings are real ATS host names (the
+    board readers build the addresses), and the portal only redirects to, or reads, a posting on a public host. Whether
+    such a host resolves must not depend on the network the demo stack happens to run in, so these hosts count as
+    public without a lookup; no address is returned, because nothing connects to them (the search engine's requests are
+    answered from fixtures). Every other host is judged by the real resolver, unchanged."""
+    name = (host or "").strip().strip("[]").lower()
+    if name in POSTING_HOSTS and port in netguard.ALLOWED_PORTS:
+        return ""
+    return await _real_resolver(host, port)
 
 
 async def prepare_database(reset: bool) -> None:
@@ -335,9 +365,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true", help="drop all demo data and seed again")
     parser.add_argument("--port", type=int, default=int(os.environ.get("E2E_API_PORT", "8011")))
+    parser.add_argument("--search-engine", action="store_true", help="add the synthetic search engine and its JazzHR posting to the sources")
+    parser.add_argument("--test-mode", action="store_true", help="start in test mode: the Admin settings offer 'Switch to Real Data'")
     args = parser.parse_args()
     asyncio.run(prepare_database(args.reset))
-    cfg = settings()
+    cfg = settings(args.search_engine)
+    netguard.resolve_public = demo_resolver                  # looked up by assert_public_url at call time
     holder: dict = {}
 
     async def runner(run_id):
@@ -355,14 +388,20 @@ def main() -> None:
         async with portal_lifespan(app_):
             index = await PgJobIndex(PLAIN).connect()
             fake_ai = FakeAI(available=False)
-            engine = SearchEngine(cfg, index, client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), seeds=SEEDS,
-                                  ai_factory=lambda: fake_ai, sources=["greenhouse", "lever"], browser=FakeBrowser(available=False))
+            transport = httpx.MockTransport(search_engine_handler if args.search_engine else handler)
+            engine = SearchEngine(cfg, index, client=httpx.AsyncClient(transport=transport), seeds=SEEDS, ai_factory=lambda: fake_ai,
+                                  sources=["greenhouse", "lever", *(["searxng"] if args.search_engine else [])],
+                                  browser=FakeBrowser(available=False))
             engine.limiter.intervals = {}
             holder["deps"] = RunnerDeps(sessions=app_.state.sessions, engine=engine, settings=cfg)
             await app_.state.salesforce.aclose()
             app_.state.salesforce = FakeSalesforce()          # the demo stack never talks to the real Salesforce
             holder["aa"] = autoapply_deps(app_.state.sessions, cfg, fake_ats)
             await seed(app_.state.sessions, holder["deps"], app_.state.salesforce, holder["aa"])
+            if args.test_mode:
+                async with app_.state.sessions() as db:
+                    await settings_service.set_test_mode(db, cfg, True)
+                    await db.commit()
             try:
                 yield
             finally:
@@ -372,7 +411,10 @@ def main() -> None:
 
     app.router.lifespan_context = lifespan
 
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+    # The web app's proxy keeps its connections to this API open and reuses them. An API that closes an idle connection
+    # first (uvicorn does after 5 s by default) now and then resets a request that was just sent on it: a 500 in the
+    # browser that no code caused. So this side waits longer than any pause between two requests of a test.
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_keep_alive=120)
 
 
 if __name__ == "__main__":

@@ -81,7 +81,9 @@ def test_workday_lead_verification_by_url():
 
 def test_workable_search_follows_page_tokens():
     jobs = run(with_ctx(lambda ctx: workable.fetch(ctx, "*", "ai engineer")))
-    assert [j.ats_id for j in jobs] == ["wk-1", "wk-2", "wk-3"] and jobs[0].company == "Gizmo Labs"
+    assert [j.url.split("/view/")[1].split("/")[0] for j in jobs] == ["abc", "def", "ghi"] and jobs[0].company == "Gizmo Labs"
+    # The job board's listing ids are not the employers' posting codes: none is stored as an ATS posting id.
+    assert all(j.ats == "workable" and j.ats_id == "" and j.board == "*" for j in jobs)
     assert jobs[0].work_mode == "Hybrid" and jobs[0].country_hint == "United States" and jobs[1].country_hint == "France"
     assert jobs[0].apply_url == ""                                  # the search API gives no application link: none is invented
 

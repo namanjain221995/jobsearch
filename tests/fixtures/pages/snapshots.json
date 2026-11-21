@@ -1,0 +1,492 @@
+{
+ "about": "Trimmed snapshots of pages of tests/fixtures/pages/eval_set.json, for offline tests. Each entry replays what the verifier saw on 2026-11-21: the redirect hops, the final status, the page ('plain') and, where the page needs a browser, the rendered page ('rendered': its markup and, where it was recorded, the text the page showed). The files keep the skeleton the verifier reads and a few lines of text; descriptions are cut short, scripts, images, e-mail addresses, telephone numbers and recruiter names are removed. 'model_answer' is what the company model answered for the full page that day (the AI page check); tests replay it instead of calling a model.",
+ "pages": {
+  "jv-carfax-us": {
+   "url": "https://jobs.jobvite.com/carfax/job/orq6Afwh",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.jobvite.com/carfax/job/orq6Afwh",
+   "plain": "jv-carfax-us.html"
+  },
+  "jv-actionet-us": {
+   "url": "https://jobs.jobvite.com/actionet/job/otv7Afwp",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.jobvite.com/actionet/job/otv7Afwp",
+   "plain": "jv-actionet-us.html",
+   "model_answer": {
+    "closed_quote": "",
+    "page_kind": "one_open_job_posting",
+    "is_open_job_posting": true,
+    "title": "Cloud Architect",
+    "company": "ActioNet, Inc.",
+    "location": "Silver Spring, Maryland"
+   }
+  },
+  "jv-carfax-ca": {
+   "url": "https://jobs.jobvite.com/carfax/job/oqJ7AfwA",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.jobvite.com/carfax/job/oqJ7AfwA",
+   "plain": "jv-carfax-ca.html"
+  },
+  "jv-carfax-gone": {
+   "url": "https://jobs.jobvite.com/carfax/job/oqJ7AfwB",
+   "hops": [
+    {
+     "url": "https://jobs.jobvite.com/carfax/job/oqJ7AfwB",
+     "status": 303,
+     "location": "/careers/carfax/jobs?error=404"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://jobs.jobvite.com/careers/carfax/jobs?error=404",
+   "plain": "jv-carfax-gone.html"
+  },
+  "jv-list-carfax": {
+   "url": "https://jobs.jobvite.com/carfax/jobs",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.jobvite.com/carfax/jobs",
+   "plain": "jv-list-carfax.html"
+  },
+  "av-bb-46236": {
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Technology-Finance-Finance-Transformation/46236",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://bloomberg.avature.net/careers/JobDetail/Technology-Finance-Finance-Transformation/46236",
+   "plain": "av-bb-46236.html",
+   "model_answer": {
+    "closed_quote": "",
+    "page_kind": "one_open_job_posting",
+    "is_open_job_posting": true,
+    "title": "Technology Finance- Finance Transformation",
+    "company": "Bloomberg",
+    "location": "New York"
+   }
+  },
+  "av-bb-46249": {
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Climate-Data-Utility-Tech-Team-Senior-Data-Engineer/46249",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://bloomberg.avature.net/careers/JobDetail/Climate-Data-Utility-Tech-Team-Senior-Data-Engineer/46249",
+   "plain": "av-bb-46249.html",
+   "model_answer": {
+    "closed_quote": "",
+    "page_kind": "one_open_job_posting",
+    "is_open_job_posting": true,
+    "title": "Climate Data Utility Tech Team - Senior Data Engineer",
+    "company": "Bloomberg",
+    "location": "London"
+   }
+  },
+  "av-bb-16328": {
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Senior-Software-Engineer-Data-License-Meta-Applications/16328",
+   "hops": [
+    {
+     "url": "https://bloomberg.avature.net/careers/JobDetail/Senior-Software-Engineer-Data-License-Meta-Applications/16328",
+     "status": 302,
+     "location": "https://bloomberg.avature.net/careers/Error"
+    }
+   ],
+   "status": 403,
+   "final_url": "https://bloomberg.avature.net/careers/Error",
+   "plain": "av-bb-16328.html"
+  },
+  "av-ibm-43815": {
+   "url": "https://ibmglobal.avature.net/en_US/careers/JobDetail/Business-Analyst/43815",
+   "hops": [
+    {
+     "url": "https://ibmglobal.avature.net/en_US/careers/JobDetail/Business-Analyst/43815",
+     "status": 301,
+     "location": "https://careers.ibm.com/en_US/careers/Error"
+    }
+   ],
+   "status": 202,
+   "final_url": "https://careers.ibm.com/en_US/careers/Error",
+   "plain": "av-ibm-43815.html"
+  },
+  "av-bb-search": {
+   "url": "https://bloomberg.avature.net/careers/SearchJobs",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://bloomberg.avature.net/careers/SearchJobs",
+   "plain": "av-bb-search.html"
+  },
+  "or-eeho-350789": {
+   "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/350789",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/350789",
+   "plain": "or-eeho-350789.html",
+   "rendered": {
+    "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/350789",
+    "html": "or-eeho-350789.rendered.html",
+    "status": 200,
+    "text": "or-eeho-350789.rendered.txt"
+   }
+  },
+  "or-eeho-338589": {
+   "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/338589",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/338589",
+   "plain": "or-eeho-338589.html",
+   "rendered": {
+    "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/338589",
+    "html": "or-eeho-338589.rendered.html",
+    "status": 200,
+    "text": "or-eeho-338589.rendered.txt"
+   },
+   "model_answer": {
+    "closed_quote": "",
+    "page_kind": "one_open_job_posting",
+    "is_open_job_posting": true,
+    "title": "Senior Platform Software Engineer",
+    "company": "Oracle",
+    "location": "Austin, TX, United States Nashville, TN, United States United States"
+   }
+  },
+  "or-ebwh-71567": {
+   "url": "https://ebwh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/71567",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://ebwh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/71567",
+   "plain": "or-ebwh-71567.html",
+   "rendered": {
+    "url": "https://ebwh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/71567",
+    "html": "or-ebwh-71567.rendered.html",
+    "status": 200
+   }
+  },
+  "or-eeho-list": {
+   "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/requisitions",
+   "hops": [
+    {
+     "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/requisitions",
+     "status": 302,
+     "location": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/jobs"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/jobs",
+   "plain": "or-eeho-list.html",
+   "rendered": {
+    "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/jobs",
+    "html": "or-eeho-list.rendered.html",
+    "status": 200
+   }
+  },
+  "or-ewzx-10467": {
+   "url": "https://fa-ewzx-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/10467",
+   "hops": [],
+   "status": null,
+   "final_url": null,
+   "robots": "unreadable"
+  },
+  "adp-open-1": {
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&jobId=274375884743_1&lang=en_US",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&jobId=274375884743_1&lang=en_US",
+   "plain": "adp-open-1.html",
+   "rendered": {
+    "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&jobId=274375884743_1&lang=en_US",
+    "html": "adp-open-1.rendered.html",
+    "status": 200,
+    "text": "adp-open-1.rendered.txt"
+   },
+   "model_answer": {
+    "closed_quote": "",
+    "page_kind": "one_open_job_posting",
+    "is_open_job_posting": true,
+    "title": "QP GOGAS #27 Maintenance",
+    "company": "Quality Plus / GOGAS",
+    "location": ""
+   }
+  },
+  "adp-406690": {
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=6a23fca3-7b64-4140-a007-d213cba67288&ccId=19000101_000001&jobId=406690&source=CC2&lang=en_US",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=6a23fca3-7b64-4140-a007-d213cba67288&ccId=19000101_000001&jobId=406690&source=CC2&lang=en_US",
+   "plain": "adp-406690.html",
+   "rendered": {
+    "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=6a23fca3-7b64-4140-a007-d213cba67288&ccId=19000101_000001&jobId=406690&source=CC2&lang=en_US",
+    "html": "adp-406690.rendered.html",
+    "status": 200,
+    "text": "adp-406690.rendered.txt"
+   }
+  },
+  "adp-374967": {
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?ccId=1569331591_14508&cid=07299349-a3c4-4907-95a8-134329e452f8&jobId=374967&lang=en_US&source=CC3",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?ccId=1569331591_14508&cid=07299349-a3c4-4907-95a8-134329e452f8&jobId=374967&lang=en_US&source=CC3",
+   "plain": "adp-374967.html",
+   "rendered": {
+    "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?ccId=1569331591_14508&cid=07299349-a3c4-4907-95a8-134329e452f8&jobId=374967&lang=en_US&source=CC3",
+    "html": "adp-374967.rendered.html",
+    "status": 200
+   }
+  },
+  "adp-cc-list": {
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&type=JS&lang=en_US",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&type=JS&lang=en_US",
+   "plain": "adp-cc-list.html",
+   "rendered": {
+    "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&type=JS&lang=en_US",
+    "html": "adp-cc-list.rendered.html",
+    "status": 200
+   }
+  },
+  "jz-brennan": {
+   "url": "https://brennancenter.applytojob.com/apply/WpIfUaLo9Q/Associate-Editor",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://brennancenter.applytojob.com/apply/WpIfUaLo9Q/Associate-Editor",
+   "plain": "jz-brennan.html"
+  },
+  "jz-ease": {
+   "url": "https://easeinc.applytojob.com/apply/vMHpWDZa3l/Account-Executive",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://easeinc.applytojob.com/apply/vMHpWDZa3l/Account-Executive",
+   "plain": "jz-ease.html",
+   "model_answer": {
+    "closed_quote": "",
+    "page_kind": "one_open_job_posting",
+    "is_open_job_posting": true,
+    "title": "Account Executive",
+    "company": "Ease Inc",
+    "location": "Remote"
+   }
+  },
+  "jz-blueacorn-mx": {
+   "url": "https://blueacornici.applytojob.com/apply/mkikXCuVDG/Project-Manager-Activation-Operations-Manager-Remote-Mexico-Only",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://blueacornici.applytojob.com/apply/mkikXCuVDG/Project-Manager-Activation-Operations-Manager-Remote-Mexico-Only",
+   "plain": "jz-blueacorn-mx.html"
+  },
+  "jz-delve": {
+   "url": "https://delve.applytojob.com/apply/CVSJgjU7vC/Senior-Electrical-Engineer",
+   "hops": [],
+   "status": 410,
+   "final_url": "https://delve.applytojob.com/apply/CVSJgjU7vC/Senior-Electrical-Engineer",
+   "plain": "jz-delve.html"
+  },
+  "jz-cyberjin": {
+   "url": "https://cyberjin.applytojob.com/apply/KNnkHogzIW/Software-Engineer",
+   "hops": [
+    {
+     "url": "https://cyberjin.applytojob.com/apply/KNnkHogzIW/Software-Engineer",
+     "status": 302,
+     "location": "https://info.jazzhr.com/job-seekers.html"
+    },
+    {
+     "url": "https://info.jazzhr.com/job-seekers.html",
+     "status": 301,
+     "location": "https://www.jazzhr.com/job-seekers"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://www.jazzhr.com/job-seekers",
+   "plain": "jz-cyberjin.html"
+  },
+  "jz-home-blueacorn": {
+   "url": "https://blueacornici.applytojob.com/",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://blueacornici.applytojob.com/",
+   "plain": "jz-home-blueacorn.html"
+  },
+  "sr-arista-us-1": {
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks/744000160961018-data-analytics-intern",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.smartrecruiters.com/AristaNetworks/744000160961018-data-analytics-intern",
+   "plain": "sr-arista-us-1.html"
+  },
+  "sr-arista-pl": {
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks/744000142622720-software-engineer-layer1",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.smartrecruiters.com/AristaNetworks/744000142622720-software-engineer-layer1",
+   "plain": "sr-arista-pl.html"
+  },
+  "sr-averna": {
+   "url": "https://jobs.smartrecruiters.com/Averna1/744000136080150-data-analyst",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.smartrecruiters.com/Averna1/744000136080150-data-analyst",
+   "plain": "sr-averna.html"
+  },
+  "sr-acumen-2015": {
+   "url": "https://jobs.smartrecruiters.com/AcumenSolutions/83635838-data-analyst",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.smartrecruiters.com/AcumenSolutions/83635838-data-analyst",
+   "plain": "sr-acumen-2015.html"
+  },
+  "sr-list-arista": {
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks",
+   "hops": [
+    {
+     "url": "https://jobs.smartrecruiters.com/AristaNetworks",
+     "status": 301,
+     "location": "https://careers.smartrecruiters.com/AristaNetworks"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://careers.smartrecruiters.com/AristaNetworks",
+   "plain": "sr-list-arista.html"
+  },
+  "own-stripe": {
+   "url": "https://stripe.com/jobs/listing/backend-engineer-core-technology/6042172",
+   "hops": [
+    {
+     "url": "https://stripe.com/jobs/listing/backend-engineer-core-technology/6042172",
+     "status": 301,
+     "location": "/careers/listing/backend-engineer-core-technology/6042172"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://stripe.com/careers/listing/backend-engineer-core-technology/6042172",
+   "plain": "own-stripe.html"
+  },
+  "own-intuit-job": {
+   "url": "https://jobs.intuit.com/job/new-york/staff-software-engineer/27595/103523578064",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.intuit.com/job/new-york/staff-software-engineer/27595/103523578064",
+   "plain": "own-intuit-job.html"
+  },
+  "own-dayforce-open": {
+   "url": "https://jobs.dayforcehcm.com/en-US/hok/CANDIDATEPORTAL/jobs/4344",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.dayforcehcm.com/en-US/hok/CANDIDATEPORTAL/jobs/4344",
+   "plain": "own-dayforce-open.html",
+   "rendered": {
+    "url": "https://jobs.dayforcehcm.com/en-US/hok/CANDIDATEPORTAL/jobs/4344",
+    "html": "own-dayforce-open.rendered.html",
+    "status": 200,
+    "text": "own-dayforce-open.rendered.txt"
+   }
+  },
+  "own-dayforce-closed-us": {
+   "url": "https://jobs.dayforcehcm.com/en-US/diobr/CANDIDATEPORTAL/jobs/879",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.dayforcehcm.com/en-US/diobr/CANDIDATEPORTAL/jobs/879",
+   "plain": "own-dayforce-closed-us.html",
+   "rendered": {
+    "url": "https://jobs.dayforcehcm.com/en-US/diobr/CANDIDATEPORTAL/jobs/879",
+    "html": "own-dayforce-closed-us.rendered.html",
+    "status": 200,
+    "text": "own-dayforce-closed-us.rendered.txt"
+   }
+  },
+  "own-ultipro-closed": {
+   "url": "https://recruiting.ultipro.com/GAI1001GAII/JobBoard/9e7a337c-fc28-4f1a-baf7-5872b4fb4763/OpportunityDetail?opportunityId=6a8a87c2-96c2-42db-aaff-a4f4893a4b6a",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://recruiting.ultipro.com/GAI1001GAII/JobBoard/9e7a337c-fc28-4f1a-baf7-5872b4fb4763/OpportunityDetail?opportunityId=6a8a87c2-96c2-42db-aaff-a4f4893a4b6a",
+   "plain": "own-ultipro-closed.html",
+   "rendered": {
+    "url": "https://recruiting.ultipro.com/GAI1001GAII/JobBoard/9e7a337c-fc28-4f1a-baf7-5872b4fb4763/OpportunityDetail?opportunityId=6a8a87c2-96c2-42db-aaff-a4f4893a4b6a",
+    "html": "own-ultipro-closed.rendered.html",
+    "status": 200,
+    "text": "own-ultipro-closed.rendered.txt"
+   }
+  },
+  "own-apple-gone": {
+   "url": "https://jobs.apple.com/en-us/details/200676418-3543/software-engineer-safari-extensions",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.apple.com/en-us/details/200676418-3543/software-engineer-safari-extensions",
+   "plain": "own-apple-gone.html"
+  },
+  "own-paylocity-gone": {
+   "url": "https://recruiting.paylocity.com/Recruiting/Jobs/Details/3910930",
+   "hops": [
+    {
+     "url": "https://recruiting.paylocity.com/Recruiting/Jobs/Details/3910930",
+     "status": 302,
+     "location": "/Recruiting/Jobs/JobNotFound"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://recruiting.paylocity.com/Recruiting/Jobs/JobNotFound",
+   "plain": "own-paylocity-gone.html"
+  },
+  "own-walmart-gone": {
+   "url": "https://careers.walmart.com/us/jobs/WD2260542-usa-software-engineer-iii",
+   "hops": [
+    {
+     "url": "https://careers.walmart.com/us/jobs/WD2260542-usa-software-engineer-iii",
+     "status": 302,
+     "location": "https://careers.walmart.com/us/en/jobs/R-2260542"
+    },
+    {
+     "url": "https://careers.walmart.com/us/en/jobs/R-2260542",
+     "status": 307,
+     "location": "/us/en/job-not-found"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://careers.walmart.com/us/en/job-not-found",
+   "plain": "own-walmart-gone.html"
+  },
+  "own-microsoft-moved": {
+   "url": "https://jobs.careers.microsoft.com/global/en/job/1451137/Software-Engineer-II-CTJ",
+   "hops": [
+    {
+     "url": "https://jobs.careers.microsoft.com/global/en/job/1451137/Software-Engineer-II-CTJ",
+     "status": 301,
+     "location": "https://apply.careers.microsoft.com/careers"
+    }
+   ],
+   "status": 200,
+   "final_url": "https://apply.careers.microsoft.com/careers",
+   "plain": "own-microsoft-moved.html"
+  },
+  "own-uber-blocked": {
+   "url": "https://www.uber.com/global/en/careers/list/154786/",
+   "hops": [
+    {
+     "url": "https://www.uber.com/global/en/careers/list/154786/",
+     "status": 301,
+     "location": "https://jobs.uber.com/en/jobs/154786/"
+    }
+   ],
+   "status": 403,
+   "final_url": "https://jobs.uber.com/en/jobs/154786/",
+   "plain": "own-uber-blocked.html"
+  },
+  "own-boeing-list": {
+   "url": "https://jobs.boeing.com/category/engineering-software-jobs/185/2649/1",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.boeing.com/category/engineering-software-jobs/185/2649/1",
+   "plain": "own-boeing-list.html"
+  },
+  "own-intuit-list": {
+   "url": "https://jobs.intuit.com/category/software-engineering-jobs/27595/68357/1",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://jobs.intuit.com/category/software-engineering-jobs/27595/68357/1",
+   "plain": "own-intuit-list.html"
+  },
+  "co-fly-list": {
+   "url": "https://fly.io/jobs/",
+   "hops": [],
+   "status": 200,
+   "final_url": "https://fly.io/jobs/",
+   "plain": "co-fly-list.html"
+  }
+ }
+}

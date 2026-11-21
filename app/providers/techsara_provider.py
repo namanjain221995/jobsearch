@@ -1,4 +1,4 @@
-"""The company's own model service (OpenAI-compatible HTTP API, no tool calling, no web search).
+"""The company's own model service (OpenAI-compatible HTTP API; its Responses endpoint has one tool, web search).
 
 Used for the bulk work of a search, because it has no per-call bill: title expansion, extracting postings
 from fetched pages, scoring every remaining candidate against the profile (`/v1/rerank`) and writing short
@@ -22,6 +22,7 @@ _HINTS = {400: "request rejected", 401: "authentication failed (check TECHSARA_A
           503: "model unavailable (restarting or at capacity)", 504: "timed out upstream"}
 _SECRET = re.compile(r"tsk_[A-Za-z0-9_\-]{4,}")
 MAX_RETRY_AFTER = 20.0
+WEB_SEARCH_RETRY_SECONDS = 8.0         # longest wait before the one repeat of a web search (a search round does not wait longer)
 # A (query, document) pair must fit the reranker's 4,096-token window. Sizes below are characters and leave a
 # wide margin (about 4 characters per token for English text; dense text with numbers runs nearer 3).
 RERANK_QUERY_CHARS = 2400
@@ -36,7 +37,7 @@ class TechsaraProvider:
 
     def __init__(self, api_key: str, base_url: str, model: str, rerank_model: str, timeout: float = 90.0,
                  retries: int = 3, concurrency: int = 4, client: httpx.AsyncClient | None = None,
-                 sleep=asyncio.sleep):
+                 sleep=asyncio.sleep, web_concurrency: int = 2):
         self.model = model
         self.rerank_model = rerank_model
         self.base_url = base_url.rstrip("/")
@@ -45,7 +46,7 @@ class TechsaraProvider:
         self._headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self._client = client or httpx.AsyncClient(timeout=timeout)
         self._sem = asyncio.Semaphore(max(1, concurrency))
-        self._web_sem = asyncio.Semaphore(2)                # web searches at once: the model's queue is shared
+        self._web_sem = asyncio.Semaphore(max(1, web_concurrency))      # web searches at once: the model's queue is shared
         self._sleep = sleep
         self.usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "retries": 0}
 
@@ -113,19 +114,29 @@ class TechsaraProvider:
 
     async def web_search(self, query: str, timeout: float = 60.0) -> tuple[list[str], str]:
         """One search through the model's own `web_search` tool (POST /v1/responses, the tool forced so the model
-        cannot answer from memory). Returns (result addresses, problem). Only addresses are taken from the answer;
-        they are untrusted and the caller checks every one. Never raises."""
+        cannot answer from memory). Returns (result addresses, problem). The answer carries no structured tool
+        output (no `web_search_call` item, no sources, no citations; checked on 2026-11-21), so the addresses are
+        read from the model's text: they are untrusted, and the caller keeps only well-formed addresses on the
+        configured ATS hosts and checks every one against the employer's live board. A busy or restarting model
+        (HTTP 429 / 503) is asked once more after a short wait. Never raises."""
         body = {"model": self.model, "store": False, "max_output_tokens": 2500, "tools": [{"type": "web_search"}],
                 "tool_choice": {"type": "web_search"},
                 "input": f"Search the web once for: {query[:300]}\nThen list every search result as a markdown link "
                          "[title](url), one per line. Nothing else."}
-        try:
-            async with self._web_sem:
-                r = await self._client.post(self.base_url + "/responses", json=body, headers=self._headers, timeout=timeout)
-        except httpx.TimeoutException:
-            return [], "timed out"
-        except httpx.HTTPError:
-            return [], "connection error"
+        r = None
+        for attempt in (1, 2):
+            try:
+                async with self._web_sem:
+                    r = await self._client.post(self.base_url + "/responses", json=body, headers=self._headers, timeout=timeout)
+            except httpx.TimeoutException:
+                return [], "timed out"
+            except httpx.HTTPError:
+                return [], "connection error"
+            if r.status_code not in (429, 503) or attempt == 2 or r.headers.get("x-should-retry", "").lower() == "false":
+                break
+            retry_after = r.headers.get("retry-after", "")
+            self.usage["retries"] += 1
+            await self._sleep(min(float(retry_after), WEB_SEARCH_RETRY_SECONDS) if retry_after.isdigit() else 2.0 + random.random())
         if r.status_code != 200:
             return [], f"HTTP {r.status_code}"
         try:

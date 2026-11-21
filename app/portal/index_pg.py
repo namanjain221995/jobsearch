@@ -4,7 +4,13 @@ index_units    one row per fetch unit (an employer board, one search query again
 index_postings postings of a unit, replaced atomically on every refresh; title tokens are full-text indexed
 index_boards   employer boards the crawler knows (seed list + boards learned from AI web search)
 index_meta     small key/value facts (for example each Workday employer's "United States" filter)
-Times are epoch seconds, exactly as in the SQLite index, so both behave the same."""
+Times are epoch seconds, exactly as in the SQLite index, so both behave the same.
+
+Read history of a board, for the order in which the catalogue is read (migration f2a9c4d7e1b3; all three are optional
+for older code, which neither reads nor writes them):
+  index_boards.tried_at   when a catalogue read of the board was last started (checked_at stays "last answer")
+  index_boards.us_count   US postings at the last read that answered (NULL = never measured)
+  index_boards.misses     reads in a row that brought no US posting: failed, empty or only postings elsewhere"""
 import asyncio
 import re
 import time
@@ -38,6 +44,26 @@ _SAFE_TOKEN = re.compile(r"[^a-z0-9]")
 
 
 CATALOG_ORIGINS = ("catalog", "commoncrawl")      # unread imported boards, read by the paced trickle
+LIVE, NEW, RETRY, DEAD = 0, 1, 2, 3               # classes of a due catalogue board (PgJobIndex.catalog_due)
+
+
+def allot_due(rows: list[tuple[str, str, int]], per_ats: dict[str, int]) -> list[tuple[str, str]]:
+    """Share one tick's allowance of each ATS between the classes of due boards. `rows` are (ats, slug, class), in
+    reading order inside each class. Live boards come first, but while never-read boards are waiting they take at
+    most half of the allowance (rounded up), so refreshing what is known can never stop the catalogue from being
+    read. What one class does not use goes to the next: live, new, retry, dead."""
+    out: list[tuple[str, str]] = []
+    for ats, n in per_ats.items():
+        if n <= 0:
+            continue
+        by = {cls: [(a, s) for a, s, c in rows if a == ats and c == cls] for cls in (LIVE, NEW, RETRY, DEAD)}
+        first = by[LIVE][: (n + 1) // 2 if by[NEW] else n]
+        new = by[NEW][: n - len(first)]
+        picked = [*first, *by[LIVE][len(first): n - len(new)], *new]
+        for cls in (RETRY, DEAD):
+            picked += by[cls][: n - len(picked)]
+        out += picked
+    return out
 
 
 class PgJobIndex:
@@ -96,26 +122,51 @@ class PgJobIndex:
         rows = await self.pool.fetch("SELECT slug FROM index_boards WHERE ats=$1", ats)
         return {r["slug"] for r in rows}
 
-    async def catalog_due(self, per_ats: dict[str, int], recheck_seconds: float = 7 * 86400) -> list[tuple[str, str]]:
-        """Catalogue boards to read next: never read first, then empty ones not checked for `recheck_seconds`.
-        At most per_ats[ats] boards per ATS."""
+    async def catalog_due(self, per_ats: dict[str, int], recheck_seconds: float = 7 * 86400, refresh_seconds: float = 86400,
+                          retry_seconds: float = 6 * 3600, dead_seconds: float = 30 * 86400,
+                          max_seconds: float = 90 * 86400) -> list[tuple[str, str]]:
+        """Catalogue boards to read next, at most per_ats[ats] per ATS, in this order (see `allot_due`):
+        0 live      the last read brought US postings: read again once `refresh_seconds` old, oldest first
+        1 new       never read
+        2 retry     the last read failed (wait `retry_seconds`) or brought nothing for the US (wait `recheck_seconds`);
+                    the wait doubles with every further read of that kind in a row (`misses`)
+        3 dead      answered "not found": tried again after `dead_seconds`, doubling likewise
+        No wait is longer than `max_seconds`. Boards read before the read history existed count as live when they
+        had postings (us_count NULL), and are measured at their next read."""
         names = [a for a, n in per_ats.items() if n > 0]
         if not names:
             return []
         rows = await self.pool.fetch(
-            "SELECT ats, slug FROM (SELECT ats, slug, row_number() OVER (PARTITION BY ats ORDER BY checked_at NULLS FIRST, slug) AS rn "
-            "FROM index_boards WHERE origin IN ('catalog', 'commoncrawl') AND ok AND ats = ANY($1::text[]) "
-            "AND (checked_at IS NULL OR (job_count = 0 AND checked_at < $2))) t "
-            "WHERE rn <= (SELECT n FROM unnest($1::text[], $3::int[]) AS q(a, n) WHERE q.a = t.ats)",
-            names, time.time() - recheck_seconds, [per_ats[a] for a in names])
-        return [(r["ats"], r["slug"]) for r in rows]
+            "WITH c AS (SELECT ats, slug, job_count, us_count, checked_at, least(misses, 16) AS misses, "
+            "greatest(coalesce(checked_at, 0), coalesce(tried_at, 0)) AS last, "
+            "CASE WHEN checked_at IS NULL AND tried_at IS NULL THEN 1 WHEN NOT ok THEN 3 "
+            "WHEN misses = 0 AND job_count > 0 AND coalesce(us_count, 1) > 0 THEN 0 ELSE 2 END AS cls "
+            "FROM index_boards WHERE origin IN ('catalog', 'commoncrawl') AND ats = ANY($1::text[])), "
+            "d AS (SELECT ats, slug, cls, row_number() OVER (PARTITION BY ats, cls ORDER BY last, coalesce(us_count, 0) DESC, slug) AS rn "
+            "FROM c WHERE cls = 1 OR last < $2::float8 - CASE cls WHEN 0 THEN $4::float8 "
+            "WHEN 3 THEN least($7::float8, $6::float8 * power(2::float8, greatest(misses - 1, 0))) "
+            "ELSE least($7::float8, (CASE WHEN checked_at IS NOT NULL AND (job_count = 0 OR us_count = 0) THEN $3::float8 ELSE $5::float8 END) "
+            "* power(2::float8, greatest(misses - 1, 0))) END) "
+            "SELECT ats, slug, cls FROM d WHERE rn <= (SELECT n FROM unnest($1::text[], $8::int[]) AS q(a, n) WHERE q.a = d.ats) "
+            "ORDER BY ats, cls, rn",
+            names, time.time(), float(recheck_seconds), float(refresh_seconds), float(retry_seconds), float(dead_seconds),
+            float(max_seconds), [per_ats[a] for a in names])
+        return allot_due([(r["ats"], r["slug"], r["cls"]) for r in rows], per_ats)
 
     async def catalog_touch(self, pairs: list[tuple[str, str]]) -> None:
-        """Mark catalogue boards as attempted now, so a board whose read fails is not picked again every minute."""
+        """Mark catalogue boards as attempted now (tried_at), so a board whose read fails or never finishes is not picked
+        again every minute. checked_at is left alone: it stays the time of the last answer, which the health view reads."""
         if pairs:
             await self.pool.execute(
-                "UPDATE index_boards b SET checked_at=$3 FROM unnest($1::text[], $2::text[]) AS t(a, s) "
+                "UPDATE index_boards b SET tried_at=$3 FROM unnest($1::text[], $2::text[]) AS t(a, s) "
                 "WHERE b.ats=t.a AND b.slug=t.s AND b.origin IN ('catalog', 'commoncrawl')", [x for x, _ in pairs], [y for _, y in pairs], time.time())
+
+    async def catalog_result(self, ats: str, slug: str, us_count: int | None) -> None:
+        """Remember how a read of one board ended: `us_count` US postings, or None when the read failed. A read with US
+        postings clears `misses`; a failed read or one without US postings adds one (the growing wait of catalog_due)."""
+        await self.pool.execute(
+            "UPDATE index_boards SET us_count = coalesce($3::int, us_count), "
+            "misses = CASE WHEN $3::int > 0 THEN 0 ELSE least(misses + 1, 1000) END WHERE ats=$1 AND slug=$2", ats, slug, us_count)
 
     async def catalog_stats(self) -> dict[str, dict[str, int]]:
         rows = await self.pool.fetch(
@@ -180,6 +231,19 @@ class PgJobIndex:
                 for r in await conn.fetch(base + f"p.akey = ANY($2::text[]) AND {fresh}", bound, list(akeys)):
                     out[r["id"]] = (r["id"], r["akey"], r["title"], r["src"], r["fetched_at"])
         return list(out.values())
+
+    async def relevant_units(self, tokens: list[str], max_age: float, limit: int = 120000) -> list[tuple[str, str, str]]:
+        """(source, board key, posting title) of every posting with one of these title tokens that a board's last
+        successful read listed, fresh or not, for reads up to `max_age` seconds old. A search uses it to decide which
+        boards are worth reading again now (search_engine._relevant_first); nothing here counts as verified."""
+        clean = [t for t in (_SAFE_TOKEN.sub("", tok.lower()) for tok in tokens) if t]
+        if not clean:
+            return []
+        rows = await self.pool.fetch(
+            "SELECT u.src, u.key, p.title FROM index_postings p JOIN index_units u ON u.id = p.unit_id "
+            "WHERE p.tokens_tsv @@ to_tsquery('simple', $1) AND u.ok AND u.fetched_at > $2 LIMIT $3",
+            " | ".join(clean), time.time() - max_age, limit)
+        return [(r["src"], r["key"], r["title"]) for r in rows]
 
     async def load_postings(self, row_ids: list[int]) -> list[Job]:
         if not row_ids:

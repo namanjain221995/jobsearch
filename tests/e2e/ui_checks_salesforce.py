@@ -152,6 +152,12 @@ def shown(locator, timeout=10000):
         return False
 
 
+def unpainted(locator):
+    """Whether the element is there for screen readers only: in the page, but one clipped pixel on the screen."""
+    box = locator.first.bounding_box()
+    return box is not None and box["width"] <= 1 and box["height"] <= 1
+
+
 def alter_json(page, pattern, change):
     """Let the request through and change the JSON answer on the way back."""
     def handler(route):
@@ -248,8 +254,10 @@ def step_picker(browser):
     check("the row of a person who is not in the portal carries no 'In the portal' mark", "In the portal" not in text)
     check("the number of results is announced (role=status)", group.locator('p[role="status"]').filter(has_text="1 candidate found in Salesforce").count() == 1,
           " | ".join(group.locator('p[role="status"]').all_inner_texts()))
-    check("the same text narrows the portal group too", shown(portal.get_by_text("Nobody in the portal matches this search"))
-          and portal.get_by_text("Look under From Salesforce below to bring the candidate in.").is_visible())
+    check("the same text narrows the portal group too: with nobody left it takes no room (no box, no 'In the portal' title), and says so to screen readers",
+          shown(portal.get_by_text("Nobody in the portal matches this search")) and portal.get_by_role("checkbox").count() == 0 and unpainted(portal)
+          and page.get_by_role("heading", name="In the portal", exact=True).count() == 0
+          and page.get_by_text("Look under From Salesforce below to bring the candidate in.").count() == 0, str(portal.bounding_box()))
     shot(page, "tl_search_ch")
     toggle.click()
     row(group, "Chloe Benson").wait_for(timeout=T)
@@ -353,7 +361,7 @@ def step_picker(browser):
     check("no match: the hint names the 'Active candidates only' switch",
           group.get_by_text('Only candidates whose status in Salesforce is Active are searched: switch off "Active candidates only" to include the others.').is_visible())
     check("scope 'all': the hint does not speak of the Team Lead's own candidates", group.get_by_text("whose marketing team lead in Salesforce is you").count() == 0)
-    check("no match: the portal group says nobody in the portal matches", portal.get_by_text("Nobody in the portal matches this search").is_visible())
+    check("no match: the portal group says nobody in the portal matches, to screen readers only", portal.get_by_text("Nobody in the portal matches this search").count() == 1 and unpainted(portal))
     check("no match is announced (role=status)", group.locator('p[role="status"]').filter(has_text="No candidate found in Salesforce").count() == 1)
 
     # Salesforce cannot be reached, too many searches, and the way back (the portal's answer is replaced in the browser)

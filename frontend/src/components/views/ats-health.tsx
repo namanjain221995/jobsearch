@@ -64,7 +64,8 @@ function Name({ platform }: { platform: Platform }) {
 function Note({ platform }: { platform: Platform }) {
   return (
     <span className="flex flex-col gap-0.5 text-2sm text-muted-foreground">
-      <span>{platform.note || platform.access_note}</span>
+      {/* Notes quote addresses and setting names; they may break anywhere, so that a long one never widens the table. */}
+      <span className="wrap-anywhere">{platform.note || platform.access_note}</span>
       {platform.docs && (
         <a
           href={platform.docs}
@@ -163,11 +164,12 @@ export function AtsHealthPanels({ onOpenIntegrations }: { onOpenIntegrations?: (
   const verified = platforms.filter((platform) => platform.state === "verified_working").length;
 
   const columns: Column<Platform>[] = [
-    { id: "platform", header: "Platform", cell: (platform) => <Name platform={platform} />, className: "min-w-40" },
+    // The minimum widths add up to less than the page at 1280 px, so the note is never cut off there.
+    { id: "platform", header: "Platform", cell: (platform) => <Name platform={platform} />, className: "min-w-36" },
     {
       id: "state",
       header: "State",
-      className: "min-w-64",
+      className: "min-w-52",
       cell: (platform) => (
         <span className="flex flex-col gap-1">
           <StateBadge platform={platform} />
@@ -183,7 +185,7 @@ export function AtsHealthPanels({ onOpenIntegrations }: { onOpenIntegrations?: (
       className: "whitespace-nowrap",
       cell: (platform) => <LastRead platform={platform} now={now} />,
     },
-    { id: "note", header: "Note", className: "min-w-56", cell: (platform) => <Note platform={platform} /> },
+    { id: "note", header: "Note", className: "min-w-64", cell: (platform) => <Note platform={platform} /> },
   ];
 
   return (

@@ -339,13 +339,14 @@ async def test_auto_apply_migration_upgrades_and_downgrades_with_data(database):
         await conn.execute("INSERT INTO candidate_profiles (candidate_id) VALUES ($1)", cand)
         await conn.close()
         alembic("upgrade", "d3f6a1b8c925")
-        assert "d3f6a1b8c925 (head)" in alembic("current")
+        assert "d3f6a1b8c925" in alembic("current")                   # a later revision (f2a9c4d7e1b3, catalogue read history) follows it
         conn = await asyncpg.connect(MPLAIN)
         assert await conn.fetchval("SELECT application_answers FROM candidate_profiles WHERE candidate_id = $1", cand) == "{}"
         with pytest.raises(asyncpg.CheckViolationError):
             await conn.execute("INSERT INTO candidate_consents (id, candidate_id, method) VALUES (gen_random_uuid(), $1, 'telepathy')", cand)
         await conn.execute("INSERT INTO candidate_consents (id, candidate_id, method) VALUES (gen_random_uuid(), $1, 'written')", cand)
         await conn.close()
+        alembic("upgrade", "head")              # `alembic check` wants the newest schema; the later revision only adds job-index columns
         check = subprocess.run([sys.executable, "-m", "alembic", "check"], cwd=ROOT, capture_output=True, text=True,
                                env={**os.environ, "ALEMBIC_DATABASE_URL": MURL})
         assert "No new upgrade operations detected" in check.stdout, check.stdout[-800:] + check.stderr[-800:]

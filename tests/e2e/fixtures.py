@@ -1,6 +1,9 @@
 """Synthetic employer boards for the E2E / demo stack. Nothing here is a real posting."""
+import asyncio
+
 import httpx
 
+from tests.conftest import JSONLD
 from tests.conftest import handler as base_handler
 
 _ROLES = [
@@ -52,3 +55,41 @@ def handler(request: httpx.Request) -> httpx.Response:
     if url in BOARDS:
         return httpx.Response(200, json=BOARDS[url])
     return base_handler(request)
+
+
+# ---------------------------------------------------------------- a search engine, and a platform without a reader
+# Only in a stack started with `--search-engine` (tests/e2e/server.py). The synthetic search engine knows two things:
+# an employer board the index already has (so it adds nothing), and one posting on a JazzHR career page, a platform
+# the portal has no board reader for. That posting is found only by a search limited to platforms that include JazzHR,
+# because applytojob.com is left out of the hosts the demo stack asks the search engine about by default.
+# The two answers about JazzHR are slow on purpose: the real stack finishes a search in well under a second, and a
+# search that is still running has to stay on screen long enough to be looked at.
+SEARCH_ENGINE = "http://search-engine.e2e.invalid"
+JAZZHR_HOST = "applytojob.com"
+JAZZHR_POSTING = "https://juniper.applytojob.com/apply/Qm7Xw2Lp9Z/Machine-Learning-Engineer"
+SLOW_SECONDS = 2.5
+KNOWN_BOARD = "https://boards.greenhouse.io/acme"
+# Hosts of the synthetic postings. The demo stack treats them as public without asking DNS (see server.demo_resolver).
+POSTING_HOSTS = ("job-boards.greenhouse.io", "boards.greenhouse.io", "jobs.lever.co", "juniper.applytojob.com")
+_JAZZHR_PAGE = ("<html><head><title>Machine Learning Engineer</title>" + JSONLD % ("Machine Learning Engineer", "Juniper Analytics")
+                + "</head><body><h1>Machine Learning Engineer</h1><p>Apply now</p></body></html>")
+
+
+async def search_engine_handler(request: httpx.Request) -> httpx.Response:
+    """`handler` plus the synthetic search engine and the JazzHR posting page."""
+    url = str(request.url).split("?")[0]
+    if url == SEARCH_ENGINE + "/search":
+        site = request.url.params.get("q", "").split(" ", 1)[0].removeprefix("site:")
+        found = []
+        if request.url.params.get("pageno", "1") == "1":
+            if site == JAZZHR_HOST:
+                await asyncio.sleep(SLOW_SECONDS)
+                found = [JAZZHR_POSTING]
+            elif site == "boards.greenhouse.io":
+                found = [KNOWN_BOARD]
+        return httpx.Response(200, json={"results": [{"url": u, "title": "", "content": "", "engines": ["demo"]} for u in found],
+                                         "unresponsive_engines": []})
+    if url == JAZZHR_POSTING:
+        await asyncio.sleep(SLOW_SECONDS)
+        return httpx.Response(200, text=_JAZZHR_PAGE, headers={"content-type": "text/html"})
+    return handler(request)

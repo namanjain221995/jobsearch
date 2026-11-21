@@ -6,10 +6,12 @@
 #   tests/e2e/run.sh acceptance      the seven acceptance scenarios of the brief, for the candidate model, and an eighth
 #                                    for a candidate brought in from Salesforce (about 2 minutes)
 #   tests/e2e/run.sh crawl           every page for every role at 1280 px and 390 px
-#   tests/e2e/run.sh checks          the four check lists at 1280 px and 390 px
+#   tests/e2e/run.sh checks          the five check lists at 1280 px and 390 px
 #
 # Salesforce in the demo stack is an in-process fake (tests/e2e/salesforce_fake.py); the real one is never contacted.
 # Auto-apply's browser in the demo API reaches only the local fake ATS (tests/autoapply/fake_ats.py); no real job site.
+# The fifth check list (ATS platforms) runs against a demo API started with a synthetic search engine and in test mode
+# (python -m tests.e2e.server --search-engine --test-mode); its last step ends test mode and deletes the demo data.
 #
 # Ports: E2E_API_PORT (default 8011) and E2E_WEB_PORT (default 3011). Both must be free.
 set -uo pipefail
@@ -48,12 +50,12 @@ wait_for() {                       # wait_for <url> <what>
   exit 1
 }
 
-fresh_api() {                      # (re)start the demo API with newly seeded data
+fresh_api() {                      # (re)start the demo API with newly seeded data; arguments go to tests.e2e.server
   if [ -n "$api_pid" ]; then
     kill "$api_pid" 2>/dev/null
     wait "$api_pid" 2>/dev/null
   fi
-  E2E_PUBLIC_BASE_URL="$BASE" "$PY" -m tests.e2e.server --reset --port "$API_PORT" >> "$LOGS/api.log" 2>&1 &
+  E2E_PUBLIC_BASE_URL="$BASE" "$PY" -m tests.e2e.server --reset --port "$API_PORT" "$@" >> "$LOGS/api.log" 2>&1 &
   api_pid=$!
   wait_for "http://127.0.0.1:$API_PORT/api/health" "the demo API"
   [ -n "$web_pid" ] && wait_for "$BASE/api/health" "the demo API through the web app"
@@ -97,6 +99,8 @@ if [ "$WHAT" = "all" ] || [ "$WHAT" = "checks" ]; then
     run "third check list (Salesforce), $1 px" "$PY" tests/e2e/ui_checks_salesforce.py --base "$BASE" --w "$1" --h "$2"
     fresh_api
     run "fourth check list (auto-apply), $1 px" "$PY" tests/e2e/ui_checks_auto_apply.py --base "$BASE" --w "$1" --h "$2"
+    fresh_api --search-engine --test-mode
+    run "fifth check list (ATS platforms), $1 px" "$PY" tests/e2e/ui_checks_platforms.py --base "$BASE" --w "$1" --h "$2"
   done
 fi
 

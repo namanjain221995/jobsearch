@@ -19,6 +19,7 @@ Every stage has a budget. Nothing is shown that was not read from a live source.
 import asyncio
 import json
 import math
+import re
 import time
 import zlib
 from datetime import datetime, timezone
@@ -26,11 +27,11 @@ from typing import Callable
 
 import httpx
 
-from . import job_verifier
+from . import board_catalog, job_verifier
 from .ai_orchestrator import AIOrchestrator
 from .browser_pool import BrowserPool
 from .config import Settings
-from .database import Database, pack
+from .database import Database, pack, unpack
 from .job_index import as_index
 from .deduplicator import deduplicate
 from .job_normalizer import (ENRICH_VERSION, ats_key, authorization_snippets, canonical_url, enrich_job, norm_company,
@@ -40,6 +41,7 @@ from .job_ranker import (MIN_ANCHORS, SCORER_ORDER, apply_ai_ranking, apply_expl
                          redistribute_scores,
                          index_tokens, query_tokens, static_related_titles, work_mode_rejects)
 from .job_verifier import Budget, PageVerifier, job_from_extraction
+from .rank_cache import RankCache
 from .providers import registry, workday
 from .providers.base import BoardNotFound, Ctx, HostLimiter, RobotsCache, SourceError, now_iso
 from .providers.boards import seed_pairs
@@ -51,8 +53,9 @@ from .providers.searxng import SearxClient, build_queries, extract, site_hosts, 
 from .providers.techsara_provider import TechsaraProvider
 from .resume_parser import heuristic_profile
 from .schemas import Candidate, Job, Profile, SearchRequest
-from .search_plan import Plan, cached_variants, clean_variants, discovery_locations, plan_for, store_variants
-from .search_scope import NO_SCOPE, OTHER, Scope, bump, count_platforms, platform_of_job, platform_of_url, platform_stats
+from .search_plan import Plan, QueryLedger, cached_variants, clean_variants, discovery_locations, plan_for, store_variants
+from .search_scope import (NO_SCOPE, OTHER, Scope, bump, count_platforms, host_reader, platform_of_job, platform_of_url,
+                           platform_stats)
 
 MIN_RELEVANCE = 0.6
 AI_LEAD_RELEVANCE_FLOOR = 0.6
@@ -65,10 +68,25 @@ HOST_LIMITS = {"greenhouse": 10, "ashby": 8, "lever": 6, "workday": 1, "workable
 HOST_INTERVALS = {"workday": 1.5, "recruitee": 1.0, "pinpoint": 1.0, "rippling": 1.0}
 PACED_WAIT_SECONDS, DETAIL_WAIT_SECONDS = 25.0, 20.0            # deep search
 FAST_PACED_WAIT_SECONDS, FAST_DETAIL_WAIT_SECONDS = 2.0, 6.0   # fast search
+def paced_unit(unit: Unit) -> bool:
+    """Whether the unit's source is read at about one request a second (see PACED_UNITS_PER_SEARCH)."""
+    spec = SPECS.get(unit.src)
+    return unit.src in HOST_INTERVALS or bool(spec and spec.wait) or (unit.src == "workable" and unit.key != "*")
+
+
 AI_PROVIDERS = {"OpenAI", "Claude"}          # only a lead a model named gets the relevance floor; a search-engine hit does not
 SEARX = "SearXNG"
 TECHSARA_WEB = "TechSara web search"
+# Sources whose limiter lets through about one request a second (Workday, Recruitee, Workable accounts, ...). A search
+# waits only a short while for them and asks for at most this many stale units of each per search, its best title
+# matches first (_reading_plan); the rest of their boards is read by the background catalogue reader.
+PACED_UNITS_PER_SEARCH = 40
+CAREER_PAGE = registry.CAREER_PAGE           # remembered postings on employers' own sites (see registry and _remember_pages)
+CAREER_PAGES_PER_SEARCH = 200                # how many of them one search checks again: those whose title fits, one page request each
+CAREER_PAGE_SOURCE = "Company career site"   # Job.source of a posting read from that memory
+RELEVANT_READ_SECONDS = 3 * 86400.0          # how old a board's last read may be to say which titles the board lists
 WORKDAY_NEW_TENANTS_PER_ROUND = 6           # Workday is paced (one request every 1.5 s): few new tenants are queried while a search waits
+KNOWN_EMPLOYERS_WAIT_SECONDS = 8.0          # how long the first AI web search waits to learn which employers the index already has matches for
 REJECT_KEYS = ("rejected_not_relevant", "rejected_non_us", "rejected_work_mode", "rejected_eligibility")
 
 STAGES = [
@@ -89,7 +107,16 @@ def new_stats(requested: int) -> dict:
             "round": 1, "rounds": [], "stop_reason": "", "title_variants": 0, "searx_queries": 0, "searx_cached": 0,
             "searx_results": 0, "searx_failed": 0, "searx_leads": 0, "tsweb_searches": 0, "tsweb_results": 0, "tsweb_failed": 0,
             "tsweb_leads": 0, "new_boards": 0, "new_board_postings": 0,
+            # search-engine queries of this search by normalised query and host (search_plan.QueryLedger): how many were
+            # asked, by which engine, how many an engine left out because another had asked them, and second chances
+            "query_ledger": {},
+            # leads on a career platform that may not be read (or whose reader is off): dropped before any request
+            "leads_not_readable": 0,
             "gained_by_source": {}, "company_model_scored": 0, "company_model_explained": 0, "ai_calls": 0,
+            # ranking stage: seconds it took, and model answers of earlier searches that were used again (rank_cache.py)
+            "rank_seconds": None, "rerank_sent": 0, "reranked": 0, "ai_ranked_reused": 0, "rank_reused": {},
+            # postings verified on employers' own sites in this search and kept in the index (source "career_page")
+            "pages_remembered": 0,
             # paid sources
             "serp_calls": 0, "serp_cached": 0, "serp_jobs": 0, "serp_listed": 0, "serp_skipped": "",
             "tiny_searches": 0, "tiny_fetches": 0, "tiny_usd": 0.0, "tiny_skipped": "",
@@ -178,6 +205,8 @@ def _iso(epoch: float) -> str:
 
 
 async def _guard(url: str) -> None:
+    if job_verifier.never_fetched(url):            # a host that is never fetched (job boards, restricted career platforms)
+        raise job_verifier.UnsafeURL("Host does not permit automated access")      # is not contacted from inside a rendered page either
     await job_verifier.assert_public_url(url)      # looked up at call time so tests can replace it
 
 
@@ -192,6 +221,8 @@ class SearchEngine:
         self.client = client or self._default_client()
         self.seeds = seed_pairs() if seeds is None else seeds
         self.ai_factory = ai_factory or (lambda: AIOrchestrator.from_settings(settings))
+        # Model judgements of (candidate, posting text) pairs, shared by every search of this process (rank_cache.py).
+        self.rank_cache = RankCache(self.index, max(0.0, settings.rank_cache_days) * 86400.0)
         specs = registry.enabled_specs(settings)
         self.specs = specs if sources is None else {n: s for n, s in specs.items() if n in sources}
         self.limiter = HostLimiter(default=4, limits=HOST_LIMITS, intervals=HOST_INTERVALS)
@@ -201,10 +232,13 @@ class SearchEngine:
         self.browser = browser if browser is not None else BrowserPool(
             settings.browser_concurrency, enabled=settings.browser_enabled, guard=_guard)
         self.verifier = PageVerifier(self.client, browser=self.browser)
+        self.ctx.options["career_page_reader"] = self._read_career_page
+        self._page_gate = asyncio.Semaphore(24)      # remembered pages checked at the same time (the verifier paces each host itself)
         self.searx = SearxClient(settings.searxng_url, self.client, self.index, settings.searxng_timeout_seconds,
                                  settings.searxng_min_interval_seconds, settings.searxng_cache_hours)
         self.tsweb = (TechsaraProvider(settings.techsara_api_key, settings.techsara_base_url, settings.techsara_model,
-                                       settings.techsara_rerank_model, client=self.client)
+                                       settings.techsara_rerank_model, client=self.client,
+                                       web_concurrency=settings.techsara_web_search_concurrency)
                       if settings.techsara_configured and settings.techsara_web_search_enabled else None)
         self._unit_counts: dict[Unit, int] = {}      # postings of units read by this process (statistics of new boards)
         self.serpapi = SerpApiClient(settings.serpapi_api_key, self.client, self.index, settings.serpapi_monthly_limit,
@@ -256,14 +290,72 @@ class SearchEngine:
         known = await self.index.known_boards()
         out: dict[str, list[str]] = {}
         for src, key in dict.fromkeys([*self.seeds, *known]):
-            if (src, key) not in dead and src in self.specs and self.specs[src].keyed:
+            if (src, key) not in dead and src in self.specs and self.specs[src].keyed and src != CAREER_PAGE:
                 out.setdefault(src, []).append(key)
+        # Remembered postings on employers' own sites are addresses, not employer boards: kept apart like the accounts below.
+        self._pages = [key for src, key in known if src == CAREER_PAGE and (src, key) not in dead and src in self.specs]
         # Workable employer accounts found by discovery: Workable is otherwise read by query, so they are kept apart.
         self._accounts = [key for src, key in known if src == "workable" and key != "*" and (src, key) not in dead and src in self.specs]
         return out
 
     def _account_units(self) -> list[Unit]:
         return [Unit("workable", key, "") for key in getattr(self, "_accounts", [])]
+
+    def _page_units(self) -> list[Unit]:
+        return [Unit(CAREER_PAGE, key, "") for key in getattr(self, "_pages", [])]
+
+    async def _read_career_page(self, url: str) -> list[Job]:
+        """Check one remembered posting again on its own page: a plain request, no browser and no model, with what the
+        portal knew about it (title, employer, place) as the claim the page must bear out. An empty answer means the
+        page no longer proves an open posting, and the posting leaves the index; a page that could not be reached is a
+        failed read and is tried again later."""
+        claim = Candidate(url=url, provider=CAREER_PAGE_SOURCE)
+        try:
+            stored = await self.index.unit_rows(CAREER_PAGE, url, "")
+            for _sig, data in stored.values():
+                old = unpack(data)
+                claim = Candidate(url=url, provider=CAREER_PAGE_SOURCE, title=old.title, company=old.company, location=old.location)
+                break
+        except Exception:
+            pass
+        async with self._page_gate:
+            verdict = await self.verifier.verify(claim)
+        if verdict.job is not None:
+            return [verdict.job]
+        reason = verdict.reason or ""
+        if reason.startswith(("Page could not be fetched", "The site's robots.txt could not be read", "URL rejected")) \
+                or re.match(r"Page returned HTTP (5\d\d|429|403|202)", reason):
+            raise SourceError(reason)                    # not an answer about the posting: tried again later
+        return []
+
+    async def _remember_pages(self, jobs: list[Job]) -> int:
+        """Keep the postings a search verified on a page of the employer's own site (or of a platform without a board
+        reader) by a plain request. Later searches check them again on their page and find them without a web search;
+        the background reader keeps them current. Pages that needed a browser are not kept: checking them again would
+        cost a browser page each."""
+        if CAREER_PAGE not in self.specs:
+            return 0
+        kept = 0
+        ttl = registry.ttl(SPECS[CAREER_PAGE], self.settings)
+        for job in jobs:
+            url = job.url or ""
+            if job.ats in self.specs or not url.startswith("https://") or len(url) > 600 or job_verifier.never_fetched(url) \
+                    or not (job.verification or "").startswith("Posting page fetched") or not job.title or not job.company \
+                    or not board_catalog.us_postings([job]):         # the portal searches US jobs: a posting elsewhere is not kept
+                continue
+            unit = Unit(CAREER_PAGE, url, "")
+            try:
+                await self._store_unit(unit, [job], ttl)
+                # Recorded like an imported board ("catalog"): the background reader then reads it again once a day, and
+                # a page that no longer lists a posting drops out of the known boards by itself (index.known_boards).
+                await self.index.record_board(CAREER_PAGE, url, True, 1, "catalog")
+                await board_catalog.note_read(self.index, unit, [job])
+                kept += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                continue
+        return kept
 
     @property
     def searx_on(self) -> bool:
@@ -307,6 +399,7 @@ class SearchEngine:
             account = unit.src == "workable" and unit.key != "*"        # one employer's Workable account
             if spec.keyed or account:
                 await self.index.record_board(unit.src, unit.key, True, len(jobs), origin)
+                await board_catalog.note_read(self.index, unit, jobs)      # US postings found: orders the catalogue reads
             if len(self._unit_counts) > 20000:
                 self._unit_counts.clear()
             self._unit_counts[unit] = len(jobs)
@@ -321,6 +414,7 @@ class SearchEngine:
             error = type(exc).__name__
         permanent = "robots.txt disallows" in error or error.startswith(("HTTP 404", "HTTP 410", "HTTP 422"))
         await self.index.fail_unit(unit.src, unit.key, unit.scope, error, 6 * 3600.0 if permanent else 180.0)
+        await board_catalog.note_read(self.index, unit, None)              # a miss: the catalogue retries it later and later
         return unit, 0, error
 
     async def _store_unit(self, unit: Unit, jobs: list[Job], ttl: int) -> None:
@@ -351,7 +445,8 @@ class SearchEngine:
         pending = set(tasks)
         start = time.monotonic()
         # Paced sources (Workday) get a shorter wait of their own; they finish in the background.
-        limit = {t: start + (min(deadline, SPECS[u.src].wait if paced_wait is None else paced_wait) if SPECS[u.src].wait else deadline)
+        limit = {t: start + (min(deadline, (SPECS[u.src].wait or PACED_WAIT_SECONDS) if paced_wait is None else paced_wait)
+                             if paced_unit(u) else deadline)
                  for t, u in tasks.items()}
         while pending:
             now = time.monotonic()
@@ -380,14 +475,13 @@ class SearchEngine:
         async def go():
             keys = await self._keys()
             units = [*registry.plan_units(self.specs, keys, []), *self._account_units()]
-            await self._ensure(units[: self.settings.max_boards_per_search], deadline=3600.0)
+            await self._ensure(registry.within_budget(units, self.settings.max_boards_per_search), deadline=3600.0)
 
         task = asyncio.create_task(go())
         self._background.add(task)
         task.add_done_callback(self._background.discard)
         # Boards imported with `python -m app.portal.import_boards` are read little by little in the background
         # (docs/board-sources.md). Nothing happens until such an import was run; BOARD_CATALOG_TRICKLE=0 switches it off.
-        from . import board_catalog
         board_catalog.start_catalog_trickle(self)
 
     def _queries(self, titles: list[str], related: list[str]) -> list[str]:
@@ -484,7 +578,7 @@ class SearchEngine:
         todo = todo[:budget]
 
         async def one(job: Job):
-            spec = SPECS.get(job.ats)
+            spec = self.specs.get(job.ats)          # a reader that is switched off makes no request, also not for stored postings
             if not spec or not spec.detail:
                 return job, "error"
             try:
@@ -673,16 +767,22 @@ class SearchEngine:
 
         browser_budget = Budget(self.settings.max_browser_pages_per_search)
         crawl_budget = Budget(self.settings.max_crawl_links_per_search)
-        sem = asyncio.Semaphore(8)
-        to_extract: list[tuple[job_verifier.Page, Candidate]] = []
+        # Leads on many different hosts: the page verifier itself keeps each host to two requests at a time.
+        sem = asyncio.Semaphore(max(1, getattr(self.settings, "page_verification_concurrency", 8)))
+        to_extract: list[tuple[job_verifier.Page, Candidate, Job | None]] = []
         crawl_queue: dict[str, Candidate] = {}
+        # With an AI page check to follow, a page that only bears out the lead's own claim waits for it: the model
+        # reads the page itself (and its location) and can say no. Without one, the claim-based check decides.
+        can_extract = bool(ai.available or getattr(ai, "techsara", None) is not None)
 
         async def check_page(cand: Candidate, follow_listing: bool):
             async with sem:
-                verdict = await self.verifier.verify(cand, browser_budget)
+                verdict = await self.verifier.verify(cand, browser_budget, defer_claim=can_extract)
                 # A page our own fetch and browser could not turn into a posting (JavaScript-only, browser unavailable)
-                # may be read through TinyFetch - never when the site itself refused an automated browser.
-                if (verdict.job is None and verdict.page is not None and not verdict.page.rendered and self.tiny_on
+                # may be read through TinyFetch - never when the site itself refused an automated browser, and not
+                # when the page is known not to be one posting or arrives complete without a browser anyway.
+                if (verdict.job is None and verdict.page is not None and self.tiny_on
+                        and verdict.extractable and job_verifier.render_may_help(verdict.page)
                         and "blocks automated browsers" not in verdict.reason
                         and stats["tiny_fetches"] < (state.plan.tiny_fetches if state.plan else 0)):
                     stats["tiny_fetches"] += 1
@@ -692,7 +792,8 @@ class SearchEngine:
                         stats["tiny_fetches"] -= 1 if note in ("daily spending ceiling reached", "wallet balance is at the reserve", "not configured") else 0
                         stats["tiny_skipped"] = note if "ceiling" in note or "reserve" in note else stats["tiny_skipped"]
                     else:
-                        page = job_verifier.Page(verdict.page.url, 200, html, job_verifier.html_to_text(html), rendered=True)
+                        page = job_verifier.Page(verdict.page.url, 200, html, job_verifier.page_text(html), rendered=True,
+                                                 requested=verdict.page.requested)
                         job, _ = job_verifier._evaluate(page, cand)
                         if job:
                             job.verification = job.verification.replace("rendered in a headless browser", "read through TinyFetch")
@@ -704,22 +805,29 @@ class SearchEngine:
                 stats["rejected_unverified"] += 1
                 return
             links = self.verifier.listing_links(verdict.page, req.titles, related, cand) if follow_listing else []
-            if len(links) >= 2:                          # a careers/listing page: follow the matching job links
+            # A careers/listing page: follow the matching job links. Two matches say "list" about any page; one is
+            # enough on a page already known not to be a posting itself (a list, search or home address).
+            if len(links) >= 2 or (links and not verdict.extractable):
                 for link in links:
                     if link.url not in page_leads and crawl_budget.take():
                         crawl_queue.setdefault(link.url, link)
-            elif len(to_extract) < extraction_limit:
-                to_extract.append((verdict.page, cand))
+            elif verdict.extractable and len(to_extract) < extraction_limit:
+                to_extract.append((verdict.page, cand, verdict.claimed))
+            elif verdict.extractable and verdict.claimed is not None:      # no AI slot left: the claim-based check decides
+                verified.append(verdict.claimed)
             else:
-                stats["rejected_unverified"] += 1
+                stats["rejected_unverified"] += 1          # also a list or home page that offered no matching job links
 
         first = list(page_leads.values())
         # Page reads of the whole search share one budget; what an earlier round used is gone.
         total = state.plan.page_verifications if state.plan else self.settings.max_page_verifications
         budget = max(0, total - getattr(state, "pages_checked", 0))
         state.pages_checked = getattr(state, "pages_checked", 0) + min(budget, len(first))
-        # Pages without structured data are read by a model; with the company model (no bill) five times as many.
-        extraction_limit = self.settings.max_ai_page_extractions * (5 if getattr(ai, "techsara", None) is not None else 1)
+        # Pages without structured data are read by a model: one call with a paid model, several with the company
+        # model (no bill; it answers about one page a second, so this is also a time budget of the round).
+        paid_calls = max(1, getattr(self.settings, "ai_page_extraction_paid_calls", 1))
+        extraction_limit = self.settings.max_ai_page_extractions * (
+            max(1, getattr(self.settings, "ai_page_extraction_calls", 5)) if getattr(ai, "techsara", None) is not None else paid_calls)
         if len(first) > budget:
             state.warn(f"Verification budget reached: {len(first) - budget} web lead(s) were not checked.")
 
@@ -739,17 +847,27 @@ class SearchEngine:
 
         await asyncio.gather(check_boards(), check_pages(), check_workday_leads())
 
-        if to_extract and (ai.available or getattr(ai, "techsara", None) is not None):
-            pages = [(str(i), f"URL: {page.url}\n{page.text[:2500]}") for i, (page, _) in enumerate(to_extract)]
+        if to_extract and can_extract:
+            pages = [(str(i), job_verifier.extraction_excerpt(page)) for i, (page, _, _) in enumerate(to_extract)]
             size = max(1, self.settings.max_ai_page_extractions)           # one call per batch of this size
+            gate = asyncio.Semaphore(max(1, getattr(self.settings, "ai_page_extraction_concurrency", 4)))
+
+            async def ask(index: int, batch: list[tuple[str, str]]) -> dict[str, dict]:
+                async with gate:
+                    # Only the first call(s) may fall back to a model with a bill when the company model does not
+                    # answer; the others are its own, and their pages go back to the claim-based check.
+                    return await (ai.extract_pages(batch) if index < paid_calls else ai.extract_pages(batch, paid=False))
             extracted: dict[str, dict] = {}
-            for part in await asyncio.gather(*(ai.extract_pages(pages[i:i + size]) for i in range(0, len(pages), size))):
+            for part in await asyncio.gather(*(ask(n, pages[i:i + size]) for n, i in enumerate(range(0, len(pages), size)))):
                 extracted.update(part)
-            for i, (page, cand) in enumerate(to_extract):
-                job, _ = job_from_extraction(page, cand, extracted.get(str(i)) or {})
+            for i, (page, cand, claimed) in enumerate(to_extract):
+                answer = extracted.get(str(i))
+                job, _ = job_from_extraction(page, cand, answer or {})
                 if job:
                     stats["ai_extracted"] += 1
                     verified.append(job)
+                elif answer is None and claimed is not None:      # the model gave no answer for this page (call failed,
+                    verified.append(claimed)                       # page left out): the claim-based check decides
                 else:
                     stats["rejected_unverified"] += 1
         else:
@@ -757,7 +875,84 @@ class SearchEngine:
         stats["browser_pages"] += browser_budget.used
         return expected, verified
 
+    # ------------------------------------------------------------ which boards a search reads
+    async def _reading_plan(self, units: list[Unit], titles: list[str], related: list[str], limit: int, scope: Scope) -> list[Unit]:
+        """The units this search asks to be fresh, in reading order.
+
+        A search may read only so many boards (`limit`, its budget) and the index knows many more. The boards worth
+        reading now are those whose last read, up to three days old, listed postings with the requested titles: they
+        go first, most matching postings first, whatever their platform. Until 2026-11-21 the list was cut in registry
+        order, so once the index knew more Greenhouse boards than the budget (production: 6,629 against 1,500) a
+        search refreshed Greenhouse boards only and every other platform depended on the background reader.
+
+        Units that are still fresh cost nothing and do not use up the budget. Of a source that allows about one
+        request a second, at most PACED_UNITS_PER_SEARCH stale units are asked for: more would only queue behind its
+        limiter. The few query and feed units are always kept (registry.within_budget); under the startup focus the
+        startup platforms come first, as before."""
+        try:
+            states = await self.index.unit_states()
+        except Exception:
+            states = {}
+        now = time.time()
+        fresh, stale = [], []
+        for unit in dict.fromkeys(units):
+            st = states.get((unit.src, unit.key, unit.scope))
+            (fresh if st and st[1] > now else stale).append(unit)
+        hits = await self._title_hits(titles, related)
+        if hits:
+            stale.sort(key=lambda u: -hits.get((u.src, u.key), 0))        # stable: boards without a known match keep their order
+        taken: dict[str, int] = {}
+        chosen: list[Unit] = []
+        pages: list[Unit] = []
+        for unit in scope.order_units(stale):
+            if unit.src == CAREER_PAGE:                 # one posting each: only those whose title fits, outside the board budget
+                if hits.get((unit.src, unit.key)) and len(pages) < CAREER_PAGES_PER_SEARCH:
+                    pages.append(unit)
+                continue
+            if paced_unit(unit):
+                if taken.get(unit.src, 0) >= PACED_UNITS_PER_SEARCH:
+                    continue
+                taken[unit.src] = taken.get(unit.src, 0) + 1
+            chosen.append(unit)
+        # A remembered page that is still fresh is in the index anyway; listing it would only inflate the count of reads.
+        return [*registry.within_budget(chosen, limit), *pages, *(u for u in fresh if u.src != CAREER_PAGE)]
+
+    async def _title_hits(self, titles: list[str], related: list[str]) -> dict[tuple[str, str], int]:
+        """Per board (source, key): how many postings with a requested title its last read listed. Only an estimate
+        of where to look; what counts as verified is decided after the boards were read again."""
+        lookup = getattr(self.index, "relevant_units", None)
+        if lookup is None:
+            return {}
+        try:
+            rows = await lookup(query_tokens([*titles, *related]), RELEVANT_READ_SECONDS)
+        except Exception:
+            return {}
+
+        def count() -> dict[tuple[str, str], int]:
+            relevance: dict[str, bool] = {}
+            out: dict[tuple[str, str], int] = {}
+            for src, key, title in rows:
+                fits = relevance.get(title)
+                if fits is None:
+                    fits = relevance[title] = best_title_relevance(title, titles, related) >= MIN_RELEVANCE
+                if fits:
+                    out[(src, key)] = out.get((src, key), 0) + 1
+            return out
+
+        return await asyncio.to_thread(count) if rows else {}
+
     # ------------------------------------------------------------ scoring helpers
+    def _prerank(self, ai, profile: Profile, req: SearchRequest, jobs: list[Job], related: list[str]) -> None:
+        """The early pass of the reranker: hand it the postings known so far, best keyword matches first, and go on.
+        The company reranker reads about 20 postings a second whatever the batch size (measured 2026-11-21), so 800
+        postings cost about 40 s: started here, that time runs while sources are read and leads are verified, and the
+        ranking stage only waits for what is new or still missing (AIOrchestrator.rerank_start / rerank_collect)."""
+        if not jobs or not getattr(ai, "can_rerank", False) or not hasattr(ai, "rerank_start"):
+            return
+        self._score(jobs, profile, req, related)                # keyword scores: the order in which the reranker reads
+        head = sorted(jobs, key=self._order)[: max(0, self.settings.techsara_rerank_max_jobs)]
+        ai.rerank_start(profile, req, head)
+
     @staticmethod
     def _score(jobs: list[Job], profile: Profile, req: SearchRequest, related: list[str]) -> None:
         for job in jobs:
@@ -801,6 +996,11 @@ class SearchEngine:
         stats["coverage_warnings"] = scope.coverage_warnings()       # shown while the search runs; warned once at the end
         if hasattr(ai, "configure"):
             ai.configure(plan)                    # AI budgets scale with the number of results requested
+        if hasattr(ai, "set_scope"):              # AI web search: only hosts this search can use (platform filter, enabled readers)
+            hosts = self._hosts(state)
+            ai.set_scope(scope, hosts, self._paced_hosts(hosts))
+        if hasattr(ai, "remember"):
+            ai.remember(self.rank_cache, resume_text, req)       # same candidate, same posting text: the earlier judgement is used again
         state.providers = ai.status
         state.status = "running"
         titles = req.titles
@@ -819,13 +1019,17 @@ class SearchEngine:
         # Everything slow starts now and runs side by side.
         profile_task = asyncio.create_task(ai.extract_profile(resume_text, req, base_profile)) if ai.available else None
         known_names = sorted({k.split("|")[0] for ks in keys.values() for k in ks})
-        discover_task = asyncio.create_task(ai.discover(base_profile, req, related0, known_names)) if use_web else None
+        state.known_employers = asyncio.get_running_loop().create_future()     # set by the pipeline once the index was screened
+        discover_task = asyncio.create_task(self._first_discovery(state, ai, base_profile, req, related0, known_names)) if use_web else None
         expand_task = asyncio.create_task(self._expand_titles(state, ai, titles, base_profile))
         # Platform filter: only the readers of the chosen platforms. Startup focus: their units first (they are read
         # first and are the last to fall outside the budget of boards).
         specs = {name: spec for name, spec in self.specs.items() if scope.allows_source(name)}
         accounts = self._account_units() if scope.allows_source("workable") else []
-        units = scope.order_units([*registry.plan_units(specs, keys, self._queries(titles, related0)), *accounts])[: plan.boards]
+        # The budget cuts employer boards only: the few query and feed units are always kept (registry.within_budget).
+        pages = self._page_units() if scope.allows_source(CAREER_PAGE) else []
+        units = await self._reading_plan([*registry.plan_units(specs, keys, self._queries(titles, related0)), *accounts, *pages],
+                                         titles, related0, plan.boards, scope)
         # Deep search runs about a minute anyway (AI web search), so paced sources get real waiting time.
         # Fast search does not wait for them: it uses what the index already holds and lets them load on.
         state.detail_wait = DETAIL_WAIT_SECONDS if use_web else FAST_DETAIL_WAIT_SECONDS
@@ -842,6 +1046,7 @@ class SearchEngine:
             raise
         finally:
             stats["ai_calls"] = getattr(ai, "calls", 0)
+            stats["rank_reused"] = {k: v for k, v in (getattr(ai, "reused", None) or {}).items() if v}
             if hasattr(ai, "usage"):
                 state.usage = ai.usage()
             if hasattr(ai, "aclose"):
@@ -872,36 +1077,126 @@ class SearchEngine:
             await store_variants(self.index, titles, variants)
         return variants
 
-    async def _searx_round(self, state: SearchState, queries: list[str]) -> list[Candidate]:
-        """Send one slice of `site:` queries (paced by the client) and turn result addresses into leads.
-        Only addresses are used. A board address or a posting address on a board ATS becomes a lead that the
-        normal lead check resolves: the board is registered and read through its API. Never raises."""
+    # ---- AI web search: where it looks and what it is told
+    def _paced_hosts(self, hosts: list[str]) -> list[str]:
+        """Hosts of paced sources (Workday: one request every 1.5 s, a few leads checked per round). The AI web search
+        asks them in its first pass only, so searches are not spent on leads the round cannot check."""
+        return [h for h in hosts if (spec := SPECS.get(host_reader(h))) is not None and spec.wait]
+
+    @staticmethod
+    def _known_employers(jobs: list[Job], limit: int = 200) -> list[str]:
+        """Employers whose matching postings this search already has, the ones with most postings first, as
+        "platform:board key". The AI web search is told about them so that it brings other employers. Only board
+        keys are passed (plain slugs); an employer NAME comes from a posting, is free text, and stays out of prompts."""
+        counts: dict[str, int] = {}
+        for job in jobs:
+            platform = platform_of_job(job)
+            if platform and job.board:
+                name = f"{platform}:{job.board.split('|')[0]}"
+                counts[name] = counts.get(name, 0) + 1
+        return sorted(counts, key=lambda name: -counts[name])[:limit]
+
+    async def _first_discovery(self, state: SearchState, ai, profile: Profile, req: SearchRequest, related: list[str],
+                               known_names: list[str]) -> list[Candidate]:
+        """Round 1 of the AI web search. It waits a moment for the employers whose matching postings the index already
+        holds (the pipeline reports them as soon as it screened the index: no network, long before a model call
+        returns), so even the first calls know whom not to bring again. Without them it is told the known boards."""
+        try:
+            relevant = await asyncio.wait_for(asyncio.shield(state.known_employers), timeout=KNOWN_EMPLOYERS_WAIT_SECONDS)
+        except asyncio.TimeoutError:
+            relevant = []
+        return await ai.discover(profile, req, related, relevant or known_names)
+
+    @staticmethod
+    def _discovery_notes(state: SearchState, ai) -> None:
+        """What the AI web search has to say about itself (a provider switched off after failing and who took over,
+        calls dropped at the time limit) becomes a warning of the search, once."""
+        notes = getattr(ai, "discovery_notes", None)
+        while notes:
+            state.warn(notes.pop(0))
+
+    # ---- search engines: no query twice
+    def _ledger(self, state: SearchState) -> QueryLedger:
+        """What this search already asked a search engine (search_plan.QueryLedger), shared by SearXNG, the company
+        model's web search, TinyFish and AWS."""
+        ledger = getattr(state, "ledger", None)
+        if ledger is None:
+            ledger = state.ledger = QueryLedger()
+        return ledger
+
+    def _tsweb_usable(self, state: SearchState) -> bool:
+        return self.tsweb_on and not getattr(state, "tsweb_down", False)
+
+    def _tsweb_budget(self, state: SearchState, round_no: int | None = None) -> int:
+        """Web searches the company model may run in a round (default: the current one): that round's share of its
+        budget for this search (Plan.tsweb_searches, never beyond TECHSARA_WEB_SEARCHES_PER_SEARCH), minus what it used."""
         stats, plan = state.stats, state.plan
-        if not queries:
+        if not self._tsweb_usable(state):
+            return 0
+        total = min(plan.tsweb_searches, max(0, self.settings.techsara_web_searches_per_search))
+        return max(0, min(plan.per_round(total, round_no or stats["round"]), total - stats["tsweb_searches"]))
+
+    async def _searx_round(self, state: SearchState, queries: list[str]) -> list[Candidate]:
+        """One round of `site:` queries; result addresses become leads. Only addresses are used: a board address or a
+        posting address on a board ATS becomes a lead that the normal lead check resolves (the board is registered and
+        read through its API). Never raises.
+
+        No query is sent twice (the search's ledger). SearXNG sends `queries`, its slice of the plan, paced by its
+        client. The company model's web search runs beside it on queries SearXNG will NOT reach in this search (the
+        plan beyond SearXNG's budget), and afterwards on the ones SearXNG failed on or got nothing usable for. When
+        SearXNG is off or stopped answering, the company model takes SearXNG's slice, so that part of the plan is
+        still asked."""
+        stats = state.stats
+        ledger = self._ledger(state)
+        searx_ok = self.searx_on and not getattr(state, "searx_down", False)
+        budget = self._tsweb_budget(state)
+        if not queries and not budget:
             return []
         hosts = self._hosts(state)
         ctx = await self._hit_context(state)
         out: dict[str, Candidate] = {}
-        model_task = asyncio.create_task(self._tsweb_round(state, queries, hosts, ctx)) if self.tsweb_on else None
+        tail = getattr(state, "query_tail", [])
+        plan = getattr(state, "query_plan", None) or [*queries, *tail]
+        mine = [q for q in queries if ledger.claim(SEARX, q)] if searx_ok else []
+        if searx_ok and len(mine) < len(queries):
+            mine += ledger.take(SEARX, tail, len(queries) - len(mine))      # another engine had asked some: SearXNG keeps its full slice
+        # Beside SearXNG the model takes queries beyond SearXNG's budget and keeps a third of its round for second
+        # chances. Without SearXNG it stands in for it: the plan from the top, whatever nobody answered yet.
+        beside = (ledger.take(TECHSARA_WEB, tail, budget - budget // 3) if searx_ok
+                  else ledger.take_or_retry(TECHSARA_WEB, plan, budget))
+        model_task = asyncio.create_task(self._tsweb_round(state, beside, hosts, ctx)) if beside else None
         try:
-            await self._searx_queries(state, queries, hosts, ctx, out)
+            await self._searx_queries(state, mine, hosts, ctx, out)
         finally:
             if model_task is not None:
                 for url, lead in (await model_task).items():
                     out.setdefault(url, lead)
+        left = budget - len(beside)
+        if left > 0 and self._tsweb_usable(state):
+            if searx_ok and getattr(state, "searx_down", False):
+                # SearXNG stopped answering in this round: its slice in plan order, failed and never sent alike.
+                again = ledger.take_or_retry(TECHSARA_WEB, mine, left)
+            else:
+                # Second chances: queries of this or an earlier round that SearXNG failed on or got nothing usable for.
+                again = ledger.retry_for(TECHSARA_WEB, plan, left)
+            again += ledger.take(TECHSARA_WEB, tail, left - len(again))
+            if again:
+                for url, lead in (await self._tsweb_round(state, again, hosts, ctx)).items():
+                    out.setdefault(url, lead)
         stats["searx_leads"] += len(out)
+        stats["query_ledger"] = ledger.stats()
         return list(out.values())
 
     async def _tsweb_round(self, state: SearchState, queries: list[str], hosts: list[str], ctx: tuple) -> dict[str, Candidate]:
-        """The same `site:` queries through the company model's web search tool, a few at a time. Never raises."""
+        """`site:` queries through the company model's web search tool, a few at a time
+        (TECHSARA_WEB_SEARCH_CONCURRENCY). The caller chose queries no other engine sends. Never raises."""
         stats, s = state.stats, self.settings
+        ledger = self._ledger(state)
         out: dict[str, Candidate] = {}
-        left = max(0, s.techsara_web_searches_per_search - stats["tsweb_searches"])
-        if left <= 0 or getattr(state, "tsweb_down", False):
-            return out
 
         async def one(query: str) -> None:
             if getattr(state, "tsweb_down", False):
+                ledger.release(TECHSARA_WEB, query)                # never sent: another engine may still take it
                 return
             try:
                 urls, note = await self.tsweb.web_search(query, s.techsara_web_search_timeout_seconds)
@@ -912,31 +1207,38 @@ class SearchEngine:
             stats["tsweb_searches"] += 1
             if note:
                 stats["tsweb_failed"] += 1
+                ledger.note(query, "failed")
                 if stats["tsweb_failed"] >= 3 and not stats["tsweb_results"] and not getattr(state, "tsweb_down", False):
                     state.tsweb_down = True
                     state.warn(f"The company model's web search did not answer ({note}); the search went on without it.")
                 return
             stats["tsweb_results"] += len(urls)
+            before = len(out)
             self._hits_to_leads(state, urls, hosts, TECHSARA_WEB, ctx, out)
+            ledger.note(query, "ok" if len(out) > before or any(extract(u, hosts) is not None for u in urls) else "empty")
 
-        await asyncio.gather(*(one(q) for q in queries[:left]))
+        await asyncio.gather(*(one(q) for q in queries))
         stats["tsweb_leads"] += len(out)
         return out
 
     async def _searx_queries(self, state: SearchState, queries: list[str], hosts: list[str], ctx: tuple, out: dict) -> None:
         stats, scope = state.stats, _scope_of(state)
+        ledger = self._ledger(state)
         if not self.searx_on or getattr(state, "searx_down", False):
             return
-        for query in queries:
+        for position, query in enumerate(queries):
             answer = await self.searx.search(query, self.settings.searxng_pages_per_query,
                                              useful=lambda u: extract(u, hosts) is not None or bool(scope.page_lead(u)))
             stats["searx_cached" if answer.cached else "searx_queries"] += 1
             if answer.error:
                 stats["searx_failed"] += 1
+                ledger.note(query, "failed")
                 state.searx_failures = getattr(state, "searx_failures", 0) + 1
                 if state.searx_failures >= 3:                          # slow or down: stop asking, the search goes on without it
                     state.searx_down = True
                     state.warn(f"Search-engine discovery (SearXNG) did not answer ({answer.error}); the search went on without it.")
+                    for unsent in queries[position + 1:]:
+                        ledger.release(SEARX, unsent)                  # never sent: another engine takes them
                     break
                 continue
             state.searx_failures = 0
@@ -944,10 +1246,13 @@ class SearchEngine:
                 state.__dict__.setdefault("searx_unresponsive", set()).update(answer.unresponsive)
             stats["searx_results"] += len(answer.urls)
             self._hits_to_leads(state, answer.urls, hosts, SEARX, ctx, out)
+            usable = any(extract(u, hosts) is not None or scope.page_lead(u) for u in answer.urls)
+            ledger.note(query, "ok" if usable else "empty")            # nothing usable: another engine may try it once
             state.emit(state.stage or "search", "Asking the search engine for employer job boards")
 
     def _hosts(self, state: SearchState) -> list[str]:
-        """Hosts of this search's `site:` queries (see Scope.hosts: platform filter and startup focus)."""
+        """Hosts of this search's `site:` queries and of its AI web search (see Scope.hosts: only hosts whose results
+        the engine can use, the platform filter, and the startup focus)."""
         return _scope_of(state).hosts(site_hosts(self.settings.searxng_sites))
 
     async def _hit_context(self, state: SearchState) -> tuple[set, set, set]:
@@ -998,33 +1303,47 @@ class SearchEngine:
                 continue                                # a board the index already reads: nothing to do
             out.setdefault(hit.url, Candidate(url=hit.url, provider=provider, cited=True))
 
-    async def _tiny_round(self, state: SearchState, queries: list[str]) -> list[Candidate]:
-        """TinySearch (paid) as a second discovery engine: the same `site:` queries, the same handling of results."""
+    async def _tiny_round(self, state: SearchState, count: int) -> list[Candidate]:
+        """TinySearch (paid) as one more discovery engine: up to `count` `site:` queries that no engine asked in this
+        search (the plan beyond SearXNG's budget) and, when none of those are left, queries another engine failed on
+        or got nothing usable for. The same handling of results."""
         stats = state.stats
-        if not queries or not self.tiny_on or stats["tiny_skipped"]:
+        if count <= 0 or not self.tiny_on or stats["tiny_skipped"]:
+            return []
+        ledger = self._ledger(state)
+        count = min(count, state.plan.tiny_searches - stats["tiny_searches"])
+        queries = ledger.take(TINYFISH, getattr(state, "query_tail", []), count)
+        queries += ledger.retry_for(TINYFISH, getattr(state, "query_plan", []), count - len(queries))
+        if not queries:
             return []
         hosts = self._hosts(state)
         ctx = await self._hit_context(state)
         out: dict[str, Candidate] = {}
-        for query in queries:
-            if stats["tiny_searches"] >= state.plan.tiny_searches:
-                break
+        for position, query in enumerate(queries):
             urls, note = await self.tinyfish.search(query.replace('"', "") + " jobs")
             if note in ("daily spending ceiling reached", "wallet balance is at the reserve", "not configured"):
                 stats["tiny_skipped"] = note
                 state.warn(f"TinyFish was skipped: {note}.")
+                for unsent in queries[position:]:
+                    ledger.release(TINYFISH, unsent)                   # not sent: another engine may still take them
                 break
             stats["tiny_searches"] += 1
             stats["tiny_usd"] = round(self.tinyfish.spent, 4)
             if note:
+                ledger.note(query, "failed")
                 state.tiny_failures = getattr(state, "tiny_failures", 0) + 1
                 if state.tiny_failures >= 3:
                     stats["tiny_skipped"] = f"it did not answer ({note})"
                     state.warn(f"TinyFish did not answer ({note}); the search went on without it.")
+                    for unsent in queries[position + 1:]:
+                        ledger.release(TINYFISH, unsent)
                     break
                 continue
+            before = len(out)
             self._hits_to_leads(state, urls, hosts, TINYFISH, ctx, out)
+            ledger.note(query, "ok" if len(out) > before or any(extract(u, hosts) is not None for u in urls) else "empty")
             state.emit(state.stage or "search", "Asking a second search engine for employer job boards")
+        stats["query_ledger"] = ledger.stats()
         return list(out.values())
 
     async def _serp_round(self, state: SearchState, pairs: list[tuple[str, str]], calls: int) -> tuple[list[Candidate], list[Job]]:
@@ -1121,17 +1440,28 @@ class SearchEngine:
         exclude = [h for h in aggregator_hosts(s.aggregator_hosts)]
         ctx = await self._hit_context(state)
         seen: set = state.__dict__.setdefault("aws_seen", set())          # in memory, this search only
+        ledger = self._ledger(state)
         out: dict[str, Candidate] = {}
         made = 0
         while made < calls and state.aws_pairs and stats["aws_queries"] < stats["aws_budget"]:
             title, location = state.aws_pairs.pop(0)
-            group = rotation[state.aws_index % len(rotation)]
-            state.aws_index += 1
+            text = aws_web_search.query_text(title, location, state.aws_mode)
+            # The next host group in turn on which no engine asked this query yet (the search's ledger). A query that
+            # was asked on every group already is left out: no unit of the allowance is spent on it.
+            group, where = None, ""
+            for step in range(len(rotation)):
+                group = rotation[(state.aws_index + step) % len(rotation)]
+                where = group[0] if group else "*"
+                if ledger.claim(AWS, text, where):
+                    state.aws_index += step + 1
+                    break
+            else:
+                continue
             made += 1
             try:
-                answer = await self.aws.search(aws_web_search.query_text(title, location, state.aws_mode),
-                                               include=group, exclude=None if group else exclude)
+                answer = await self.aws.search(text, include=group, exclude=None if group else exclude)
             except AwsWebSearchError as err:
+                ledger.note(text, "failed", where)
                 stats["aws_queries"] += getattr(err, "queries", 0)
                 if err.kind == "budget":
                     stats["aws_skipped"] = "this month's AWS web search allowance is used up"
@@ -1164,21 +1494,24 @@ class SearchEngine:
                 else:
                     stats["aws_generic"] += 1                 # a search, category or aggregator page: never a vacancy
             self._hits_to_leads(state, urls, hosts, AWS, ctx, out)
+            ledger.note(text, "ok" if urls else "empty", where)   # an outcome only: nothing of the result is kept
             del answer                                        # nothing of the response outlives this loop
             state.emit(state.stage or "search", "Asking AWS web search for employer job postings")
         stats["aws_leads"] += len(out)
+        stats["query_ledger"] = ledger.stats()
         return list(out.values())
 
     def _more_discovery(self, state: SearchState, ai, use_web: bool, next_round: int, queries_left: int) -> bool:
-        plan = state.plan
-        ai_more = use_web and hasattr(ai, "discover_round") and any(
+        plan, stats = state.plan, state.stats
+        ai_more = (use_web and hasattr(ai, "discover_round") and any(
             getattr(ai, name, None) is not None and plan.per_round(total, next_round) > 0
             for name, total in (("openai", plan.openai_calls), ("claude", plan.claude_calls)))
-        searx_more = queries_left > 0 and ((self.searx_on and not getattr(state, "searx_down", False))
-                                           or (self.tsweb_on and not getattr(state, "tsweb_down", False)
-                                               and state.stats["tsweb_searches"] < self.settings.techsara_web_searches_per_search))
-        stats = state.stats
-        tiny_more = self.tiny_on and not stats["tiny_skipped"] and stats["tiny_searches"] < plan.tiny_searches and getattr(state, "tiny_left", 0) > 0
+            # ... and a provider that was not switched off still has somewhere to search (ai_orchestrator.discovery_left)
+            and (not hasattr(ai, "discovery_left") or ai.discovery_left(next_round)))
+        unasked = self._ledger(state).free(getattr(state, "query_tail", []))      # of the plan beyond SearXNG's budget
+        model_more = self._tsweb_budget(state, next_round) > 0 and (queries_left > 0 or unasked > 0)
+        searx_more = (queries_left > 0 and self.searx_on and not getattr(state, "searx_down", False)) or model_more
+        tiny_more = self.tiny_on and not stats["tiny_skipped"] and stats["tiny_searches"] < plan.tiny_searches and unasked > 0
         serp_more = self.serp_on and not stats["serp_skipped"] and stats["serp_calls"] < plan.serp_calls and getattr(state, "serp_left", 0) > 0
         aws_more = (self.aws_on and not stats["aws_skipped"] and stats["aws_queries"] < stats["aws_budget"]
                     and bool(getattr(state, "aws_pairs", None)))
@@ -1201,6 +1534,10 @@ class SearchEngine:
         # 1. Preliminary results from what the index already holds (no network).
         state.emit("titles", "Identifying relevant job titles")
         early = await self._collect(req, related0, {}, max_age=self.settings.index_stale_ok_seconds, details=False, scope=scope)
+        indexed = list(early) if hasattr(ai, "rerank_start") else []     # what the index holds, for the reranker's early pass
+        known_ready = getattr(state, "known_employers", None)
+        if known_ready is not None and not known_ready.done():
+            known_ready.set_result(self._known_employers(early))     # the first AI web search waits for exactly this
         if early:
             early.sort(key=lambda j: -j.title_relevance)
             early, _ = await asyncio.to_thread(deduplicate, early[:preview_size])
@@ -1213,6 +1550,10 @@ class SearchEngine:
 
         profile = (await profile_task) if profile_task else base_profile
         related = [t for t in (profile.related_titles or related0) if t.lower() not in wanted][:8]
+        # The reranker starts on the postings the index already holds (up to a day old; most are read again unchanged
+        # below, and an unchanged text is the same question). Its query needs the profile, hence not earlier.
+        self._prerank(ai, profile, req, indexed, related)
+        del indexed
         variants: list[str] = []
         if expand_task is not None:
             try:
@@ -1231,18 +1572,22 @@ class SearchEngine:
         hosts = self._hosts(state)                      # chosen platforms only; startup platforms first under the focus
         all_queries = scope.order_queries(build_queries([*req.titles, *variants, *related[:8]], hosts, locations))
         queries = all_queries[: plan.searx_queries] if self.engines_on else []
+        # Every engine takes a different part of this plan (see _searx_round and the search's ledger): SearXNG its
+        # budget from the top; the company model's web search and TinySearch what SearXNG will not reach in this
+        # search (everything, when SearXNG is off); AWS its own (title, place) pairs on hosts nobody asked them on.
+        state.query_plan = all_queries
+        state.query_tail = all_queries[plan.searx_queries:] if self.searx_on else all_queries
         used = plan.per_round(plan.searx_queries, 1)
         searx_task = asyncio.create_task(self._searx_round(state, queries[:used])) if queries else None
         if searx_task:
             state.side_tasks.append(searx_task)
         queries = queries[used:]
         # Paid sources wait for round 2: they are spent only when the free ones left the search short.
-        # TinySearch gets the queries SearXNG is not going to send; SerpApi gets title x location pairs.
-        tiny_queries = (all_queries[len(queries) + used:] or all_queries)[: plan.tiny_searches] if self.tiny_on else []
+        # SerpApi gets title x location pairs.
         places = [f"{p}, United States" for p in req.locations[:6]] or ["United States"]
         # Google Jobs listings are not postings of a chosen platform: left out under a platform filter.
         serp_pairs = [(t, p) for p in places for t in [*req.titles, *variants]] if self.serp_on and not scope.filtered else []
-        state.tiny_left, state.serp_left = len(tiny_queries), len(serp_pairs)
+        state.serp_left = len(serp_pairs)
         # AWS web search runs from round 1 (fast, own monthly allowance): title variants x US locations, paced.
         aws_task = None
         if self.aws_on and (hosts or not scope.filtered):
@@ -1272,6 +1617,10 @@ class SearchEngine:
                 state.mark("first_results")
             state.emit("boards", "Preliminary matches updated")
             del head, preview
+        # The company reranker reads about 20 postings a second whatever the batch size (measured 2026-11-21), so 800
+        # postings cost about 40 s. The verified postings are known now and the lead checks below take about as long:
+        # their relevance is computed meanwhile and remembered, and the ranking stage only sends what is new by then.
+        self._prerank(ai, profile, req, kept, related)
 
         # 3. Discovery rounds. Each round: verify the leads of that round against sources, pages, browser and AI
         # extraction; screen the index again (boards registered by the round are in it now); count verified matches.
@@ -1283,6 +1632,7 @@ class SearchEngine:
                 ai_leads = await asyncio.wait_for(discover_task, timeout=self.settings.ai_discovery_deadline_seconds)
             except asyncio.TimeoutError:
                 state.warn("AI web search hit its time limit; results use the sources already read.")
+            self._discovery_notes(state, ai)
         searx_leads: list[Candidate] = (await searx_task) if searx_task else []
         if aws_task:
             searx_leads = [*searx_leads, *(await aws_task)]
@@ -1309,11 +1659,18 @@ class SearchEngine:
                     if not scope.allows(platform):          # platform filter: another platform, or no ATS platform at all
                         stats["filtered_out"] += 1
                         continue
+                    # A career platform that forbids automated reading, or whose reader is switched off (iCIMS, SAP
+                    # SuccessFactors, BambooHR, Rippling, Pinpoint): the lead goes nowhere, not to a board reader and
+                    # not to the page verifier, whoever named it.
+                    if not scope.readable_url(lead.url):
+                        stats["leads_not_readable"] += 1
+                        continue
                     platform_leads[platform or OTHER] = platform_leads.get(platform or OTHER, 0) + 1
                     provider_leads[lead.provider] = provider_leads.get(lead.provider, 0) + 1
                     fresh.append(lead)
             boards_before, postings_before = stats["new_boards"], stats["new_board_postings"]
             found, jobs = await self._resolve_leads(state, req, related, fresh, ai)
+            stats["pages_remembered"] += await self._remember_pages(jobs)      # company-site postings stay in the index
             for key, providers in found.items():
                 expected.setdefault(key, set()).update(providers)
             if scope.filtered:                              # a page that turned out to belong to another platform
@@ -1391,7 +1748,8 @@ class SearchEngine:
             state.emit("search", f"Round {round_no}: searching further title variants and locations")
             used = plan.per_round(plan.searx_queries, round_no)
             round_queries = min(used, len(queries))
-            names = sorted({k.split("|")[0] for ks in (await self._keys()).values() for k in ks})
+            # Whom the AI web search need not bring again: the employers this search already has matching postings of.
+            names = self._known_employers(unique) or sorted({k.split("|")[0] for ks in (await self._keys()).values() for k in ks})
 
             async def more_ai() -> list[Candidate]:
                 if not (use_web and hasattr(ai, "discover_round")):
@@ -1408,10 +1766,11 @@ class SearchEngine:
             serp_n = plan.per_round(plan.serp_calls, round_no - 1)
             aws_n = plan.per_round(stats["aws_budget"], round_no) if self.aws_on else 0
             ai_leads, searx_leads, tiny_leads, (serp_leads, listed_new), aws_leads = await asyncio.gather(
-                more_ai(), self._searx_round(state, queries[:used]), self._tiny_round(state, tiny_queries[:tiny_n]),
+                more_ai(), self._searx_round(state, queries[:used]), self._tiny_round(state, tiny_n),
                 self._serp_round(state, serp_pairs[: max(1, serp_n)], serp_n), self._aws_round(state, aws_n))
-            queries, tiny_queries, serp_pairs = queries[used:], tiny_queries[tiny_n:], serp_pairs[max(1, serp_n):]
-            state.tiny_left, state.serp_left = len(tiny_queries), len(serp_pairs)
+            queries, serp_pairs = queries[used:], serp_pairs[max(1, serp_n):]
+            state.serp_left = len(serp_pairs)
+            self._discovery_notes(state, ai)
             searx_leads = [*searx_leads, *tiny_leads, *serp_leads, *aws_leads]
             state.emit("verify", f"Round {round_no}: verifying application links")
 
@@ -1449,12 +1808,13 @@ class SearchEngine:
         # 5. AI ranking (parallel batches) and audit, side by side.
         before_rank = count_platforms(unique)
         if (ai.available or getattr(ai, "can_rerank", False)) and unique:
-            unique = await self._ai_rank(state, req, resume_text, ai, profile, unique, target)
+            unique = await self._ai_rank(state, req, resume_text, ai, profile, unique, target, order=scope.order_key(self._order))
         audited = before_rank - count_platforms(unique)      # dropped by the AI audit (not relevant, or not eligible)
         for name, st in ai.status.items():
             if st["configured"] and st["failed_calls"]:
                 state.warn(f"{name} degraded: {st['failed_calls']} call(s) failed ({st['last_error']}).")
         state.mark("ranked")
+        stats["rank_seconds"] = round(state.timings["ranked"] - state.timings.get("leads_verified", state.timings["ranked"]), 1)
 
         state.emit("prepare", "Preparing results")
         before_second = count_platforms(unique)
@@ -1507,7 +1867,7 @@ class SearchEngine:
         return out
 
     async def _ai_rank(self, state: SearchState, req: SearchRequest, resume_text: str, ai: AIOrchestrator,
-                       profile: Profile, unique: list[Job], target: int) -> list[Job]:
+                       profile: Profile, unique: list[Job], target: int, order=None) -> list[Job]:
         """Scoring in three layers, all on the one 0-100 scale (see job_ranker):
         1. the keyword score of every job (already done by the caller);
         2. with the company model: its reranker reads every job against the profile;
@@ -1519,11 +1879,26 @@ class SearchEngine:
         raw: dict[str, float] = {}
         if getattr(ai, "can_rerank", False):
             state.emit("rank", "Scoring every candidate job with the company model")
-            raw = await ai.rerank(profile, req, unique[: max(0, s.techsara_rerank_max_jobs)])
+            # The reranker has been reading since the first postings were known (_prerank), best keyword matches
+            # first. The stage waits a bounded time for what is still missing and goes on with what is scored: the
+            # postings it did not reach are the weakest keyword matches, and they keep their keyword score. No keyword
+            # shortlist cuts the list beforehand: of the postings the reranker rates as good, a shortlist of 600 lost 4
+            # of 25 in one measured search and 1 of 99 in another; reading on while there is time loses fewer.
+            sent = unique[: max(0, s.techsara_rerank_max_jobs)]
+            stats["rerank_sent"] = len(sent)
+            if hasattr(ai, "rerank_collect"):
+                raw = await ai.rerank_collect(profile, req, sent, seconds=max(1.0, s.techsara_rerank_wait_seconds))
+            else:
+                raw = await ai.rerank(profile, req, sent)
+            stats["reranked"] = len(raw)
             if len(raw) < MIN_ANCHORS:
                 if unique[:1] and len(unique) >= MIN_ANCHORS:
                     state.warn("The company model did not answer; ranking used OpenAI / Claude for the top jobs and keyword scores for the rest.")
                 raw = {}
+            elif len(raw) < len(sent):
+                state.warn(f"The company model scored the {len(raw)} best keyword matches of {len(sent)} jobs in the time it had; "
+                           "the others keep their keyword score.")
+        state.mark("reranked")
         if raw:
             # The judged slice: the jobs the reranker likes best, plus a sample spread over all the others so that
             # the calibration has anchors across the whole range (not only among good matches).
@@ -1539,7 +1914,17 @@ class SearchEngine:
             # The AI pool is spread across employers too, so calls are not spent on near-identical postings.
             pool = self._select(unique, pool_size)
         size = max(1, s.ai_rank_batch_size)
-        batches = [pool[i:i + size] for i in range(0, len(pool), size)]
+        # A posting OpenAI / Claude already judged for this candidate, with unchanged text, keeps that judgement: the
+        # same pair gets the same score in every search, and no call is spent on it.
+        known = await ai.recall_rankings(profile, req, pool) if pool and hasattr(ai, "recall_rankings") else {}
+        for job in pool:
+            if job.id in known:
+                apply_ai_ranking(job, known[job.id], profile, resume_text)
+                if job.score_source == "ai":
+                    stats["ai_ranked"] += 1
+                    stats["ai_ranked_reused"] += 1
+        to_judge = [j for j in pool if j.score_source != "ai"]
+        batches = [to_judge[i:i + size] for i in range(0, len(to_judge), size)]
         sem = asyncio.Semaphore(max(1, s.ai_rank_concurrency))
         # The audit only needs posting text, so it runs at the same time as ranking.
         to_audit = [j for j in pool if j.title_relevance < 0.85 or authorization_snippets(j.description, 1)]
@@ -1558,12 +1943,21 @@ class SearchEngine:
                     stats["ai_ranked"] += 1
             state.emit("rank", "Ranking resume matches")
 
+        limit = time.monotonic() + max(1.0, s.ai_rank_seconds)
         try:
-            await asyncio.gather(*(rank(b) for b in batches))
-            audits = await audit_task
+            try:
+                await asyncio.wait_for(asyncio.gather(*(rank(b) for b in batches)), timeout=max(1.0, s.ai_rank_seconds))
+            except asyncio.TimeoutError:
+                state.warn(f"AI ranking did not finish within its time limit ({s.ai_rank_seconds:g} s); it stopped there.")
+            try:
+                audits = await asyncio.wait_for(audit_task, timeout=max(15.0, limit - time.monotonic()))
+            except asyncio.TimeoutError:
+                audits = {}
+                state.warn("The AI audit of the shortlist did not answer in time and was skipped.")
         except BaseException:
             audit_task.cancel()
             raise
+        state.mark("judged")
         if stats["ai_ranked"] < len(pool):
             state.warn(f"AI ranking covered {stats['ai_ranked']} of {len(pool)} shortlisted jobs; the rest use keyword-based scores.")
         dropped = set()
@@ -1587,7 +1981,7 @@ class SearchEngine:
                     stats["rejected_eligibility"] += 1
         unique = [j for j in unique if j.id not in dropped]
         if raw:
-            await self._company_scores(state, req, resume_text, ai, profile, unique, raw)
+            await self._company_scores(state, req, resume_text, ai, profile, unique, raw, target, order or self._order)
         elif ai.available and len(unique) > stats["ai_ranked"]:
             note = f" Keyword-based score: this job was not among the {stats['ai_ranked']} jobs judged by AI in this search."
             for job in unique:
@@ -1597,8 +1991,10 @@ class SearchEngine:
         return unique
 
     async def _company_scores(self, state: SearchState, req: SearchRequest, resume_text: str, ai, profile: Profile,
-                              unique: list[Job], raw: dict[str, float]) -> None:
-        """Put the reranker's relevance on the 0-100 scale and give the jobs it scored a written explanation."""
+                              unique: list[Job], raw: dict[str, float], target: int = 0, order=None) -> None:
+        """Put the reranker's relevance on the 0-100 scale, and give a written explanation to those of its jobs that
+        can be delivered. Until 2026-11-21 the best 400 were explained whatever the request: for a request of 25 that
+        was up to three minutes for text nobody saw, because all 25 delivered jobs were judged by OpenAI / Claude."""
         stats, s = state.stats, self.settings
         anchors = [(raw[j.id], j.score) for j in unique if j.score_source == "ai" and j.id in raw]
         reference = "OpenAI or Claude judged"
@@ -1622,9 +2018,26 @@ class SearchEngine:
         stats["company_model_scored"] = len(scored)
         if not scored or s.techsara_explain_max_jobs <= 0 or not hasattr(ai, "explain_batch"):
             return
+        # The jobs that can be delivered: the selection the final step will make (same order, same spread across
+        # employers), plus a margin for what the last duplicate pass may take out.
+        order = order or self._order
+        target = target or len(unique)
+        ranked = sorted(unique, key=order)
+        chosen = self._select(ranked, target)
+        taken = {j.id for j in chosen}
+        chosen.extend([j for j in ranked if j.id not in taken][: max(5, target // 5)])
+        mine = {j.id for j in scored}
+        todo = [j for j in chosen if j.id in mine][: s.techsara_explain_max_jobs]
+        if todo and hasattr(ai, "recall_explanations"):          # written before for this candidate and this posting text
+            known = await ai.recall_explanations(profile, req, todo)
+            for job in todo:
+                if job.id in known:
+                    apply_explanation(job, known[job.id], profile, resume_text)
+                    stats["company_model_explained"] += 1
+            todo = [j for j in todo if j.id not in known]
+        if not todo:
+            return
         state.emit("rank", "Writing explanations with the company model")
-        scored.sort(key=lambda j: -j.score)
-        todo = scored[: s.techsara_explain_max_jobs]
         size = max(1, s.techsara_explain_batch)
         stop_at = time.monotonic() + max(0.0, s.techsara_explain_seconds)
         sem = asyncio.Semaphore(max(1, s.techsara_concurrency))

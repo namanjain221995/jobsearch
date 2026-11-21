@@ -10,7 +10,13 @@ Each pattern is the shape seen on a live page on 2026-11-21 (docs/ats-platforms.
 - jobvite  https://jobs.jobvite.com/{company}/job/{id}
 - avature  https://{company}.avature.net/[{locale}/]{portal}/JobDetail/{title-slug}/{number}
 - oracle   https://{pod}.fa.[{region}.]oraclecloud.com/hcmUI/CandidateExperience/{lang}/sites/{site}/job/{id}
-- adp      https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid={uuid}&jobId={id}[&ccId=..&lang=..]
+- adp      https://workforcenow.adp.com/[mascsr/default/]mdf/recruitment/recruitment.html?cid={uuid}&jobId={id}[&ccId=..&lang=..]
+           (both path forms answered with the same career centre on 2026-11-21; the form found is the form kept)
+
+`not_a_posting()` is the same knowledge turned round, for the page verifier: an address on one of these hosts (or on
+SmartRecruiters' job pages) that is not one posting is a career home page, a list, a search or an error page, and is
+never accepted whatever the page says. `server_rendered()` names the platforms whose posting pages arrive complete
+in the first response (one page of each was also rendered in a browser on 2026-11-21 and showed nothing more).
 
 Left out deliberately (see the platform notes in app/ats_platforms.py): iCIMS (terms forbid robots on icims.com and
 its subdomains, several tenants disallow everything in robots.txt), SAP SuccessFactors career{N}.successfactors.com
@@ -36,6 +42,7 @@ _ORACLE_SITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,59}")
 _ORACLE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
 _ORACLE_LANG = re.compile(r"[a-z]{2,3}(?:[_-][A-Za-z]{2,4})?")
 _ADP_PATH = "/mascsr/default/mdf/recruitment/recruitment.html"
+_ADP_PATHS = (_ADP_PATH, "/mdf/recruitment/recruitment.html")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _ADP_JOB = re.compile(r"\d{4,20}(?:_\d{1,4})?")
 _ADP_CC = re.compile(r"[0-9]{6,10}_[0-9]{4,8}")
@@ -109,7 +116,8 @@ def _oracle(host, parts, query):
 
 
 def _adp(host, parts, query):
-    if host != "workforcenow.adp.com" or "/" + "/".join(parts) != _ADP_PATH:
+    path = "/" + "/".join(parts)
+    if host != "workforcenow.adp.com" or path not in _ADP_PATHS:
         return None
     q = {}
     for key, value in query:
@@ -125,10 +133,56 @@ def _adp(host, parts, query):
     keep.append(("jobId", job))
     if _ADP_LANG.fullmatch(q.get("lang", "")):
         keep.append(("lang", q["lang"]))
-    return f"https://{host}{_ADP_PATH}?" + urlencode(keep)
+    return f"https://{host}{path}?" + urlencode(keep)
 
 
 _MATCHERS = (("jazzhr", _jazzhr), ("jobvite", _jobvite), ("avature", _avature), ("oracle", _oracle), ("adp", _adp))
+
+
+# SmartRecruiters job pages are page leads too (providers/searxng.py: PAGE_LEAD_HOSTS). Only their address shape is
+# needed here; the hosts are not in SITES because they are queried through the platform's own entry.
+_SR_HOSTS = ("jobs.smartrecruiters.com", "careers.smartrecruiters.com")
+_SR_COMPANY = re.compile(r"[A-Za-z0-9._-]{1,80}")
+_SR_POSTING = re.compile(r"\d{6,}[A-Za-z0-9%._-]*")
+SERVER_RENDERED = frozenset({"jazzhr", "jobvite", "avature", "smartrecruiters"})
+
+
+def _smartrecruiters(host, parts) -> bool:
+    return host == "jobs.smartrecruiters.com" and len(parts) == 2 and bool(_SR_COMPANY.fullmatch(parts[0])) \
+        and bool(_SR_POSTING.fullmatch(parts[1]))
+
+
+def platform_of(url: str) -> str:
+    """Platform id of the host of `url` ('' when it is none of these platforms). Says nothing about the path."""
+    try:
+        host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+    except (ValueError, AttributeError):
+        return ""
+    if host in _SR_HOSTS:
+        return "smartrecruiters"
+    for platform, sites in SITES.items():
+        if any(host == site or host.endswith("." + site) for site in sites):
+            return platform
+    return ""
+
+
+def not_a_posting(url: str) -> bool:
+    """True when `url` is on a host of these platforms and is NOT the address of one posting: a career home page,
+    a list, a search, an application form or an error page. False for every other host (nothing is known there)."""
+    platform = platform_of(url)
+    if not platform:
+        return False
+    if url[:7].lower() == "http://":                  # the patterns are written for https; the scheme is not what decides here
+        url = "https://" + url[7:]
+    if platform == "smartrecruiters":
+        split = _split(url)
+        return split is None or not _smartrecruiters(split[0], split[1])
+    return posting(url) is None
+
+
+def server_rendered(url: str) -> bool:
+    """Whether posting pages of this host arrive complete in the first response, so a browser adds nothing."""
+    return platform_of(url) in SERVER_RENDERED
 
 
 def is_page_host(host: str) -> bool:

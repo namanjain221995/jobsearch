@@ -22,9 +22,10 @@ Findings of 2026-11-21 (endpoints, robots.txt and terms were read on that day; d
   per posting, made only for postings a search wants to show). Neither endpoint is in Rippling's public documentation.
   ats.rippling.com/robots.txt disallows only `/internal/`; api.rippling.com has no robots.txt (HTTP 404). Rippling's
   terms could NOT be read (the legal pages are rendered by script and returned no text), so "the terms allow it" is
-  not established. ON by default because nothing read forbids it; set RIPPLING_ENABLED=0 to switch it off.
+  not established. OFF by default since 2026-11-21 (owner's decision: no reading until the terms are reviewed);
+  RIPPLING_ENABLED=1 switches it on, and ats.rippling.com must then be added to SEARXNG_SITES.
 
-Switches: RECRUITEE_ENABLED (on) / PINPOINT_ENABLED (off) / RIPPLING_ENABLED (on) in app/config.py, or DISABLED_SOURCES.
+Switches: RECRUITEE_ENABLED (on) / PINPOINT_ENABLED (off) / RIPPLING_ENABLED (off) in app/config.py, or DISABLED_SOURCES.
 
 Board keys: Recruitee and Pinpoint = the career-site subdomain ("namecheap"); Rippling = the board slug in
 `ats.rippling.com/<slug>/jobs`. Keys are placed into host names and paths, so only plain slug characters are accepted.

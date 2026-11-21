@@ -93,7 +93,8 @@ class Settings(BaseSettings):
     # Startup ATS board readers (providers/ats_startup.py has the robots.txt / terms findings behind each default).
     recruitee_enabled: bool = True
     pinpoint_enabled: bool = False           # OFF: most employer tenants answer robots.txt with `Disallow: /`
-    rippling_enabled: bool = True            # terms could not be read; robots.txt allows. Set false to switch off
+    rippling_enabled: bool = False           # OFF until Rippling's terms are reviewed: the endpoints are undocumented and the terms could not be read
+    workable_search_enabled: bool = True     # Workable's cross-company job search (undocumented endpoint); false keeps only the documented account reader
     rippling_pages: int = 20                 # list pages (100 rows each) read per Rippling board
 
     # Search budgets / stop conditions.
@@ -106,13 +107,31 @@ class Settings(BaseSettings):
     claude_search_calls: int = 2
     ai_web_searches_per_call: int = 5
     ai_discovery_deadline_seconds: float = 120.0
+    # AI web search (discovery) of one search: what each provider may do. The calls per search are OPENAI_SEARCH_CALLS /
+    # CLAUDE_SEARCH_CALLS above (scaled by the request size, see search_plan.py).
+    ai_discovery_call_timeout_seconds: float = 100.0  # one web-search call; a call still running then is dropped, the finished ones keep their leads
+    ai_discovery_breaker_failures: int = 2            # failed web-search calls in a row that switch a provider off for the rest of that search (the other one takes over its searches)
+    openai_search_concurrency: int = 4                # web-search calls of one search running at the same time, per provider
+    claude_search_concurrency: int = 4
+    openai_search_model: str = ""                     # model for web-search discovery only; empty = OPENAI_MODEL
+    anthropic_search_model: str = ""                  # model for web-search discovery only; empty = ANTHROPIC_MODEL
+    ai_open_web_share: float = 0.5                    # share of the OpenAI / Claude web-search calls of a search that look at employers' OWN career sites (any domain) instead of the ATS hosts; 0 = none, 1 = all (always none under an ATS platform filter)
+    ai_open_web_split: str = "auto"                   # who makes those calls. auto: first the provider whose search tool holds a `site:` query to its site (Claude), the other one the ATS hosts; even: each provider alternates
     max_ai_calls_per_search: int = 30
     max_ai_ranked_jobs: int = 120
     ai_rank_batch_size: int = 6              # small batches answer faster; they run side by side
     ai_rank_concurrency: int = 10
     max_audit_jobs: int = 40
-    max_page_verifications: int = 40
-    max_ai_page_extractions: int = 8         # pages per search sent to the AI for job extraction (one batched call)
+    # Page leads (postings on employers' own career sites and on career platforms without a reader) are verified from
+    # the page. Measured on 2026-11-21 (tests/fixtures/pages/eval_set.json): the plain fetch decides 11 pages a second
+    # at 32 at once (replayed with the recorded response times), the company model's page check answers about 1 page a
+    # second with 4 calls at once, and a browser page takes 3 to 13 s (mean 8 s; BROWSER_CONCURRENCY at once).
+    max_page_verifications: int = 160        # page leads read per search of 50 results (grows with the request, see MAX_PAGE_VERIFICATIONS_MAX)
+    page_verification_concurrency: int = 32  # page leads checked at the same time (never more than two requests at a time per host)
+    max_ai_page_extractions: int = 8         # pages sent to the AI page check in one call
+    ai_page_extraction_calls: int = 10       # such calls per round when the company model answers them (no bill)
+    ai_page_extraction_paid_calls: int = 1   # ... of which a model with a bill may answer this many (all of them when there is no company model)
+    ai_page_extraction_concurrency: int = 4  # page-check calls running at the same time (the company model's queue is shared with the chat app)
     ai_timeout_seconds: float = 180.0
 
     # ---- Wider searches ("find more"): title expansion, search-engine discovery, larger AI budgets, rounds.
@@ -123,7 +142,9 @@ class Settings(BaseSettings):
     techsara_model: str = "techsara-35b"             # chat: title expansion, page extraction, explanations beyond the top slice
     techsara_rerank_model: str = "techsara-rerank"   # /v1/rerank: scores every remaining candidate against the profile
     techsara_web_search_enabled: bool = True         # the model's web_search tool as one more search engine for employer job boards
-    techsara_web_searches_per_search: int = 40       # most web searches one job search may ask the model for
+    techsara_web_searches_per_search: int = 40       # most web searches one job search may ask the model for (hard ceiling)
+    techsara_web_searches_base: int = 12             # ... for a request of 50 or fewer; larger requests scale up to the ceiling above
+    techsara_web_search_concurrency: int = 2         # web searches sent to the model at the same time (its queue is shared with the chat app)
     techsara_web_search_timeout_seconds: float = 60.0
     techsara_timeout_seconds: float = 90.0
     techsara_retries: int = 3                        # attempts after a 503 / 429 / timeout (Retry-After is honoured, capped at 20 s)
@@ -133,6 +154,11 @@ class Settings(BaseSettings):
     techsara_explain_max_jobs: int = 400             # jobs beyond the OpenAI/Claude slice that get a written explanation from the chat model
     techsara_explain_batch: int = 5
     techsara_explain_seconds: float = 180.0          # time one search may spend on those explanations; the rest keep the rerank note
+    techsara_rerank_seconds: float = 90.0            # time the reranker may work for one search in the background, starting when the first postings are verified
+    techsara_rerank_wait_seconds: float = 20.0       # time the ranking stage then waits for it at most; jobs it did not reach (the weakest keyword matches) keep their keyword score
+    ai_rank_seconds: float = 150.0                   # time one search may spend on OpenAI / Claude judging the shortlist; unjudged jobs keep their other score
+    career_page_memory: bool = True                  # postings verified on employers' own career sites are kept in the index and checked again later (source "career_page")
+    rank_cache_days: float = 7.0                     # a model's judgement of the same candidate and the same posting text is reused this long; 0 = never
 
     title_expansion: bool = True                     # one AI call per search: real-world variants of the requested titles
     title_expansion_max: int = 12                    # most variants kept after validation
@@ -149,7 +175,7 @@ class Settings(BaseSettings):
     searxng_new_boards_per_search_max: int = 400     # hard ceiling: employer boards one search may add to the index
     searxng_page_leads_per_search: int = 40          # direct posting addresses (non-board hosts) passed to page verification
     searxng_sites: str = ("boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co,jobs.ashbyhq.com,apply.workable.com,"
-                          "myworkdayjobs.com,jobs.smartrecruiters.com,recruitee.com,ats.rippling.com,applytojob.com")   # add pinpointhq.com with PINPOINT_ENABLED
+                          "myworkdayjobs.com,jobs.smartrecruiters.com,recruitee.com,applytojob.com")   # add pinpointhq.com with PINPOINT_ENABLED, ats.rippling.com with RIPPLING_ENABLED
 
     # ---- Paid sources. Spent only after the free ones (index, SearXNG, company model) left a search short.
     # SerpApi, Google Jobs. The plan's monthly allowance is the binding limit: every call is counted per calendar month.
@@ -208,7 +234,7 @@ class Settings(BaseSettings):
     ai_web_searches_per_call_max: int = 10
     max_ai_calls_per_search_max: int = 260
     max_ai_ranked_jobs_max: int = 400                # ceiling of the OpenAI/Claude-judged slice (40 % of the request, at least MAX_AI_RANKED_JOBS)
-    max_page_verifications_max: int = 600
+    max_page_verifications_max: int = 1200           # page leads read by the largest searches (replayed 2026-11-21: 576 pages in 40 s, 16 ms of CPU a page; AI and browser checks keep their own limits)
     max_detail_fetches_max: int = 1000
     max_audit_jobs_max: int = 200
     max_boards_per_search_max: int = 6000            # boards and source queries one search may ask to be fresh
@@ -228,7 +254,7 @@ class Settings(BaseSettings):
     browser_enabled: bool = True
     browser_concurrency: int = 6             # pages rendered at the same time
     max_browser_pages_per_search: int = 24
-    max_crawl_links_per_search: int = 16     # job links followed from careers/listing pages
+    max_crawl_links_per_search: int = 48     # job links followed from careers/listing pages (each is one page verification)
 
     # AI auto-apply (Admin only, docs/auto-apply-api.md). Off until switched on. The worker opens employer-hosted
     # application forms in the honest browser; nothing is submitted without an Admin approval of the exact preview.

@@ -152,7 +152,8 @@ function fromPreset(preset: Preset, current: Values, platformIds: ReadonlySet<st
     work_mode: choice(filters.work_mode),
     preferred_states: list(filters.preferred_states),
     excluded_companies: list(filters.excluded_companies),
-    ats_platforms: list(filters.ats_platforms).filter((id) => platformIds.has(id)),
+    // Only platforms the server lists now, in its order (as the list itself keeps them): a name it no longer has is dropped.
+    ats_platforms: [...platformIds].filter((id) => list(filters.ats_platforms).includes(id)),
     startup_focus: filters.startup_focus === true,
   };
 }

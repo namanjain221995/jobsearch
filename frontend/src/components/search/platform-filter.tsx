@@ -79,7 +79,7 @@ export function PlatformFilter({
               const inputId = `${id}-${platform.id}`;
               const checked = value.includes(platform.id);
               return (
-                <li key={platform.id} className="min-w-0">
+                <li key={platform.id} data-platform={platform.id} data-coverage={platform.coverage} className="min-w-0">
                   <label
                     htmlFor={inputId}
                     className={cn("flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-muted/60", checked && "bg-accent/60")}

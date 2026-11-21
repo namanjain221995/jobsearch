@@ -52,16 +52,22 @@ PLATFORMS: dict[str, Platform] = {p.id: p for p in [
              "A reader for the public Posting API exists but stays off: api.smartrecruiters.com/robots.txt allows only "
              "LinkedInBot and disallows everything for all other clients (checked again on 2026-11-21). Single posting "
              "pages on jobs.smartrecruiters.com found by web search are still verified page by page."),
-    Platform("workable", "Workable", "public_api", ("apply.workable.com",), "workable", True, "", ""),
+    Platform("workable", "Workable", "public_api", ("apply.workable.com",), "workable", True,
+             "https://workable.readme.io/reference/jobs-1",
+             "Documented public jobs endpoint, one request per employer account with full descriptions; robots.txt "
+             "allows it. Workable's cross-company job search (undocumented, WORKABLE_SEARCH_ENABLED) is read as well."),
     Platform("jobvite", "Jobvite", "public_pages", ("jobs.jobvite.com",), "", False, "https://www.jobvite.com/terms-of-use/",
              "No anonymous API. Posting pages (jobs.jobvite.com/{company}/job/{id}) found by web search are verified one "
-             "by one; they carry no structured job data, so a page counts only when the AI page check or the browser "
-             "confirms it. Reading whole boards would need the employer's Jobvite API key and secret."),
+             "by one from the page itself, without a browser: by structured job data where the page carries it (5 of 7 "
+             "open postings on 2026-11-21), otherwise only when the AI page check confirms it. Reading whole boards would "
+             "need the employer's Jobvite API key and secret."),
     Platform("oracle", "Oracle Recruiting Cloud", "public_pages", (".oraclecloud.com",), "oracle", False,
              "https://docs.oracle.com/en/cloud/saas/human-resources/farws/api-recruiting-ce-job-requisitions.html",
-             "Posting pages on an employer's Oracle career site found by web search are verified one by one. A board "
-             "reader for the anonymous endpoint those career sites call is built and was verified live, but it is off "
-             "(BOARD_SOURCES_ORACLE=1 switches it on) because Oracle documents that endpoint as only for Oracle internal use."),
+             "Posting pages on an employer's Oracle career site found by web search are verified one by one; each needs a "
+             "rendered page from the browser budget (5 to 8 s on 2026-11-21), and without the browser none is verified. A "
+             "board reader for the anonymous endpoint those career sites call is built and was verified live, but it is "
+             "off (BOARD_SOURCES_ORACLE=1 switches it on) because Oracle documents that endpoint as only for Oracle "
+             "internal use."),
     Platform("successfactors", "SAP SuccessFactors", "restricted", (".successfactors.com", ".successfactors.eu"), "", False,
              "",
              "Not read: career{N}.successfactors.com and .eu answer robots.txt with Disallow: /, and no anonymous job "
@@ -86,12 +92,15 @@ PLATFORMS: dict[str, Platform] = {p.id: p for p in [
              "The owner would need BambooHR's consent or an employer's own API key."),
     Platform("jazzhr", "JazzHR", "public_pages", (".applytojob.com",), "", False, "https://www.jazzhr.com/terms-of-service",
              "No anonymous API. Posting pages ({company}.applytojob.com/apply/{id}/...) found by web search are verified "
-             "one by one from the structured job data on the page; robots.txt there disallows only /cb. Reading whole "
-             "boards would need the employer's JazzHR API key."),
+             "one by one from the page itself, without a browser: by structured job data where the page carries it (4 of 6 "
+             "open postings on 2026-11-21), otherwise only when the AI page check confirms it; robots.txt there disallows "
+             "only /cb. Reading whole boards would need the employer's JazzHR API key."),
     Platform("avature", "Avature", "public_pages", (".avature.net",), "", False, "https://www.avature.net/terms-of-use/",
              "No anonymous API. Posting pages ({company}.avature.net/careers/JobDetail/...) found by web search are "
-             "verified one by one; they carry no structured job data, so a page counts only when the AI page check or the "
-             "browser confirms it. Each employer sets its own robots.txt, which is read before a page is opened."),
+             "verified one by one from the page itself, without a browser; they carry no structured job data, so a page "
+             "counts only when the AI page check confirms it (no posting date that way). Employers that answer with a "
+             "robot check (2 of 4 tried on 2026-11-21) cannot be read. Each employer sets its own robots.txt, which is "
+             "read before a page is opened."),
     Platform("pinpoint", "Pinpoint", "public_api", (".pinpointhq.com",), "pinpoint", True,
              "https://developers.pinpointhq.com/docs/jobs-json-endpoint",
              "Documented postings.json feed per employer, but employer tenants answer robots.txt with Disallow: /, so the "
@@ -100,16 +109,18 @@ PLATFORMS: dict[str, Platform] = {p.id: p for p in [
              "https://docs.recruitee.com/reference/offers",
              "Careers Site API, one request per employer board with full descriptions; robots.txt allows it."),
     Platform("rippling", "Rippling", "public_api", ("ats.rippling.com",), "rippling", True, "",
-             "The job list Rippling's hosted career pages call (undocumented), description read per posting; robots.txt "
-             "allows it, the terms could not be read."),
+             "No Rippling board is read: the reader is switched off until Rippling's terms are reviewed. It uses the job "
+             "list Rippling's hosted career pages call, which is not in Rippling's public documentation, and the terms "
+             "pages could not be read (robots.txt allows the endpoint). RIPPLING_ENABLED=1 switches it on after that review."),
     Platform("smartsearch", "SmartSearch", "credentials", (), "", False, "",
              "Nothing is read. No public documentation of an anonymous job feed or of public career-page addresses was "
              "found; the owner would need API access arranged with SmartSearch for a customer account."),
     Platform("adp", "ADP Workforce Now", "public_pages", ("workforcenow.adp.com",), "", False, "https://www.adp.com/legal.aspx",
              "No anonymous API is documented. Career-centre posting addresses (recruitment.html?cid=...&jobId=...) found "
-             "by web search are passed to the page verifier, but the page is an empty shell until its script runs, so a "
-             "posting counts only when the browser renders it. Reading whole boards would need API access arranged "
-             "with ADP and the employer."),
+             "by web search are verified one by one; each needs a rendered page from the browser budget (10 to 13 s on "
+             "2026-11-21) and the AI page check. The page has no employer or location field (the employer counts only when "
+             "the posting text names it), so few postings can be shown. Reading whole boards would need API access "
+             "arranged with ADP and the employer."),
 ]}
 
 STARTUP_PLATFORMS: tuple[str, ...] = tuple(p.id for p in PLATFORMS.values() if p.startup)

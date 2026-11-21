@@ -201,7 +201,7 @@ class FakeIndex:
     async def record_board(self, ats, slug, ok, job_count=0, origin="seed"):
         self.recorded.append((ats, slug, ok, job_count))
 
-    async def catalog_due(self, per_ats, recheck):
+    async def catalog_due(self, per_ats, recheck, *waits):          # waits: refresh, retry, dead, longest back-off
         out = []
         for ats, n in per_ats.items():
             out += [(a, s) for (a, s), r in self.rows.items() if a == ats and r["origin"] == "catalog" and r["checked_at"] is None][:n]

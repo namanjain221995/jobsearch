@@ -824,7 +824,6 @@ const TABS = [
   { value: "account", label: "My Account" },
 ];
 
-/** Admin "Settings": portal-wide settings, the state of the integrations, and the Admin's own account. */
 const GO_LIVE_WORDS = "REAL DATA";
 
 /** Shown only while the portal holds test data. One click (and two typed words) removes it and ends test mode. */
@@ -867,14 +866,16 @@ function TestModePanel() {
             toast.error(`Type ${GO_LIVE_WORDS} to confirm.`);
             return;
           }
-          goLive.mutate(undefined, {
-            onSuccess: () => {
+          // This panel is taken away as soon as the reloaded settings say that test mode is off, and a callback given
+          // to mutate() is dropped with it. The promise still settles, so the Admin is told the outcome either way.
+          void goLive.mutateAsync().then(
+            () => {
               setOpen(false);
               setTyped("");
               toast.success("Test data removed", { description: "The portal now works with real data. Create your teams and invite your people." });
             },
-            onError: (error) => toast.error("The test data was not removed", { description: errorMessage(error) }),
-          });
+            (error: unknown) => toast.error("The test data was not removed", { description: errorMessage(error) }),
+          );
         }}
       >
         <div className="flex flex-col gap-1.5">
@@ -886,6 +887,7 @@ function TestModePanel() {
   );
 }
 
+/** Admin "Settings": portal-wide settings, the state of the integrations, and the Admin's own account. */
 export function AdminSettingsView() {
   const [state, setState] = useUrlState(TAB_DEFAULTS);
   const tab = TABS.some((item) => item.value === state.tab) ? state.tab : "portal";

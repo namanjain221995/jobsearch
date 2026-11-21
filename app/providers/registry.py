@@ -2,7 +2,7 @@
 
 A source is read in "units": one employer board, one search query, or one whole feed. The engine
 decides which units a search needs; this module only describes the sources."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Awaitable, Callable
 
 from ..config import Settings
@@ -59,7 +59,10 @@ SPECS: dict[str, Spec] = {s.name: s for s in [
     Spec("lever", "Lever", "board", _lever, keyed=True, note="Employer boards, official postings API"),
     Spec("workday", "Workday", "search", _workday, keyed=True, detail=workday.detail, min_ttl=3 * 3600, max_queries=1, wait=20.0,
          note="Large-employer career sites, searched per employer (Workday allows about one request per second)"),
-    Spec("workable", "Workable", "search", workable.fetch, note="Cross-company search of Workable-hosted jobs"),
+    # Workable is read two ways by one entry (providers/workable.py): key "*" = the cross-company search, any other key =
+    # one employer account through the documented public endpoint (catalogue accounts, read by board_catalog).
+    Spec("workable", "Workable", "search", workable.fetch,
+         note="Employer accounts through Workable's documented public jobs endpoint, plus its cross-company job search"),
     Spec("amazon", "Amazon Jobs", "search", amazon.fetch, note="Amazon's own job search"),
     Spec("himalayas", "Himalayas", "search", remote_boards.fetch_himalayas, min_ttl=6 * 3600, note="Remote job board API"),
     Spec("remoteok", "Remote OK", "feed", remote_boards.fetch_remoteok, min_ttl=2 * 3600, note="Remote job board API"),
@@ -84,8 +87,9 @@ SPECS.update({s.name: s for s in [
          needs=lambda s: bool(getattr(s, "pinpoint_enabled", False)),
          note="Employer boards, official job postings JSON feed (off by default: most tenants disallow robots)"),
     Spec("rippling", "Rippling", "board", _startup.fetch_rippling, keyed=True, detail=_startup.detail_rippling, min_ttl=3 * 3600,
-         needs=lambda s: bool(getattr(s, "rippling_enabled", True)),
-         note="Employer boards, the job list of Rippling's hosted career pages (description read per posting)"),
+         needs=lambda s: bool(getattr(s, "rippling_enabled", False)),
+         note="Employer boards, the job list of Rippling's hosted career pages (off by default until Rippling's terms are "
+              "reviewed: the endpoints are undocumented)"),
 ]})
 
 # Oracle Recruiting Cloud career sites: built and verified, but OFF unless BOARD_SOURCES_ORACLE=1, because Oracle documents
@@ -115,12 +119,34 @@ SPECS["serpapi"] = Spec("serpapi", "Google Jobs (SerpApi)", "discovery", _no_fet
 SPECS["aws_web_search"] = Spec("aws_web_search", "Web search (AWS)", "discovery", _no_fetch, needs=lambda s: bool(s.aws_web_search_enabled),
                                note="AWS Bedrock AgentCore Web Search: finds employer postings on the ATS hosts above, verified against the "
                                     "employer's live feed; monthly allowance; result text is never stored")
+# Postings on employers' OWN career sites that a search verified on their page (search_engine._remember_pages). Each is
+# one unit, keyed by the posting's address, and "reading" it means checking that page again (plain request, no browser,
+# no model). So jobs the AI web search found once stay in the index, are kept current by the background reader and are
+# found by later searches without any web search: the index grows beyond the ATS platforms. The engine supplies the
+# reader, because the page verifier is its own (Ctx.options["career_page_reader"]).
+CAREER_PAGE = "career_page"
+
+
+async def _career_page(ctx: Ctx, key: str, scope: str) -> list[Job]:
+    reader = ctx.options.get("career_page_reader")
+    if reader is None:
+        from .base import SourceError
+        raise SourceError("the page reader is not available")
+    return await reader(key)
+
+
+SPECS[CAREER_PAGE] = Spec(CAREER_PAGE, "Company career sites", "board", _career_page, keyed=True, min_ttl=3 * 3600,
+                          needs=lambda s: bool(getattr(s, "career_page_memory", True)),
+                          note="Postings on employers' own career sites that an earlier search verified; each is checked again on its own page")
 BOARD_LEAD_SOURCES = ("greenhouse", "lever", "ashby", "recruitee", "pinpoint", "rippling")      # AI leads on these are checked against the employer's full board
 
 
 def enabled_specs(settings: Settings) -> dict[str, Spec]:
     off = {s.strip().lower() for s in settings.disabled_sources.split(",") if s.strip()}
-    return {name: spec for name, spec in SPECS.items() if name not in off and spec.needs(settings)}
+    specs = {name: spec for name, spec in SPECS.items() if name not in off and spec.needs(settings)}
+    if "workable" in specs and not getattr(settings, "workable_search_enabled", True):
+        specs["workable"] = replace(specs["workable"], default_key="")      # accounts only: no cross-company query is planned
+    return specs
 
 
 def ttl(spec: Spec, settings: Settings) -> int:
@@ -133,7 +159,7 @@ def plan_units(specs: dict[str, Spec], keys: dict[str, list[str]], queries: list
     for name, spec in specs.items():
         if spec.kind == "discovery":
             continue
-        targets = keys.get(name, []) if spec.keyed else [spec.default_key]
+        targets = keys.get(name, []) if spec.keyed else [spec.default_key] if spec.default_key else []
         wanted = queries[: spec.max_queries] if spec.max_queries else queries
         for key in targets:
             if spec.kind == "search":
@@ -141,3 +167,20 @@ def plan_units(specs: dict[str, Spec], keys: dict[str, list[str]], queries: list
             else:
                 units.append(Unit(name, key, ""))
     return units
+
+
+def within_budget(units: list[Unit], limit: int) -> list[Unit]:
+    """The units a search keeps when it planned more than its budget of `limit`.
+
+    Query and feed units (one per title and source: a handful) are kept first, so the cut only ever falls on employer
+    boards. Without this the list was cut in registry order, and once the index knew more Greenhouse boards than the
+    budget (production, 2026-11-20: 6,629 boards against a budget of 1,500) every source registered after Greenhouse,
+    among them the Workable, Amazon and Himalayas searches and the Remote OK and Jobicy feeds, was never asked.
+    The order inside each of the two groups is unchanged."""
+    if len(units) <= limit:
+        return list(units)
+
+    def board(unit: Unit) -> bool:
+        spec = SPECS.get(unit.src)
+        return bool(spec and spec.keyed) or (unit.src == "workable" and unit.key != "*")
+    return [*(u for u in units if not board(u)), *(u for u in units if board(u))][: max(0, limit)]

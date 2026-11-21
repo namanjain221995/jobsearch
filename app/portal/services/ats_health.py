@@ -107,7 +107,7 @@ def reader_switch(reader: str, settings: Settings, off: set[str]) -> str:
     if reader in off:
         return "Its reader is switched off under Job sources."
     if not spec.needs(settings):
-        return "Its reader is not configured on the server."
+        return "Its reader is switched off in the server settings."
     return ""
 
 

@@ -25,7 +25,7 @@ REMOTEOK = "https://remoteok.com/api"
 WD_SEED = ("workday", "wdco|wd5|Careers")
 ALL = ("greenhouse", "lever", "ashby", "workday", "remoteok", "amazon", "searxng")
 SEEDS = [*conftest.DEFAULT_SEEDS, WD_SEED]
-READERS = frozenset({"greenhouse", "lever", "ashby", "workday", "workable"})
+READERS = frozenset({"greenhouse", "lever", "ashby", "workday", "workable", "recruitee"})
 
 
 def run(coro):
@@ -179,6 +179,34 @@ def test_filter_wins_and_the_focus_orders_within_it():
     assert {platform_of_job(j) for j in state.results} == {"workday", "lever"} and CALLS[GH_ACME] == 0
     assert [site_of(q) for q, _ in SEARX_LOG][:4] == ["jobs.lever.co"] * 3 + ["myworkdayjobs.com"]
     assert [j.score for j in state.results] == sorted((j.score for j in state.results), reverse=True)
+
+
+def test_hosts_nobody_can_use_are_never_asked():
+    # A platform whose board reader is switched off gets no `site:` query (and no AI web search), with or without a
+    # filter; a platform whose posting pages are verified one by one keeps its host.
+    few = Scope.of([], False, {"greenhouse", "lever", "searxng"})
+    assert few.hosts(HOSTS) == ["boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.smartrecruiters.com", "applytojob.com"]
+    assert not few.readable("jobs.ashbyhq.com") and not few.readable("myworkdayjobs.com") and not few.readable("acme.recruitee.com")
+    assert few.readable("jobs.smartrecruiters.com") and few.readable("acme.applytojob.com") and few.readable("careers.example.com")
+    assert Scope().hosts(HOSTS) == HOSTS and Scope().readable("jobs.ashbyhq.com")           # no engine behind the scope: nothing is known
+    assert Scope.of(["lever"], False, {"greenhouse"}).hosts(HOSTS) == []                     # chosen, but its reader is off: not asked at all
+    # A chosen platform is searched even when SEARXNG_SITES does not name its host: the registry does.
+    configured = [h for h in HOSTS if h != "recruitee.com"]
+    assert Scope.of(["rippling"], False, READERS | {"rippling"}).hosts(configured) == ["ats.rippling.com"]
+    assert Scope.of(["rippling"], False, READERS).hosts(configured) == []                    # ... unless its reader is off
+    assert Scope.of(["recruitee", "lever"], False, READERS).hosts(configured) == ["jobs.lever.co", "recruitee.com"]
+    assert Scope.of(["greenhouse"], False, READERS).hosts(HOSTS) == ["boards.greenhouse.io", "job-boards.greenhouse.io"]      # configured hosts are kept as they are
+    assert Scope.of(["smartrecruiters", "jobvite"], False, READERS).hosts(HOSTS) == ["jobs.smartrecruiters.com", "jobs.jobvite.com"]
+    assert Scope.of(["icims", "bullhorn"], False, READERS).hosts(HOSTS) == []                # restricted / credentials only: nothing to ask
+
+
+def test_a_reader_that_is_off_is_not_queried_by_any_search_engine():
+    SEARX_ANSWERS["*"] = ["https://jobs.ashbyhq.com/someco"]
+    state = run(search(wide_engine(sources=("greenhouse", "lever", "searxng"), seeds=conftest.DEFAULT_SEEDS), result_count=50))
+    sites = {site_of(q) for q, _ in SEARX_LOG}
+    assert sites and "jobs.ashbyhq.com" not in sites and "myworkdayjobs.com" not in sites and "recruitee.com" not in sites
+    assert sites <= {"boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co", "jobs.smartrecruiters.com", "applytojob.com"}
+    assert state.status == "completed" and not any("someco" in url for url in CALLS)
 
 
 # ---------------------------------------------------------------- statistics

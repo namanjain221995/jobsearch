@@ -321,6 +321,7 @@ _CLEARANCE = [
     re.compile(r"\b(ts/sci|top\s+secret)\b[^.]{0,40}\b(required|clearance)", re.I),
     re.compile(r"\b(security\s+clearance)\s+(?:is\s+)?(required|needed|mandatory)", re.I),
 ]
+_ANSWERED_NO = re.compile(r"\s*[?:]\s*(?:[-–]\s*)?no\b", re.I)
 _SPONSOR_NO = [
     re.compile(r"\b(unable|not\s+able|cannot|can\s?not|can't|won't|will\s+not|do(?:es)?\s+not|don't|doesn't|not)\b[^.]{0,60}\bsponsor", re.I),
     re.compile(r"\bno\s+(visa\s+|immigration\s+|employment\s+|work\s+)?sponsorship", re.I),
@@ -369,7 +370,9 @@ def analyze_authorization(description: str) -> dict:
             break
     if citizenship == "Not stated" and any(rx.search(text) for rx in _CITIZEN_NOT_REQUIRED):
         citizenship = "Not required"
-    clearance = any(rx.search(text) for rx in _CLEARANCE)
+    # "Does this position require a security clearance? No" (a line on every Oracle career-site posting) and
+    # "Security clearance required: No" state that none is needed: a match answered "No" does not count.
+    clearance = any(not _ANSWERED_NO.match(text, m.end()) for rx in _CLEARANCE for m in rx.finditer(text))
     sponsorship = "Not stated"
     if any(rx.search(text) for rx in _SPONSOR_NO):
         sponsorship = "Not available"

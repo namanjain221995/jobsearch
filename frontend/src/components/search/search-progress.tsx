@@ -108,7 +108,10 @@ function ProgressBody({ run, skipped }: { run: SearchRun; skipped: SearchSkipped
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <SearchStatusTag status={run.status} cancelling={run.cancel_requested} />
           <span className="text-sm" aria-live="polite">
-            {active ? run.stage || "Waiting for the background worker" : `Search ${searchStatusLabel(run.status).toLowerCase()}`}
+            {active
+              ? // A run the worker has just taken has no stage for a moment: it is running, not waiting for the worker.
+                run.stage || (run.status === "running" ? "Starting the search" : "Waiting for the background worker")
+              : `Search ${searchStatusLabel(run.status).toLowerCase()}`}
           </span>
           {active && <span aria-hidden="true" className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse-dot" />}
           <RunAttempts run={run} />
@@ -132,7 +135,7 @@ function ProgressBody({ run, skipped }: { run: SearchRun; skipped: SearchSkipped
 
       <section className="flex flex-col gap-2">
         <h3 className="font-label text-sm">Sources</h3>
-        <RunSources sources={run.sources} />
+        <RunSources sources={run.sources} active={active} />
       </section>
     </div>
   );

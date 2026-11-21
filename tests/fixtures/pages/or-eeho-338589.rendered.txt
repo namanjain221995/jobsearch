@@ -1,0 +1,45 @@
+Skip to main content.
+View More Jobs
+Senior Platform Software Engineer
+Austin, TX, United States
+Nashville, TN, United States
+United States
+HOT JOB
+TRENDING
+Job Identification
+338589
+Job Category
+Product and Research
+Posting Date
+11/18/2026, 07:39 PM
+Role
+Individual Contributor
+Job Type
+Regular Employee
+Does this position require a security clearance?
+No
+Years
+3 to 5+ years
+Applicants are required to read, write, and speak the following languages
+English
+Job Description
+As a Software Developer 3 (IC3) in Oracle Cloud Infrastructure (OCI), you will design, develop, and operate highly scalable, secure, and reliable cloud services. You will work with senior engineers …
+Responsibilities
+Key Responsibilities
+Design, develop, test, and maintain cloud-native services and microservices.
+Build highly available, scalable, and fault-tolerant distributed systems.
+Participate in software design reviews and contribute to technical discussions.
+Write high-quality, maintainable, and well-tested code.
+Troubleshoot production issues and participate in on-call rotations.
+Analyze system performance and implement improvements for scalability and reliability.
+Collaborate with Product Management, QA, SRE, and partner engineering teams.
+Participate in code reviews and provide constructive technical feedback.
+Contribute to operational excellence through monitoring, automation, and documentation.
+Continuously improve engineering practices, tooling, and development processes.
+Required Technical Skills
+Strong programming skills in Java, Go, C++, Python, or a similar language.
+Range and benefit information provided in this posting are specific to the stated locations only
+US: Hiring Range in USD from: $92,500 to $209,500 per annum. May be eligible for bonus and equity.
+Oracle maintains broad salary ranges for its roles in order to account for variations in knowledge, skills, experience, market conditions and locations, as well as reflect Oracle's differing …
+The role will generally accept applications for at least three calendar days from the posting date or as long as the job remains posted.
+APPLY NOW

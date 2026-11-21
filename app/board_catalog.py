@@ -8,8 +8,19 @@ How imported boards reach searches (details in docs/board-sources.md):
 2. `start_catalog_trickle(engine)` (called by the engine once, next to prewarm) reads a bounded number of due
    catalogue boards per minute per ATS through the engine's normal unit refresh (same limiter, robots.txt, 429 pause,
    INDEX_TTL_SECONDS). A board that answers with postings gets job_count > 0 and from then on is an ordinary known
-   board, ranked by job_count like boards found by web search; a 404 board is marked dead; an empty one is re-checked
-   after BOARD_CATALOG_RECHECK_DAYS."""
+   board, ranked by job_count like boards found by web search; a 404 board is marked dead.
+3. The order inside one ATS's allowance (PgJobIndex.catalog_due; the per-minute allowance itself is the only thing
+   that decides how many requests are made):
+   - boards whose last read brought US postings are read again once BOARD_CATALOG_REFRESH_HOURS old, oldest first
+     (Workday and Oracle tenants, which searches query per title anyway, once BOARD_CATALOG_RECHECK_DAYS old);
+   - then boards never read (while any are waiting, refreshes take at most half of the allowance);
+   - then boards whose last read failed (first retry after BOARD_CATALOG_RETRY_HOURS) or brought no US posting (first
+     re-check after BOARD_CATALOG_RECHECK_DAYS); each further miss in a row doubles the wait;
+   - last, dead boards (404): tried again after BOARD_CATALOG_DEAD_DAYS, doubling likewise.
+   No wait grows beyond BOARD_CATALOG_MAX_BACKOFF_DAYS. `note_read` (called by the engine after every board read,
+   whoever asked for it) records the outcome: US postings found, or a miss.
+Workable: its registry entry is query-based, but the same entry reads one employer account when it is given an
+account id (providers/workable.py), so catalogue accounts are read here like the boards of the keyed sources."""
 import asyncio
 import csv
 import logging
@@ -19,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from .job_normalizer import us_location_status
 from .providers import ats_extra, ats_startup
 from .providers.boards import SEED_BOARDS, WORKDAY_SITES
 
@@ -37,11 +49,27 @@ def _env_int(name: str, default: int) -> int:
 
 
 # Settings (to be moved into app/config.py). Boards read per minute per ATS by the trickle; 0 switches an ATS off.
+# Recruitee, 15 a minute: every Recruitee board is its own employer host ({company}.recruitee.com) and one read is two
+# requests to that host (its robots.txt, then the one Careers Site API call that returns the whole board), after which
+# the host is left alone for at least BOARD_CATALOG_REFRESH_HOURS. So the rate does not decide how hard any employer is
+# asked, only how much of the shared Recruitee pace the trickle takes: the limiter allows one request a second for the
+# whole platform (search_engine.HOST_INTERVALS), 15 boards are 30 requests, half of each minute; the other half stays
+# free for searches. 2,956 catalogue boards / 15 = 3.3 hours for the first pass (it was 8.2 hours at 6).
+# Workable, 4 a minute (unchanged, but only now in effect): all accounts live on one host, apply.workable.com.
 DEFAULT_PER_MINUTE = {"greenhouse": 20, "lever": 8, "ashby": 8, "workable": 4, "workday": 2, "smartrecruiters": 4, "bamboohr": 6,
-                      "recruitee": 6, "pinpoint": 6, "rippling": 4}
+                      "recruitee": 15, "pinpoint": 6, "rippling": 4,
+                      # remembered postings on employers' own sites (registry.CAREER_PAGE): one page request each, to that
+                      # employer's own host, at most once a day per page
+                      "career_page": 12}
 PER_MINUTE = {ats: _env_int(f"BOARD_CATALOG_PER_MINUTE_{ats.upper()}", n) for ats, n in DEFAULT_PER_MINUTE.items()}
 TRICKLE_ENABLED = os.environ.get("BOARD_CATALOG_TRICKLE", "1").strip().lower() not in ("0", "false", "no", "off")
-RECHECK_DAYS = _env_int("BOARD_CATALOG_RECHECK_DAYS", 7)
+RECHECK_DAYS = _env_int("BOARD_CATALOG_RECHECK_DAYS", 7)          # first re-check of a board that had no US posting
+REFRESH_HOURS = _env_int("BOARD_CATALOG_REFRESH_HOURS", 24)       # a board with US postings is read again when this old
+RETRY_HOURS = _env_int("BOARD_CATALOG_RETRY_HOURS", 6)            # first retry of a board whose read failed
+DEAD_DAYS = _env_int("BOARD_CATALOG_DEAD_DAYS", 30)               # first retry of a board that answered "not found"
+MAX_BACKOFF_DAYS = _env_int("BOARD_CATALOG_MAX_BACKOFF_DAYS", 90) # no wait doubles beyond this
+# Sources whose registry entry is query-based (not `keyed`) but reads one employer account when given its id.
+ACCOUNT_SOURCES = ("workable",)
 MAX_INFLIGHT = _env_int("BOARD_CATALOG_MAX_INFLIGHT", 150)       # skip a tick while the engine is this busy
 
 _SIMPLE = re.compile(r"[a-z0-9](?:[a-z0-9_.-]{0,98}[a-z0-9])?")
@@ -196,17 +224,55 @@ async def catalog_tick(engine, per_minute: dict[str, int] | None = None) -> int:
     if not hasattr(index, "catalog_due") or len(getattr(engine, "_inflight", {})) > MAX_INFLIGHT:
         return 0
     rates = per_minute or PER_MINUTE
-    wanted = {ats: n for ats, n in rates.items() if n > 0 and ats in engine.specs and engine.specs[ats].keyed}
-    due = await index.catalog_due(wanted, RECHECK_DAYS * 86400.0)
+    wanted = {ats: n for ats, n in rates.items()
+              if n > 0 and ats in engine.specs and (engine.specs[ats].keyed or ats in ACCOUNT_SOURCES)}
+    # Sources that are searched per title (Workday, Oracle) are kept fresh by the searches themselves; here a read only
+    # proves that the tenant is alive, so a live one is looked at again after the re-check time, not the refresh time.
+    queried = {ats: n for ats, n in wanted.items() if engine.specs[ats].kind == "search" and engine.specs[ats].keyed}
+    boards = {ats: n for ats, n in wanted.items() if ats not in queried}
+    waits = (RETRY_HOURS * 3600.0, DEAD_DAYS * 86400.0, MAX_BACKOFF_DAYS * 86400.0)
+    due = await index.catalog_due(boards, RECHECK_DAYS * 86400.0, REFRESH_HOURS * 3600.0, *waits) if boards else []
+    if queried:
+        due += await index.catalog_due(queried, RECHECK_DAYS * 86400.0, RECHECK_DAYS * 86400.0, *waits)
     await index.catalog_touch(due)
     for ats, key in due:
         engine._spawn(Unit(ats, key, ""), "catalog")
     return len(due)
 
 
+def us_postings(jobs) -> int:
+    """How many of a board's postings are in, or open to, the United States (the rule searches screen with)."""
+    return sum(1 for j in jobs if us_location_status(j.location, j.country_hint)[0])
+
+
+_note_failed = False
+
+
+async def note_read(index, unit, jobs) -> None:
+    """Engine hook, after every read of one employer board (catalogue trickle or search): `jobs` are the postings read,
+    None when the read failed. Stores what catalog_due orders by. Never raises: a read must not fail over this note
+    (for example while the migration that adds the columns has not run yet)."""
+    global _note_failed
+    from .providers.registry import SPECS
+    spec = SPECS.get(unit.src)
+    if unit.scope or unit.key == "*" or not hasattr(index, "catalog_result") or not (
+            (spec and spec.keyed) or unit.src in ACCOUNT_SOURCES):
+        return
+    try:
+        count = None if jobs is None else us_postings(jobs) if len(jobs) < 200 else await asyncio.to_thread(us_postings, jobs)
+        await index.catalog_result(unit.src, unit.key, count)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        if not _note_failed:
+            _note_failed = True
+            log.warning("catalogue read history is not being recorded: %s", type(exc).__name__)
+
+
 def start_catalog_trickle(engine, interval: float = 60.0, per_minute: dict[str, int] | None = None) -> asyncio.Task | None:
     """Engine hook: call once after the engine is built (for example in SearchEngine.prewarm). Reads the imported
-    catalogue at the bounded rate above until every board has been read once, then keeps re-checking empty ones."""
+    catalogue at the bounded rate above until every board has been read once, and keeps the boards with US postings
+    fresh; boards without them are re-checked at growing intervals (module docstring, point 3)."""
     if not TRICKLE_ENABLED:
         return None
     scale = interval / 60.0

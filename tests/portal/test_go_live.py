@@ -1,5 +1,5 @@
 """Ending test mode: an Admin deletes the test data once; without test mode nothing can be deleted from the screen."""
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.portal.models import AppSetting, AuditLog, Candidate, Session, Team, User
 from app.portal.services import settings as settings_service
@@ -21,6 +21,7 @@ async def test_go_live_removes_test_data_once_and_keeps_admin_and_settings(world
     assert await count(world, Candidate) == 4 and await count(world, Team) == 2
     async with world.sessions() as db:
         await settings_service.set_test_mode(db, world.settings, True)
+        await db.execute(text("INSERT INTO index_meta (key, value) VALUES ('rankcache:judge:abc', '{}'), ('searx:keep', '{}')"))
         await db.commit()
     assert (await admin.patch("/api/settings", json={"default_target_count": 40})).json()["test_mode"] is True
     # Only an Admin, only with the typed words.
@@ -39,3 +40,5 @@ async def test_go_live_removes_test_data_once_and_keeps_admin_and_settings(world
     assert (await tl.get("/api/auth/me")).status_code == 401
     assert (await admin.post("/api/admin/go-live", json=body)).status_code == 409
     assert await count(world, AppSetting) == 1
+    async with world.sessions() as db:          # model judgements about the test candidates are gone; the rest of the job index stays
+        assert [r[0] for r in await db.execute(text("SELECT key FROM index_meta ORDER BY key"))] == ["searx:keep"]

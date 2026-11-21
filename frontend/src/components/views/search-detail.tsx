@@ -370,7 +370,7 @@ export function SearchDetailView({ searchId }: { searchId: string }) {
             Started by {run.initiated_by?.name ?? "someone who left"}
             {run.team ? ` for ${run.team.name}` : ""}.{" "}
             {active
-              ? run.stage || "Waiting for the background worker."
+              ? run.stage || (run.status === "running" ? "Starting the search." : "Waiting for the background worker.")
               : `Finished ${formatDateTime(run.completed_at)}, after ${formatDuration(run.started_at ?? run.created_at, run.completed_at)}.`}
           </>
         }
@@ -407,7 +407,7 @@ export function SearchDetailView({ searchId }: { searchId: string }) {
               <RunSettings run={run} />
             </Panel>
             <Panel title="Sources">
-              <RunSources sources={run.sources} />
+              <RunSources sources={run.sources} active={active} />
             </Panel>
           </div>
         </div>

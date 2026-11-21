@@ -1,0 +1,1264 @@
+{
+ "collected": "2026-11-21",
+ "about": "Evaluation set for the page verifier: addresses and hand-made labels only. Every label was written after reading the live page (raw fetch, and a headless-browser render where 'needs' is 'browser') on the collection date. Postings close; the labels describe that day. kind: open_us / open_non_us / open_no_location are single open postings; closed, stale, listing, home and unreadable must never be accepted. 'lead' is what an AI web-search lead would claim about the address (title, employer); it is used to test the path that trusts a claimed title.",
+ "fields": {
+  "work_mode": "Remote / Hybrid / On-site, or '' when the page does not state one",
+  "posted": "ISO date the page states (structured data or text), '' when it states none",
+  "salary": "the numbers of the pay range the page states, [] when it states none",
+  "evidence": "how an open posting can be read: structured data in the first response, structured data only after rendering, or text only"
+ },
+ "pages": [
+  {
+   "id": "jv-carfax-us",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/carfax/job/orq6Afwh",
+   "kind": "open_us",
+   "why": "Open posting, picked from the employer's live list; JobPosting JSON-LD (hiringOrganization is a plain string).",
+   "title": "Inside Sales Account Executive - Dealer Business",
+   "company": "CARFAX",
+   "location": "Reston, Virginia",
+   "location_tokens": [
+    "Reston"
+   ],
+   "work_mode": "Hybrid",
+   "posted": "2026-11-13",
+   "salary": [
+    "44,300",
+    "91,500"
+   ],
+   "lead": {
+    "title": "Inside Sales Account Executive - Dealer Business",
+    "company": "CARFAX"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jv-actionet-us",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/actionet/job/otv7Afwp",
+   "kind": "open_us",
+   "why": "Open posting on a custom Jobvite template without structured data.",
+   "title": "Cloud Architect",
+   "company": "ActioNet",
+   "location": "Silver Spring, Maryland",
+   "location_tokens": [
+    "Silver Spring"
+   ],
+   "work_mode": "Hybrid",
+   "posted": "",
+   "salary": [
+    "165,000",
+    "178,000"
+   ],
+   "title_also": [
+    "Cloud Architect | Req#4774"
+   ],
+   "company_also": [
+    "ActioNet, Inc."
+   ],
+   "lead": {
+    "title": "Cloud Architect",
+    "company": "ActioNet"
+   },
+   "evidence": "plain html, no structured data"
+  },
+  {
+   "id": "jv-webmd-us",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/webmd/job/omxbxfwl",
+   "kind": "open_us",
+   "why": "Open posting, still in the employer's live list although datePosted is 2025-08-12 (15 months old).",
+   "title": "Client Success Associate (Associate Account Manager)",
+   "company": "WebMD",
+   "location": "Newark, New Jersey",
+   "location_tokens": [
+    "Newark"
+   ],
+   "work_mode": "",
+   "posted": "2025-08-12",
+   "salary": [
+    "58,500",
+    "65,000"
+   ],
+   "lead": {
+    "title": "Client Success Associate (Associate Account Manager)",
+    "company": "WebMD"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jv-egnyte-us",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/egnyte/job/o0n4AfwL",
+   "kind": "open_us",
+   "why": "Open posting with JobPosting JSON-LD; hourly pay range.",
+   "title": "Sr. Invoicing Analyst - US",
+   "company": "Egnyte",
+   "location": "Mountain View, California",
+   "location_tokens": [
+    "Mountain View"
+   ],
+   "work_mode": "Hybrid",
+   "posted": "2026-11-06",
+   "salary": [
+    "35.00",
+    "45.00"
+   ],
+   "lead": {
+    "title": "Sr. Invoicing Analyst - US",
+    "company": "Egnyte"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jv-carfax-ca",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/carfax/job/oqJ7AfwA",
+   "kind": "open_non_us",
+   "why": "Open posting in London, Ontario, Canada.",
+   "title": "Dealer Account Manager",
+   "company": "CARFAX",
+   "location": "London, Ontario",
+   "location_tokens": [
+    "London",
+    "Ontario"
+   ],
+   "work_mode": "Hybrid",
+   "posted": "2026-11-19",
+   "salary": [
+    "53,700",
+    "67,100"
+   ],
+   "lead": {
+    "title": "Dealer Account Manager",
+    "company": "CARFAX"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jv-ornge-ca",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/ornge/job/oUX7Afwi",
+   "kind": "open_non_us",
+   "why": "Open posting in Oakville, Ontario, Canada.",
+   "title": "Biomedical Engineering Technologist",
+   "company": "Ornge",
+   "location": "Oakville, ON",
+   "location_tokens": [
+    "Oakville"
+   ],
+   "work_mode": "On-site",
+   "posted": "2026-11-17",
+   "salary": [
+    "86,281",
+    "102,459"
+   ],
+   "lead": {
+    "title": "Biomedical Engineering Technologist",
+    "company": "Ornge"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jv-nutanix-mx",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/nutanix/job/o0lEAfwj",
+   "kind": "open_non_us",
+   "why": "Open posting in Mexico City on a custom template without structured data.",
+   "title": "AI Agent Engineer (Mexico)",
+   "company": "Nutanix",
+   "location": "Mexico City, Mexico",
+   "location_tokens": [
+    "Mexico"
+   ],
+   "work_mode": "Hybrid",
+   "posted": "",
+   "salary": [],
+   "lead": {
+    "title": "AI Agent Engineer (Mexico)",
+    "company": "Nutanix"
+   },
+   "evidence": "plain html, no structured data"
+  },
+  {
+   "id": "jv-carfax-gone",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/carfax/job/oqJ7AfwB",
+   "kind": "closed",
+   "why": "A well-formed posting address whose id does not exist (stands for a removed posting): 303 to /careers/carfax/jobs?error=404, which says 'The job listing no longer exists.'",
+   "lead": {
+    "title": "Dealer Account Manager",
+    "company": "CARFAX"
+   }
+  },
+  {
+   "id": "jv-list-carfax",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/carfax/jobs",
+   "kind": "listing",
+   "why": "The employer's job list.",
+   "lead": {
+    "title": "National Account Manager",
+    "company": "CARFAX"
+   }
+  },
+  {
+   "id": "jv-list-actionet",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/actionet/jobs",
+   "kind": "listing",
+   "why": "The employer's job list.",
+   "lead": {
+    "title": "Cloud Architect",
+    "company": "ActioNet"
+   }
+  },
+  {
+   "id": "jv-home-webmd",
+   "platform": "jobvite",
+   "url": "https://jobs.jobvite.com/webmd",
+   "kind": "home",
+   "why": "Career home page (it also lists the open jobs).",
+   "lead": {
+    "title": "Account Manager",
+    "company": "WebMD"
+   }
+  },
+  {
+   "id": "av-bb-46236",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Technology-Finance-Finance-Transformation/46236",
+   "kind": "open_us",
+   "why": "Open posting, no structured data.",
+   "title": "Technology Finance- Finance Transformation",
+   "company": "Bloomberg",
+   "location": "New York",
+   "location_tokens": [
+    "New York"
+   ],
+   "work_mode": "",
+   "posted": "",
+   "salary": [
+    "110,000",
+    "150,000"
+   ],
+   "lead": {
+    "title": "Technology Finance- Finance Transformation",
+    "company": "Bloomberg"
+   },
+   "evidence": "plain html, no structured data"
+  },
+  {
+   "id": "av-bb-46230",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Index-Production-Analyst/46230",
+   "kind": "open_us",
+   "why": "Open posting, no structured data.",
+   "title": "Index Production Analyst",
+   "company": "Bloomberg",
+   "location": "New York",
+   "location_tokens": [
+    "New York"
+   ],
+   "work_mode": "",
+   "posted": "",
+   "salary": [
+    "115,000",
+    "150,000"
+   ],
+   "lead": {
+    "title": "Index Production Analyst",
+    "company": "Bloomberg"
+   },
+   "evidence": "plain html, no structured data"
+  },
+  {
+   "id": "av-bb-46249",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Climate-Data-Utility-Tech-Team-Senior-Data-Engineer/46249",
+   "kind": "open_non_us",
+   "why": "Open posting in London.",
+   "title": "Climate Data Utility Tech Team - Senior Data Engineer",
+   "company": "Bloomberg",
+   "location": "London",
+   "location_tokens": [
+    "London"
+   ],
+   "work_mode": "",
+   "posted": "",
+   "salary": [],
+   "lead": {
+    "title": "Climate Data Utility Tech Team - Senior Data Engineer",
+    "company": "Bloomberg"
+   },
+   "evidence": "plain html, no structured data"
+  },
+  {
+   "id": "av-bb-16328",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Senior-Software-Engineer-Data-License-Meta-Applications/16328",
+   "kind": "closed",
+   "why": "Removed posting: 302 to /careers/Error, which answers HTTP 403 'An error has occurred. Page not found'.",
+   "lead": {
+    "title": "Senior Software Engineer Data License Meta Applications",
+    "company": "Bloomberg"
+   }
+  },
+  {
+   "id": "av-bb-17316",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Analyst-Billing-Finance-Administration/17316",
+   "kind": "closed",
+   "why": "Removed posting: 302 to /careers/Error, which answers HTTP 403 'An error has occurred. Page not found'.",
+   "lead": {
+    "title": "Analyst Billing Finance Administration",
+    "company": "Bloomberg"
+   }
+  },
+  {
+   "id": "av-bb-16376",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers/JobDetail/Index-Production-Analyst/16376",
+   "kind": "closed",
+   "why": "Removed posting: 302 to /careers/Error, which answers HTTP 403 'An error has occurred. Page not found'.",
+   "lead": {
+    "title": "Index Production Analyst",
+    "company": "Bloomberg"
+   }
+  },
+  {
+   "id": "av-xerox-51749",
+   "platform": "avature",
+   "url": "https://xerox.avature.net/en_US/careers/JobDetail/Sr-Manufacturing-Engineer/51749",
+   "kind": "closed",
+   "why": "Removed posting: 302 to /en_US/careers/Error (HTTP 403, 'Page not found').",
+   "lead": {
+    "title": "Sr Manufacturing Engineer",
+    "company": "Xerox"
+   }
+  },
+  {
+   "id": "av-ibm-43815",
+   "platform": "avature",
+   "url": "https://ibmglobal.avature.net/en_US/careers/JobDetail/Business-Analyst/43815",
+   "kind": "unreadable",
+   "why": "301 to careers.ibm.com, which answers HTTP 202 with a 'verify that you're not a robot' page. Not worked around.",
+   "lead": {
+    "title": "Business Analyst",
+    "company": "IBM"
+   }
+  },
+  {
+   "id": "av-ibm-29585",
+   "platform": "avature",
+   "url": "https://ibmglobal.avature.net/en_US/careers/JobDetail/Business-Analyst/29585",
+   "kind": "unreadable",
+   "why": "Same robot check as the other IBM address.",
+   "lead": {
+    "title": "Business Analyst",
+    "company": "IBM"
+   }
+  },
+  {
+   "id": "av-delta-33828",
+   "platform": "avature",
+   "url": "https://delta.avature.net/en_US/careers/JobDetail/Senior-Technical-Product-Engineer/33828",
+   "kind": "unreadable",
+   "why": "HTTP 202 with a 'verify that you're not a robot' page. Not worked around.",
+   "lead": {
+    "title": "Senior Technical Product Engineer",
+    "company": "Delta Air Lines"
+   }
+  },
+  {
+   "id": "av-bb-search",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers/SearchJobs",
+   "kind": "listing",
+   "why": "Job search page (12 of 331 results).",
+   "lead": {
+    "title": "Index Production Analyst",
+    "company": "Bloomberg"
+   }
+  },
+  {
+   "id": "av-bb-home",
+   "platform": "avature",
+   "url": "https://bloomberg.avature.net/careers",
+   "kind": "home",
+   "why": "Career home page (shows the first results of the job list).",
+   "lead": {
+    "title": "Legal Negotiations Specialist",
+    "company": "Bloomberg"
+   }
+  },
+  {
+   "id": "or-eeho-350789",
+   "platform": "oracle",
+   "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/350789",
+   "kind": "open_us",
+   "why": "Open posting (rendered). The page adds JobPosting JSON-LD by script about two seconds after the text appears.",
+   "needs": "browser",
+   "title": "Principal Condition Monitoring Engineer – Power Generation - Data Center Infrastructure (on-site Nashville, TN)",
+   "company": "Oracle",
+   "location": "Nashville, TN, United States",
+   "location_tokens": [
+    "Nashville"
+   ],
+   "work_mode": "On-site",
+   "posted": "2026-11-20",
+   "salary": [
+    "84,900",
+    "209,500"
+   ],
+   "lead": {
+    "title": "Principal Condition Monitoring Engineer – Power Generation - Data Center Infrastructure (on-site Nashville, TN)",
+    "company": "Oracle"
+   },
+   "evidence": "rendered, json-ld added by script"
+  },
+  {
+   "id": "or-eeho-338589",
+   "platform": "oracle",
+   "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/job/338589",
+   "kind": "open_us",
+   "why": "Open posting (rendered) with three locations; no JSON-LD appeared within 14 seconds.",
+   "needs": "browser",
+   "title": "Senior Platform Software Engineer",
+   "company": "Oracle",
+   "location": "Austin, TX, United States; Nashville, TN, United States; United States",
+   "location_tokens": [
+    "Austin"
+   ],
+   "work_mode": "",
+   "posted": "2026-11-18",
+   "salary": [
+    "92,500",
+    "209,500"
+   ],
+   "lead": {
+    "title": "Senior Platform Software Engineer",
+    "company": "Oracle"
+   },
+   "evidence": "rendered, no structured data"
+  },
+  {
+   "id": "or-ebwh-71567",
+   "platform": "oracle",
+   "url": "https://ebwh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/71567",
+   "kind": "closed",
+   "why": "Rendered page says 'This job is no longer available.' The raw page still carries the old title in og:title.",
+   "needs": "browser",
+   "lead": {
+    "title": "Sr. Manager, Group Product Management",
+    "company": "Macy's"
+   }
+  },
+  {
+   "id": "or-ecnf-301415",
+   "platform": "oracle",
+   "url": "https://ecnf.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/301415",
+   "kind": "closed",
+   "why": "Rendered page says 'This job is no longer available.' The raw page still carries the old title in og:title.",
+   "needs": "browser",
+   "lead": {
+    "title": "Summer 2026 Software Engineering Internship - ICD",
+    "company": "Tradeweb"
+   }
+  },
+  {
+   "id": "or-ewzx-10467",
+   "platform": "oracle",
+   "url": "https://fa-ewzx-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/10467",
+   "kind": "unreadable",
+   "why": "robots.txt answered HTTP 503 ('Planned Outage'), so the page is not opened (RFC 9309).",
+   "lead": {
+    "title": "Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "or-eeho-list",
+   "platform": "oracle",
+   "url": "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_45001/requisitions",
+   "kind": "listing",
+   "why": "Job search page (302 to .../jobs).",
+   "needs": "browser",
+   "lead": {
+    "title": "Senior Platform Software Engineer",
+    "company": "Oracle"
+   }
+  },
+  {
+   "id": "or-etbx-home",
+   "platform": "oracle",
+   "url": "https://fa-etbx-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/nfcu",
+   "kind": "home",
+   "why": "Career site home page.",
+   "needs": "browser",
+   "lead": {
+    "title": "Software Engineer",
+    "company": "Navy Federal Credit Union"
+   }
+  },
+  {
+   "id": "or-ejov-home",
+   "platform": "oracle",
+   "url": "https://ejov.fa.ca2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX",
+   "kind": "home",
+   "why": "Career site home page (raw shell only; not rendered in this evaluation).",
+   "lead": {
+    "title": "Software Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "adp-open-1",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&jobId=274375884743_1&lang=en_US",
+   "kind": "open_no_location",
+   "why": "Open posting (rendered; picked from the live career centre). The page has no employer or location field; only the posting text names the employer's brand (company_also).",
+   "needs": "browser",
+   "title": "QP GOGAS #27 Maintenance",
+   "company": "",
+   "location": "",
+   "location_tokens": [],
+   "work_mode": "",
+   "posted": "",
+   "salary": [],
+   "company_also": [
+    "Quality Plus",
+    "GOGAS",
+    "Quality Plus / GOGAS"
+   ],
+   "lead": {
+    "title": "QP GOGAS #27 Maintenance",
+    "company": "Quality Plus"
+   },
+   "evidence": "rendered, no structured data"
+  },
+  {
+   "id": "adp-open-2",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&jobId=274382090280_1&lang=en_US",
+   "kind": "open_no_location",
+   "why": "Open posting (rendered; picked from the live career centre). The page has no employer or location field; only the posting text names the employer's brand (company_also).",
+   "needs": "browser",
+   "title": "QM 55 Deli Associate",
+   "company": "",
+   "location": "",
+   "location_tokens": [],
+   "work_mode": "",
+   "posted": "",
+   "salary": [],
+   "company_also": [
+    "Quality Mart"
+   ],
+   "lead": {
+    "title": "QM 55 Deli Associate",
+    "company": "Quality Mart"
+   },
+   "evidence": "rendered, no structured data"
+  },
+  {
+   "id": "adp-406690",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=6a23fca3-7b64-4140-a007-d213cba67288&ccId=19000101_000001&jobId=406690&source=CC2&lang=en_US",
+   "kind": "closed",
+   "why": "Rendered page says 'We are no longer accepting applications for this position.'",
+   "needs": "browser",
+   "lead": {
+    "title": "Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "adp-374967",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?ccId=1569331591_14508&cid=07299349-a3c4-4907-95a8-134329e452f8&jobId=374967&lang=en_US&source=CC3",
+   "kind": "closed",
+   "why": "Rendered page says 'This page is currently not available. Sorry for the inconvenience.'",
+   "needs": "browser",
+   "lead": {
+    "title": "Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "adp-563198",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=c0201fdc-34ad-44a1-b0a5-6bd2e603ac46&ccId=19000101_000001&lang=en_US&jobId=563198",
+   "kind": "closed",
+   "why": "Rendered page says 'We are no longer accepting applications for this position.'",
+   "needs": "browser",
+   "lead": {
+    "title": "Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "adp-565243-mdf",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mdf/recruitment/recruitment.html?cid=d041dd25-4cbf-4fcd-bf77-ecd856f31f0f&ccId=19000101_000001&jobId=565243&lang=en_US",
+   "kind": "closed",
+   "why": "The short path variant (/mdf/recruitment/...) of the career centre; rendered page says 'We are no longer accepting applications for this position.'",
+   "needs": "browser",
+   "lead": {
+    "title": "Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "adp-384718",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=b965dec1-e12b-4ad0-a33a-a578a3f125cf&ccId=19000101_000001&jobId=384718&source=CC2&lang=en_US",
+   "kind": "closed",
+   "why": "Rendered page says 'We are no longer accepting applications for this position.'",
+   "needs": "browser",
+   "lead": {
+    "title": "Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "adp-cc-list",
+   "platform": "adp",
+   "url": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=0154ae68-ab52-434c-afbd-28d2d498db37&ccId=19000101_000001&type=JS&lang=en_US",
+   "kind": "listing",
+   "why": "Career centre: 'Current Openings (20 of 60)'.",
+   "needs": "browser",
+   "lead": {
+    "title": "Customer Service Representative",
+    "company": "Quality Mart"
+   }
+  },
+  {
+   "id": "jz-brennan",
+   "platform": "jazzhr",
+   "url": "https://brennancenter.applytojob.com/apply/WpIfUaLo9Q/Associate-Editor",
+   "kind": "open_us",
+   "why": "Open posting with JobPosting JSON-LD.",
+   "title": "Associate Editor",
+   "company": "Brennan Center for Justice",
+   "location": "New York, NY",
+   "location_tokens": [
+    "New York"
+   ],
+   "work_mode": "",
+   "posted": "2026-10-08",
+   "salary": [
+    "100,000",
+    "120,000"
+   ],
+   "lead": {
+    "title": "Associate Editor",
+    "company": "Brennan Center for Justice"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jz-ease",
+   "platform": "jazzhr",
+   "url": "https://easeinc.applytojob.com/apply/vMHpWDZa3l/Account-Executive",
+   "kind": "open_us",
+   "why": "Open posting WITHOUT JobPosting JSON-LD (application form on the page). Location is 'Remote'; the form asks about US work authorization.",
+   "title": "Account Executive",
+   "company": "Ease Inc",
+   "location": "Remote",
+   "location_tokens": [
+    "Remote"
+   ],
+   "work_mode": "Remote",
+   "posted": "",
+   "salary": [],
+   "us_evidence": "weak: only the application form's US work-authorization questions",
+   "lead": {
+    "title": "Account Executive",
+    "company": "Ease Inc"
+   },
+   "evidence": "plain html, no structured data"
+  },
+  {
+   "id": "jz-blueacorn-dallas",
+   "platform": "jazzhr",
+   "url": "https://blueacornici.applytojob.com/apply/7S1Z6abQ9R/AEP-Technical-Architect-Dallas-TX",
+   "kind": "open_us",
+   "why": "Open posting with JobPosting JSON-LD (address without a country).",
+   "title": "AEP Technical Architect (Dallas, TX)",
+   "company": "Blue Acorn iCi",
+   "location": "Dallas, TX",
+   "location_tokens": [
+    "Dallas"
+   ],
+   "work_mode": "",
+   "posted": "2026-10-15",
+   "salary": [
+    "150,000",
+    "200,000"
+   ],
+   "lead": {
+    "title": "AEP Technical Architect (Dallas, TX)",
+    "company": "Blue Acorn iCi"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jz-improvado-mx",
+   "platform": "jazzhr",
+   "url": "https://improvado.applytojob.com/apply/T0rYDrhiDU/Junior-Analyst",
+   "kind": "open_non_us",
+   "why": "Open remote posting; JSON-LD says TELECOMMUTE with applicantLocationRequirements = MX.",
+   "title": "Junior Analyst",
+   "company": "Improvado",
+   "location": "Remote",
+   "location_tokens": [
+    "Remote"
+   ],
+   "work_mode": "Remote",
+   "posted": "2026-11-09",
+   "salary": [],
+   "lead": {
+    "title": "Junior Analyst",
+    "company": "Improvado"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jz-blueacorn-mx",
+   "platform": "jazzhr",
+   "url": "https://blueacornici.applytojob.com/apply/mkikXCuVDG/Project-Manager-Activation-Operations-Manager-Remote-Mexico-Only",
+   "kind": "open_non_us",
+   "why": "Open remote posting, 'Remote - Mexico Only'.",
+   "title": "Project Manager, Activation - Operations Manager (Remote - Mexico Only)",
+   "company": "Blue Acorn iCi",
+   "location": "Remote",
+   "location_tokens": [
+    "Remote"
+   ],
+   "work_mode": "Remote",
+   "posted": "2026-09-14",
+   "salary": [],
+   "lead": {
+    "title": "Project Manager, Activation - Operations Manager (Remote - Mexico Only)",
+    "company": "Blue Acorn iCi"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "jz-ascent-de",
+   "platform": "jazzhr",
+   "url": "https://ascent.applytojob.com/apply/mfTX9WNJtu/Senior-Platform-Engineer",
+   "kind": "open_non_us",
+   "why": "Open posting in Munich, Germany, without JobPosting JSON-LD.",
+   "title": "Senior Platform Engineer",
+   "company": "Acuity Analytics",
+   "location": "Munich, Germany",
+   "location_tokens": [
+    "Munich"
+   ],
+   "work_mode": "",
+   "posted": "",
+   "salary": [],
+   "lead": {
+    "title": "Senior Platform Engineer",
+    "company": "Acuity Analytics"
+   },
+   "evidence": "plain html, no structured data"
+  },
+  {
+   "id": "jz-delve",
+   "platform": "jazzhr",
+   "url": "https://delve.applytojob.com/apply/CVSJgjU7vC/Senior-Electrical-Engineer",
+   "kind": "closed",
+   "why": "HTTP 410; the page says 'This position is no longer available.'",
+   "lead": {
+    "title": "Senior Electrical Engineer",
+    "company": "Delve"
+   }
+  },
+  {
+   "id": "jz-alia",
+   "platform": "jazzhr",
+   "url": "https://aliaservices.applytojob.com/apply/nG8gAJalkr/Financial-Analyst",
+   "kind": "closed",
+   "why": "HTTP 410; the page says 'This position is no longer available.'",
+   "lead": {
+    "title": "Financial Analyst",
+    "company": "Alia Services"
+   }
+  },
+  {
+   "id": "jz-context",
+   "platform": "jazzhr",
+   "url": "https://context.applytojob.com/apply/qD1KubbhMT/Growth-Marketing-Manager-Remote",
+   "kind": "closed",
+   "why": "HTTP 410; the page says 'This position is no longer available.'",
+   "lead": {
+    "title": "Growth Marketing Manager (Remote)",
+    "company": "Context"
+   }
+  },
+  {
+   "id": "jz-bluevoyant",
+   "platform": "jazzhr",
+   "url": "https://bluevoyant.applytojob.com/apply/AvigSN3GW8/Technical-Project-Manager",
+   "kind": "closed",
+   "why": "HTTP 410; the page says 'This position is no longer available.'",
+   "lead": {
+    "title": "Technical Project Manager",
+    "company": "BlueVoyant"
+   }
+  },
+  {
+   "id": "jz-cyberjin",
+   "platform": "jazzhr",
+   "url": "https://cyberjin.applytojob.com/apply/KNnkHogzIW/Software-Engineer",
+   "kind": "closed",
+   "why": "Removed employer or posting: 302 and 301 to the vendor's page www.jazzhr.com/job-seekers.",
+   "lead": {
+    "title": "Software Engineer",
+    "company": "Cyberjin"
+   }
+  },
+  {
+   "id": "jz-list-analytica",
+   "platform": "jazzhr",
+   "url": "https://analyticallc.applytojob.com/apply/jobs",
+   "kind": "listing",
+   "why": "Job search form ('JazzHR » Job Listings').",
+   "lead": {
+    "title": "Data Analyst",
+    "company": "Analytica"
+   }
+  },
+  {
+   "id": "jz-home-blueacorn",
+   "platform": "jazzhr",
+   "url": "https://blueacornici.applytojob.com/",
+   "kind": "home",
+   "why": "Career home page with the list of current openings.",
+   "lead": {
+    "title": "Data Architect (Remote, Contract)",
+    "company": "Blue Acorn iCi"
+   }
+  },
+  {
+   "id": "sr-arista-us-1",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks/744000160961018-data-analytics-intern",
+   "kind": "open_us",
+   "why": "Open posting; schema.org JobPosting as microdata.",
+   "title": "Data Analytics Intern",
+   "company": "Arista Networks",
+   "location": "Austin, TX, USA",
+   "location_tokens": [
+    "Austin"
+   ],
+   "work_mode": "",
+   "posted": "2026-11-10",
+   "salary": [],
+   "lead": {
+    "title": "Data Analytics Intern",
+    "company": "Arista Networks"
+   },
+   "evidence": "microdata"
+  },
+  {
+   "id": "sr-arista-us-2",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks/744000157227879-mechanical-engineer",
+   "kind": "open_us",
+   "why": "Open posting; microdata. States two pay ranges (base and total).",
+   "title": "Mechanical Engineer",
+   "company": "Arista Networks",
+   "location": "Santa Clara, CA, USA",
+   "location_tokens": [
+    "Santa Clara"
+   ],
+   "work_mode": "",
+   "posted": "2026-10-22",
+   "salary": [
+    "120,000",
+    "180,000"
+   ],
+   "salary_also": [
+    [
+     "220,000",
+     "400,000"
+    ]
+   ],
+   "lead": {
+    "title": "Mechanical Engineer",
+    "company": "Arista Networks"
+   },
+   "evidence": "microdata"
+  },
+  {
+   "id": "sr-arista-us-3",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks/744000160957819-senior-systems-engineer-hyperscaler-ai-and-cloud-titans",
+   "kind": "open_us",
+   "why": "Open posting; microdata.",
+   "title": "Senior Systems Engineer - Hyperscaler, AI, and Cloud Titans",
+   "company": "Arista Networks",
+   "location": "Seattle, WA, USA",
+   "location_tokens": [
+    "Seattle"
+   ],
+   "work_mode": "",
+   "posted": "2026-11-10",
+   "salary": [
+    "128,000",
+    "186,000"
+   ],
+   "lead": {
+    "title": "Senior Systems Engineer - Hyperscaler, AI, and Cloud Titans",
+    "company": "Arista Networks"
+   },
+   "evidence": "microdata"
+  },
+  {
+   "id": "sr-arista-in",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks/744000150058443-software-engineer-kernel-driver",
+   "kind": "open_non_us",
+   "why": "Open posting in Bengaluru, India; microdata.",
+   "title": "Software Engineer-Kernel/Driver",
+   "company": "Arista Networks",
+   "location": "Bengaluru, Karnataka, India",
+   "location_tokens": [
+    "Bengaluru"
+   ],
+   "work_mode": "",
+   "posted": "2026-09-17",
+   "salary": [],
+   "lead": {
+    "title": "Software Engineer-Kernel/Driver",
+    "company": "Arista Networks"
+   },
+   "evidence": "microdata"
+  },
+  {
+   "id": "sr-arista-pl",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks/744000142622720-software-engineer-layer1",
+   "kind": "open_non_us",
+   "why": "Open remote posting in Poland; microdata.",
+   "title": "Software Engineer, Layer1",
+   "company": "Arista Networks",
+   "location": "Poland - Remote, Poland",
+   "location_tokens": [
+    "Poland"
+   ],
+   "work_mode": "Remote",
+   "posted": "2026-08-10",
+   "salary": [],
+   "lead": {
+    "title": "Software Engineer, Layer1",
+    "company": "Arista Networks"
+   },
+   "evidence": "microdata"
+  },
+  {
+   "id": "sr-avaloq-ch",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/Avaloq1/744000144691699-ai-software-engineer",
+   "kind": "open_non_us",
+   "why": "Open posting in Zurich, Switzerland; microdata.",
+   "title": "AI Software Engineer",
+   "company": "Avaloq",
+   "location": "Zurich, Switzerland",
+   "location_tokens": [
+    "Zurich"
+   ],
+   "work_mode": "",
+   "posted": "2026-11-16",
+   "salary": [],
+   "lead": {
+    "title": "AI Software Engineer",
+    "company": "Avaloq"
+   },
+   "evidence": "microdata"
+  },
+  {
+   "id": "sr-achieve",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/Achieve1/3743990006890082-sr-software-engineer",
+   "kind": "closed",
+   "why": "HTTP 200 'This job has expired'; microdata validThrough 2025-02-26.",
+   "lead": {
+    "title": "Sr. Software Engineer",
+    "company": "Achieve"
+   }
+  },
+  {
+   "id": "sr-bosch",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/BoschGroup/743999972136798-software-engineer-multiple-positions-ref223957e-",
+   "kind": "closed",
+   "why": "HTTP 200 'This job has expired'.",
+   "lead": {
+    "title": "Software Engineer (Multiple Positions) (REF223957E)",
+    "company": "Bosch Group"
+   }
+  },
+  {
+   "id": "sr-averna",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/Averna1/744000136080150-data-analyst",
+   "kind": "closed",
+   "why": "HTTP 200 'Sorry, this job has expired' although the whole description is still shown; microdata validThrough 2026-08-18.",
+   "lead": {
+    "title": "Data Analyst",
+    "company": "Averna"
+   }
+  },
+  {
+   "id": "sr-acumen-2015",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/AcumenSolutions/83635838-data-analyst",
+   "kind": "stale",
+   "why": "The page still shows an apply button, but microdata datePosted is 2015-06-22 (eleven years old). Labelled not open by the evaluator; the page itself does not say closed.",
+   "lead": {
+    "title": "Data Analyst",
+    "company": "Acumen Solutions"
+   }
+  },
+  {
+   "id": "sr-list-arista",
+   "platform": "smartrecruiters",
+   "url": "https://jobs.smartrecruiters.com/AristaNetworks",
+   "kind": "listing",
+   "why": "Company page with the job list (301 to careers.smartrecruiters.com/AristaNetworks).",
+   "lead": {
+    "title": "Major Account Manager",
+    "company": "Arista Networks"
+   }
+  },
+  {
+   "id": "own-stripe",
+   "platform": "own",
+   "url": "https://stripe.com/jobs/listing/backend-engineer-core-technology/6042172",
+   "kind": "open_us",
+   "why": "Open posting; 301 to /careers/listing/... (same id). JobPosting JSON-LD and __NEXT_DATA__. datePosted is 2024-06-14 (2.4 years) and the posting is live.",
+   "title": "Backend Engineer, Core Technology",
+   "company": "Stripe",
+   "location": "Chicago; Seattle; South San Francisco HQ; Remote in the United States",
+   "location_tokens": [
+    "Chicago"
+   ],
+   "work_mode": "Remote",
+   "posted": "2024-06-14",
+   "salary": [
+    "142,600",
+    "259,600"
+   ],
+   "work_mode_also": [
+    "Hybrid"
+   ],
+   "lead": {
+    "title": "Backend Engineer, Core Technology",
+    "company": "Stripe"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "own-intuit-job",
+   "platform": "own",
+   "url": "https://jobs.intuit.com/job/new-york/staff-software-engineer/27595/103523578064",
+   "kind": "open_us",
+   "why": "Open posting with JobPosting JSON-LD; the visible text starts with hidden metadata.",
+   "title": "Staff Software Engineer",
+   "company": "Intuit",
+   "location": "New York, New York",
+   "location_tokens": [
+    "New York"
+   ],
+   "work_mode": "",
+   "posted": "2026-11-19",
+   "salary": [
+    "202,500",
+    "274,000"
+   ],
+   "work_mode_also": [
+    "Hybrid"
+   ],
+   "lead": {
+    "title": "Staff Software Engineer",
+    "company": "Intuit"
+   },
+   "evidence": "json-ld"
+  },
+  {
+   "id": "own-dayforce-open",
+   "platform": "own",
+   "url": "https://jobs.dayforcehcm.com/en-US/hok/CANDIDATEPORTAL/jobs/4344",
+   "kind": "open_us",
+   "why": "Open posting (rendered; picked from the employer's live list). Raw page has only __NEXT_DATA__ state, no visible posting. The page's JobPosting data names the employer 'HOK Human Resources'.",
+   "needs": "browser",
+   "title": "Electrical Engineering Design Professional",
+   "company": "HOK",
+   "location": "Houston, TX, USA",
+   "location_tokens": [
+    "Houston"
+   ],
+   "work_mode": "Hybrid",
+   "posted": "2026-11-19",
+   "salary": [],
+   "lead": {
+    "title": "Electrical Engineering Design Professional",
+    "company": "HOK"
+   },
+   "company_also": [
+    "HOK Human Resources"
+   ],
+   "evidence": "rendered, json-ld added by script"
+  },
+  {
+   "id": "own-dayforce-closed-us",
+   "platform": "own",
+   "url": "https://jobs.dayforcehcm.com/en-US/diobr/CANDIDATEPORTAL/jobs/879",
+   "kind": "closed",
+   "why": "Rendered page shows 'This job posting is no longer available' above the full description; the raw page has only state.",
+   "needs": "browser",
+   "lead": {
+    "title": "St. Vincent de Paul Volunteer Coordinator",
+    "company": "Diocese of Baton Rouge"
+   }
+  },
+  {
+   "id": "own-dayforce-closed-uk",
+   "platform": "own",
+   "url": "https://jobs.dayforcehcm.com/en-GB/bhafc/CANDIDATEPORTAL/jobs/788",
+   "kind": "closed",
+   "why": "Rendered page shows 'This job posting is no longer available' (expired 7 March 2026) above the full description.",
+   "needs": "browser",
+   "lead": {
+    "title": "Lead Professional Development Phase Coach (U18)",
+    "company": "Brighton & Hove Albion FC"
+   }
+  },
+  {
+   "id": "own-ultipro-closed",
+   "platform": "own",
+   "url": "https://recruiting.ultipro.com/GAI1001GAII/JobBoard/9e7a337c-fc28-4f1a-baf7-5872b4fb4763/OpportunityDetail?opportunityId=6a8a87c2-96c2-42db-aaff-a4f4893a4b6a",
+   "kind": "closed",
+   "why": "Rendered page shows the full posting with 'Posted on October 7, 2025. Closed : January 7, 2026'.",
+   "needs": "browser",
+   "lead": {
+    "title": "Bridge Project Engineer",
+    "company": "GAI Consultants"
+   }
+  },
+  {
+   "id": "own-apple-gone",
+   "platform": "own",
+   "url": "https://jobs.apple.com/en-us/details/200676418-3543/software-engineer-safari-extensions",
+   "kind": "closed",
+   "why": "HTTP 200 'Page not found. Sorry, this role does not exist or is no longer available.'",
+   "lead": {
+    "title": "Software Engineer, Safari Extensions",
+    "company": "Apple"
+   }
+  },
+  {
+   "id": "own-adobe-gone",
+   "platform": "own",
+   "url": "https://careers.adobe.com/us/en/job/R156430/Software-Development-Engineer",
+   "kind": "closed",
+   "why": "HTTP 410 'the job you are trying to apply for has been filled'.",
+   "lead": {
+    "title": "Software Development Engineer",
+    "company": "Adobe"
+   }
+  },
+  {
+   "id": "own-paylocity-gone",
+   "platform": "own",
+   "url": "https://recruiting.paylocity.com/Recruiting/Jobs/Details/3910930",
+   "kind": "closed",
+   "why": "302 to /Recruiting/Jobs/JobNotFound: 'that job does not exist or is not currently active'.",
+   "lead": {
+    "title": "Engineer",
+    "company": ""
+   }
+  },
+  {
+   "id": "own-walmart-gone",
+   "platform": "own",
+   "url": "https://careers.walmart.com/us/jobs/WD2260542-usa-software-engineer-iii",
+   "kind": "closed",
+   "why": "302 and 307 to /us/en/job-not-found: 'Sorry, but it looks like this page no longer exists.'",
+   "lead": {
+    "title": "(USA) Software Engineer III",
+    "company": "Walmart"
+   }
+  },
+  {
+   "id": "own-microsoft-moved",
+   "platform": "own",
+   "url": "https://jobs.careers.microsoft.com/global/en/job/1451137/Software-Engineer-II-CTJ",
+   "kind": "closed",
+   "why": "301 to the careers home page apply.careers.microsoft.com/careers; the posting id is gone.",
+   "lead": {
+    "title": "Software Engineer II - CTJ",
+    "company": "Microsoft"
+   }
+  },
+  {
+   "id": "own-uber-blocked",
+   "platform": "own",
+   "url": "https://www.uber.com/global/en/careers/list/154786/",
+   "kind": "unreadable",
+   "why": "301 to jobs.uber.com, which answers HTTP 403 'Just a moment...' (bot check). Not worked around.",
+   "lead": {
+    "title": "Software Engineer",
+    "company": "Uber"
+   }
+  },
+  {
+   "id": "own-cisco-search",
+   "platform": "own",
+   "url": "https://jobs.cisco.com/jobs/SearchJobs/software%2Bengineer%2Bintern",
+   "kind": "home",
+   "why": "A job search address that now redirects (302, 303) to the careers home page careers.cisco.com/global/en.",
+   "lead": {
+    "title": "Software Engineer Intern",
+    "company": "Cisco"
+   }
+  },
+  {
+   "id": "own-boeing-list",
+   "platform": "own",
+   "url": "https://jobs.boeing.com/category/engineering-software-jobs/185/2649/1",
+   "kind": "listing",
+   "why": "Category page 'Search Software Engineering Jobs at Boeing'.",
+   "lead": {
+    "title": "Software Engineer",
+    "company": "Boeing"
+   }
+  },
+  {
+   "id": "own-intuit-list",
+   "platform": "own",
+   "url": "https://jobs.intuit.com/category/software-engineering-jobs/27595/68357/1",
+   "kind": "listing",
+   "why": "Category page '126 jobs found for Software Engineering'.",
+   "lead": {
+    "title": "Staff Software Engineer",
+    "company": "Intuit"
+   }
+  },
+  {
+   "id": "co-fly-list",
+   "platform": "own",
+   "url": "https://fly.io/jobs/",
+   "kind": "listing",
+   "why": "A company's own job list in plain HTML: one card per job, and the only link of a card says 'Read more' (the title stands beside it).",
+   "lead": {
+    "title": "Fullstack Engineer",
+    "company": "Fly.io"
+   }
+  }
+ ]
+}
