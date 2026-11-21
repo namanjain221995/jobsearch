@@ -21,3 +21,6 @@ playwright-report/
 # SSH and TLS private keys
 *.pem
 *.key
+
+# Claude Code session data and agent worktrees
+.claude/

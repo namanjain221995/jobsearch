@@ -778,16 +778,18 @@ function Form({ options }: { options: SearchOptions }) {
                   </p>
                 </div>
               )}
-              <div className="flex flex-col gap-2 border-t pt-3">
-                <p className="text-2sm text-muted-foreground">Sources that will be read ({sources.length})</p>
-                <ul className="flex flex-wrap gap-1.5">
-                  {sources.map((source) => (
-                    <li key={source.name}>
-                      <Tag>{source.label}</Tag>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {choosePlatforms && (
+                <div className="flex flex-col gap-2 border-t pt-3">
+                  <p className="text-2sm text-muted-foreground">Sources that will be read ({sources.length})</p>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {sources.map((source) => (
+                      <li key={source.name}>
+                        <Tag>{source.label}</Tag>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {!options.queue_available && (
                 <FormMessage>
                   The background worker queue is not reachable, so a search cannot be started right now. Ask an Admin
