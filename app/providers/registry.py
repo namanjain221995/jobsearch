@@ -109,6 +109,8 @@ async def _no_fetch(ctx: Ctx, key: str, scope: str) -> list[Job]:
 
 SPECS["searxng"] = Spec("searxng", "Web search (SearXNG)", "discovery", _no_fetch, needs=lambda s: bool(s.searxng_url.strip()),
                         note="Search-engine discovery of employer job boards on the ATS hosts above; found boards are read through their own API")
+SPECS["ollama_web"] = Spec("ollama_web", "Web search (Ollama)", "discovery", _no_fetch, needs=lambda s: bool(getattr(s, "ollama_api_key", "")),
+                           note="Ollama's web search API: the same site: and open-web queries as the other engines; only result addresses are used")
 SPECS["tinyfish"] = Spec("tinyfish", "Web search (TinyFish)", "discovery", _no_fetch, needs=lambda s: bool(s.tinyfish_api_key),
                          note="Paid second search engine for employer job boards, used after the free sources; daily spending ceiling")
 SPECS["techsara_web"] = Spec("techsara_web", "Web search (TechSara model)", "discovery", _no_fetch,

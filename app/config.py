@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     techsara_base_url: str = "https://ai.techsarasolutions.com/v1"
     techsara_model: str = "techsara-35b"             # chat: title expansion, page extraction, explanations beyond the top slice
     techsara_rerank_model: str = "techsara-rerank"   # /v1/rerank: scores every remaining candidate against the profile
+    ollama_api_key: str = ""                         # Ollama web search API (providers/ollama_search.py); empty = not used
+    ollama_web_searches_per_search: int = 40         # queries one search may send to it, beside SearXNG and the other engines
+    ollama_web_search_concurrency: int = 4
     techsara_web_search_enabled: bool = True         # the model's web_search tool as one more search engine for employer job boards
     techsara_web_searches_per_search: int = 40       # most web searches one job search may ask the model for (hard ceiling)
     techsara_web_searches_base: int = 12             # ... for a request of 50 or fewer; larger requests scale up to the ceiling above
