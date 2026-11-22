@@ -18,6 +18,7 @@ index through the same registration path and is then read through its official A
 Every stage has a budget. Nothing is shown that was not read from a live source."""
 import asyncio
 import json
+import itertools
 import math
 import re
 import time
@@ -134,7 +135,7 @@ def new_stats(requested: int) -> dict:
             # paid sources
             "serp_calls": 0, "serp_cached": 0, "serp_jobs": 0, "serp_listed": 0, "serp_skipped": "",
             "tiny_searches": 0, "tiny_fetches": 0, "tiny_usd": 0.0, "tiny_skipped": "",
-            "ollama_searches": 0, "ollama_results": 0, "ollama_leads": 0, "ollama_failed": 0, "ollama_skipped": "",
+            "ollama_searches": 0, "ollama_results": 0, "ollama_leads": 0, "ollama_failed": 0, "ollama_skipped": "", "query_ideas": 0,
             # AWS web search (queries = units of the monthly allowance; result text is never kept)
             "aws_budget": 0, "aws_queries": 0, "aws_results": 0, "aws_duplicates": 0, "aws_generic": 0, "aws_leads": 0,
             "aws_open_queries": 0, "aws_open_leads": 0,       # its "any site" queries and the employer-site page leads they gave
@@ -1601,7 +1602,8 @@ class SearchEngine:
                 continue                                # a board the index already reads: nothing to do
             out.setdefault(hit.url, Candidate(url=hit.url, provider=provider, cited=True))
 
-    async def _open_engine_round(self, state: SearchState, req: SearchRequest, titles: list[str], after=None) -> list[Candidate]:
+    async def _open_engine_round(self, state: SearchState, req: SearchRequest, titles: list[str], after=None, ai=None,
+                                 profile: Profile | None = None) -> list[Candidate]:
         """Open-web queries of the plain search engines (SearXNG, TinyFish): `"<title>" job opening <place>` without a
         `site:` operator, SEARCH_ENGINE_OPEN_WEB_QUERIES per search, in the first round. Never under a platform filter.
 
@@ -1630,6 +1632,20 @@ class SearchEngine:
         clean = lambda text: " ".join(re.sub(r'["\\]', " ", str(text or "")).split())
         queries = [form.format(title=clean(title), place=place)
                    for title in list(dict.fromkeys(t for t in titles if clean(t)))[:6] for place in places for form in OPEN_WEB_QUERY_FORMS]
+        # A model's ideas for further plain queries (kinds of employers, other wordings), taking turns with the fixed
+        # forms. Only the query text comes from the model; every result is checked like any other.
+        ideas = []
+        if ai is not None and hasattr(ai, "query_ideas") and self.settings.ollama_query_ideas > 0:
+            try:
+                ideas = await asyncio.wait_for(ai.query_ideas(titles, profile or Profile(), req, self.settings.ollama_query_ideas), timeout=45)
+            except Exception:
+                ideas = []
+        stats["query_ideas"] = len(ideas)
+        if ideas:
+            mixed = []
+            for pair in itertools.zip_longest(queries, ideas):
+                mixed.extend(q for q in pair if q)
+            queries = mixed
         ledger = self._ledger(state)
         hosts = self._hosts(state)
         ctx = await self._hit_context(state)
@@ -1999,8 +2015,9 @@ class SearchEngine:
         queries = queries[used:]
         # The same engines are also asked a few queries that are not held to a host: postings on employers' own sites.
         open_task = None
-        if use_web and plan.open_engine_queries > 0 and not scope.filtered and (self.searx_on or self.tiny_on):
-            open_task = asyncio.create_task(self._open_engine_round(state, req, [*req.titles, *variants], after=searx_task))
+        if use_web and plan.open_engine_queries > 0 and not scope.filtered and (self.searx_on or self.tiny_on or self.ollama_on):
+            open_task = asyncio.create_task(self._open_engine_round(state, req, [*req.titles, *variants], after=searx_task,
+                                                                    ai=ai, profile=profile))
             state.side_tasks.append(open_task)
         # Paid sources wait for round 2: they are spent only when the free ones left the search short.
         # SerpApi gets title x location pairs.
