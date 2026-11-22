@@ -51,7 +51,6 @@ from .providers.aws_web_search import AWS, AwsWebSearch, AwsWebSearchError, empl
 from .providers.paid import (GOOGLE_JOBS, TINYFISH, SerpApiClient, TinyFishClient, aggregator_hosts, serp_item)
 from .providers.registry import BOARD_LEAD_SOURCES, SPECS, Unit
 from .providers.searxng import SearxClient, build_queries, extract, site_hosts, valid_board
-from .providers.ollama_search import OllamaSearch
 from .providers.techsara_provider import TechsaraProvider
 from .resume_parser import heuristic_profile
 from .schemas import Candidate, Job, Profile, SearchRequest
@@ -79,7 +78,6 @@ def paced_unit(unit: Unit) -> bool:
 AI_PROVIDERS = {"OpenAI", "Claude"}          # only a lead a model named gets the relevance floor; a search-engine hit does not
 SEARX = "SearXNG"
 TECHSARA_WEB = "TechSara web search"
-OLLAMA = "Ollama web search"
 # Sources whose limiter lets through about one request a second (Workday, Recruitee, Workable accounts, ...). A search
 # waits only a short while for them and asks for at most this many stale units of each per search, its best title
 # matches first (_reading_plan); the rest of their boards is read by the background catalogue reader.
@@ -134,7 +132,6 @@ def new_stats(requested: int) -> dict:
             # paid sources
             "serp_calls": 0, "serp_cached": 0, "serp_jobs": 0, "serp_listed": 0, "serp_skipped": "",
             "tiny_searches": 0, "tiny_fetches": 0, "tiny_usd": 0.0, "tiny_skipped": "",
-            "ollama_searches": 0, "ollama_results": 0, "ollama_leads": 0, "ollama_failed": 0, "ollama_skipped": "",
             # AWS web search (queries = units of the monthly allowance; result text is never kept)
             "aws_budget": 0, "aws_queries": 0, "aws_results": 0, "aws_duplicates": 0, "aws_generic": 0, "aws_leads": 0,
             "aws_open_queries": 0, "aws_open_leads": 0,       # its "any site" queries and the employer-site page leads they gave
@@ -263,7 +260,6 @@ class SearchEngine:
         self._unit_counts: dict[Unit, int] = {}      # postings of units read by this process (statistics of new boards)
         self.serpapi = SerpApiClient(settings.serpapi_api_key, self.client, self.index, settings.serpapi_monthly_limit,
                                      settings.serpapi_monthly_reserve, settings.serpapi_cache_hours, settings.serpapi_account_check_seconds)
-        self.ollama = OllamaSearch(settings.ollama_api_key, self.client, concurrency=settings.ollama_web_search_concurrency)
         self.tinyfish = TinyFishClient(settings.tinyfish_api_key, self.client, self.index, settings.tinyfish_search_usd,
                                        settings.tinyfish_fetch_usd, settings.tinyfish_daily_usd, settings.tinyfish_wallet_reserve_usd,
                                        settings.tinyfish_wallet_check_seconds, settings.tinyfish_timeout_seconds)
@@ -391,15 +387,11 @@ class SearchEngine:
     @property
     def engines_on(self) -> bool:
         """Whether any engine that takes the `site:` queries of a search is available."""
-        return self.searx_on or self.tsweb_on or self.ollama_on
+        return self.searx_on or self.tsweb_on
 
     @property
     def serp_on(self) -> bool:
         return self.serpapi.enabled and "serpapi" in self.specs
-
-    @property
-    def ollama_on(self) -> bool:
-        return self.ollama.enabled and "ollama_web" in self.specs
 
     @property
     def tiny_on(self) -> bool:
@@ -1401,24 +1393,12 @@ class SearchEngine:
         beside = (ledger.take(TECHSARA_WEB, tail, budget - budget // 3) if searx_ok
                   else ledger.take_or_retry(TECHSARA_WEB, plan, budget))
         model_task = asyncio.create_task(self._tsweb_round(state, beside, hosts, ctx)) if beside else None
-        # Ollama's web search: its own part of the plan nobody else asks in this round (the plan's tail, then second
-        # chances), never beyond its budget per search; without SearXNG the plan from the top.
-        olla = self._ollama_left(state)
-        if olla:
-            want = min(olla, max(len(queries), 1) * 2)
-            olla_q = ledger.take(OLLAMA, tail, want) if searx_ok else ledger.take_or_retry(OLLAMA, plan, want)
-            if len(olla_q) < want:
-                olla_q += ledger.retry_for(OLLAMA, plan, want - len(olla_q))
-        else:
-            olla_q = []
-        olla_task = asyncio.create_task(self._ollama_round(state, olla_q, hosts, ctx)) if olla_q else None
         try:
             await self._searx_queries(state, mine, hosts, ctx, out)
         finally:
-            for task in (model_task, olla_task):
-                if task is not None:
-                    for url, lead in (await task).items():
-                        out.setdefault(url, lead)
+            if model_task is not None:
+                for url, lead in (await model_task).items():
+                    out.setdefault(url, lead)
         left = budget - len(beside)
         if left > 0 and self._tsweb_usable(state):
             if searx_ok and getattr(state, "searx_down", False):
@@ -1434,56 +1414,6 @@ class SearchEngine:
         stats["searx_leads"] += len(out)
         stats["query_ledger"] = ledger.stats()
         return list(out.values())
-
-    def _ollama_left(self, state: SearchState) -> int:
-        stats = state.stats
-        if not self.ollama_on or stats["ollama_skipped"]:
-            return 0
-        return max(0, self.settings.ollama_web_searches_per_search - stats["ollama_searches"])
-
-    async def _ollama_query(self, state: SearchState, query: str) -> tuple[list[str], str]:
-        """One query through Ollama's web search. A refusal that will not go away within this search (no credits, a
-        wrong key) switches the engine off for the search with one warning; three other failures do too."""
-        stats = state.stats
-        urls, note = await self.ollama.search(query)
-        stats["ollama_searches"] += 1
-        if note:
-            stats["ollama_failed"] += 1
-            if note in ("HTTP 401", "HTTP 402", "HTTP 403") or stats["ollama_failed"] >= 3 and not stats["ollama_results"]:
-                why = {"HTTP 402": "the Ollama account has no usage credits", "HTTP 401": "the Ollama API key was refused",
-                       "HTTP 403": "the Ollama API key was refused"}.get(note, f"it did not answer ({note})")
-                stats["ollama_skipped"] = why
-                state.warn(f"Ollama web search was skipped: {why}.")
-            return [], note
-        stats["ollama_results"] += len(urls)
-        return urls, ""
-
-    async def _ollama_round(self, state: SearchState, queries: list[str], hosts: list[str], ctx: tuple) -> dict[str, Candidate]:
-        """`site:` queries through Ollama's web search, side by side (OLLAMA_WEB_SEARCH_CONCURRENCY). The caller chose
-        queries no other engine sends. Never raises."""
-        ledger = self._ledger(state)
-        out: dict[str, Candidate] = {}
-
-        async def one(query: str) -> None:
-            if state.stats["ollama_skipped"]:
-                ledger.release(OLLAMA, query)
-                return
-            try:
-                urls, note = await self._ollama_query(state, query)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                urls, note = [], "request failed"
-            if note:
-                ledger.note(query, "failed")
-                return
-            before = len(out)
-            self._hits_to_leads(state, urls, hosts, OLLAMA, ctx, out)
-            ledger.note(query, "ok" if len(out) > before else "empty")
-
-        await asyncio.gather(*(one(q) for q in queries))
-        state.stats["ollama_leads"] += len(out)
-        return out
 
     async def _tsweb_round(self, state: SearchState, queries: list[str], hosts: list[str], ctx: tuple) -> dict[str, Candidate]:
         """`site:` queries through the company model's web search tool, a few at a time
@@ -1621,8 +1551,7 @@ class SearchEngine:
             await asyncio.wait([after])
         searx_ok = self.searx_on and not getattr(state, "searx_down", False)
         tiny_ok = self.tiny_on and not stats["tiny_skipped"]
-        olla_ok = self._ollama_left(state) > 0
-        if budget <= 0 or scope.filtered or not (searx_ok or tiny_ok or olla_ok):
+        if budget <= 0 or scope.filtered or not (searx_ok or tiny_ok):
             return []
         places = [p for p in dict.fromkeys(" ".join(str(x).split()) for x in req.locations[:4]) if p] or ["United States"]
         if req.work_mode == "Remote":
@@ -1634,7 +1563,7 @@ class SearchEngine:
         hosts = self._hosts(state)
         ctx = await self._hit_context(state)
         out: dict[str, Candidate] = {}
-        engines = [e for e, ok in ((SEARX, searx_ok), (OLLAMA, olla_ok), (TINYFISH, tiny_ok)) if ok]
+        engines = [e for e, ok in ((SEARX, searx_ok), (TINYFISH, tiny_ok)) if ok]
         sent = 0
         for query in queries:
             if sent >= budget or not engines:
@@ -1645,9 +1574,6 @@ class SearchEngine:
             engine = engines[sent % len(engines)]            # both engines on: they take turns (two different indexes)
             if engine == TINYFISH and stats["tiny_searches"] >= state.plan.tiny_searches:
                 engines.remove(TINYFISH)
-                continue
-            if engine == OLLAMA and not self._ollama_left(state):
-                engines.remove(OLLAMA)
                 continue
             if not ledger.claim(engine, query):
                 continue
@@ -1664,10 +1590,6 @@ class SearchEngine:
                         state.warn(f"Search-engine discovery (SearXNG) did not answer ({note}); the search went on without it.")
                 else:
                     stats["searx_results"] += len(urls)
-            elif engine == OLLAMA:
-                urls, note = await self._ollama_query(state, query)
-                if stats["ollama_skipped"] and OLLAMA in engines:
-                    engines.remove(OLLAMA)
             else:
                 urls, note = await self.tinyfish.search(query)
                 if note in ("daily spending ceiling reached", "wallet balance is at the reserve", "not configured"):
@@ -2272,7 +2194,7 @@ class SearchEngine:
         stats = state.stats
         sent = {SEARX: (stats["searx_queries"] + stats["searx_cached"], stats["searx_results"]),
                 TECHSARA_WEB: (stats["tsweb_searches"], stats["tsweb_results"]),
-                TINYFISH: (stats["tiny_searches"], None), OLLAMA: (stats["ollama_searches"], stats["ollama_results"]), GOOGLE_JOBS: (stats["serp_calls"], stats["serp_jobs"]),
+                TINYFISH: (stats["tiny_searches"], None), GOOGLE_JOBS: (stats["serp_calls"], stats["serp_jobs"]),
                 AWS: (stats["aws_queries"], stats["aws_results"])}
         boards = getattr(state, "provider_boards", {})
         out: dict[str, dict] = {}
