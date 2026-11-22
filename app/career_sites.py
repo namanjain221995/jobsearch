@@ -94,7 +94,7 @@ CRAWL_LOG_DAYS = 180.0
 BUSY_PAUSE = 5.0                         # seconds a crawl stands back before it looks again whether the engine is still busy
 
 # Hosts that are not one employer's career site although their pages may carry job data: career platforms beyond the
-# 21 of app/ats_platforms.py (whose hosts are refused through that list) and job boards beyond AGGREGATOR_HOSTS.
+# 17 of app/ats_platforms.py (whose hosts are refused through that list) and job boards beyond AGGREGATOR_HOSTS.
 # A leading "." is not needed: every entry also covers its subdomains.
 NOT_COMPANY_SITES = (
     "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com", "myworkdaysite.com", "workable.com",

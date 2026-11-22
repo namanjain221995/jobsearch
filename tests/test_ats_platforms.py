@@ -10,15 +10,17 @@ from app.providers import registry
 EXPECTED = {
     "greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby", "workday": "Workday", "icims": "iCIMS",
     "smartrecruiters": "SmartRecruiters", "workable": "Workable", "jobvite": "Jobvite", "oracle": "Oracle Recruiting Cloud",
-    "successfactors": "SAP SuccessFactors", "bullhorn": "Bullhorn", "ceipal": "CEIPAL", "jobdiva": "JobDiva",
-    "bamboohr": "BambooHR", "jazzhr": "JazzHR", "avature": "Avature", "pinpoint": "Pinpoint", "recruitee": "Recruitee",
-    "rippling": "Rippling", "smartsearch": "SmartSearch", "adp": "ADP Workforce Now",
+    "successfactors": "SAP SuccessFactors", "bamboohr": "BambooHR", "jazzhr": "JazzHR", "avature": "Avature", "pinpoint": "Pinpoint", "recruitee": "Recruitee",
+    "rippling": "Rippling", "adp": "ADP Workforce Now",
 }
 STARTUP = {"ashby", "greenhouse", "lever", "workable", "recruitee", "pinpoint", "rippling"}
 
 
-def test_exactly_the_21_platforms_with_their_names():
-    assert len(PLATFORMS) == 21
+REMOVED = {"bullhorn", "ceipal", "jobdiva", "smartsearch"}      # credential-only platforms, removed on 2026-11-22
+
+
+def test_exactly_the_17_platforms_with_their_names():
+    assert len(PLATFORMS) == 17
     assert {key: platform.label for key, platform in PLATFORMS.items()} == EXPECTED
     assert all(key == platform.id for key, platform in PLATFORMS.items())
 
@@ -31,7 +33,8 @@ def test_the_seven_startup_platforms():
 def test_every_access_class_is_known_and_explained():
     assert all(platform.access in ACCESS for platform in PLATFORMS.values())
     assert all(sentence.strip() for sentence in ACCESS.values())
-    assert set(ACCESS) >= {"public_api", "public_pages", "credentials", "restricted"}
+    assert set(ACCESS) >= {"public_api", "public_pages", "restricted"}
+    assert "credentials" not in ACCESS                         # no platform of that class is left
 
 
 def test_a_reader_counts_as_usable_only_when_the_registry_has_it():
@@ -47,7 +50,7 @@ def test_a_reader_counts_as_usable_only_when_the_registry_has_it():
         if spec is None:
             assert platform.reader not in usable
             assert ats_health.reader_switch(platform.reader, settings, set())           # a reason why it is off
-            assert ats_health.platform_state(platform, settings, set(), None)[0] in ("unsupported", "public_discovery_only") or platform.access == "credentials"
+            assert ats_health.platform_state(platform, settings, set(), None)[0] in ("unsupported", "public_discovery_only")
         else:
             assert spec.kind != "discovery"
     for name in usable:                                        # and every usable reader of a platform is in the registry
@@ -68,3 +71,16 @@ def test_platform_of_host():
         for host in platform.hosts:
             assert platform_of_host("acme" + host if host.startswith(".") else host) is platform
     assert ats_platforms.platform_of_host is platform_of_host
+
+
+def test_the_removed_platforms_are_gone_and_old_ids_are_dropped_not_refused():
+    assert not REMOVED & set(PLATFORMS) and ats_platforms.REMOVED_PLATFORMS == REMOVED
+    assert ats_platforms.chosen_platform_ids(["Lever", "bullhorn", "lever", "smartsearch"]) == ["lever"]
+    assert ats_platforms.chosen_platform_ids([]) == []
+    for bad, message in ((["ceipal", "jobdiva"], "no longer available"), (["lever", "nosuchats"], "Unknown ATS platform: nosuchats")):
+        try:
+            ats_platforms.chosen_platform_ids(bad)
+        except ValueError as exc:
+            assert message in str(exc)
+        else:
+            raise AssertionError(bad)

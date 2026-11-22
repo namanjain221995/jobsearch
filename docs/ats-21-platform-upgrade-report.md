@@ -1,5 +1,9 @@
 # 21-ATS upgrade report
 
+> **Note, 2026-11-22:** at the owner's request the four platforms that need the employer's credentials (Bullhorn,
+> CEIPAL, JobDiva, SmartSearch) were removed from the product; `app/ats_platforms.py` now lists 17 platforms. The
+> report below is the record of 2026-11-21 and is left as it was.
+
 Date: 2026-11-21. Scope: the "21 ATS US job discovery" brief. Every number below comes from a command that was
 run; where something was not checked, it says so.
 

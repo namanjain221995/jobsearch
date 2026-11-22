@@ -158,27 +158,23 @@ def test_sites_are_valid_query_hosts_of_public_page_platforms():
     assert not ats_pages.is_page_host("applytojob.com.evil.example") and not ats_pages.is_page_host("")
 
 
-# ---------------------------------------------------------------- the thirteen platform entries
-THIRTEEN = {
+# ---------------------------------------------------------------- the nine platform entries (four credential-only ones were removed on 2026-11-22)
+NINE = {
     "icims": ("restricted", ["careers-acme.icims.com", "us-careers-acme.icims.com"]),
     "smartrecruiters": ("restricted", ["jobs.smartrecruiters.com", "careers.smartrecruiters.com"]),
     "jobvite": ("public_pages", ["jobs.jobvite.com"]),
     "oracle": ("public_pages", ["eeho.fa.us2.oraclecloud.com", "jpmc.fa.oraclecloud.com"]),
     "successfactors": ("restricted", ["career4.successfactors.com", "career5.successfactors.eu"]),
-    "bullhorn": ("credentials", []),
-    "ceipal": ("credentials", []),
-    "jobdiva": ("credentials", []),
     "bamboohr": ("restricted", ["acme.bamboohr.com"]),
     "jazzhr": ("public_pages", ["acme.applytojob.com"]),
     "avature": ("public_pages", ["acme.avature.net"]),
-    "smartsearch": ("credentials", []),
     "adp": ("public_pages", ["workforcenow.adp.com"]),
 }
 
 
-@pytest.mark.parametrize("platform_id", sorted(THIRTEEN))
+@pytest.mark.parametrize("platform_id", sorted(NINE))
 def test_platform_entry(platform_id):
-    access, hosts = THIRTEEN[platform_id]
+    access, hosts = NINE[platform_id]
     platform = PLATFORMS[platform_id]
     assert platform.access == access and access in ACCESS
     assert len(platform.note) > 60 and platform.note.endswith(".")              # the Admin gets a reason, not a blank
@@ -189,8 +185,6 @@ def test_platform_entry(platform_id):
         bare = known.lstrip(".")
         assert platform_of_host(bare + ".evil.example") is None
         assert platform_of_host("evil" + bare) is None
-    if access == "credentials":
-        assert not platform.reader and not platform.hosts                       # nothing is read, nothing is queried
 
 
 def test_look_alike_hosts_belong_to_no_platform():

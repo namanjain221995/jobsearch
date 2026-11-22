@@ -1,4 +1,4 @@
-"""The 21 applicant-tracking systems (ATS) this portal knows about, in one place.
+"""The 17 applicant-tracking systems (ATS) this portal knows about, in one place.
 
 An ATS vendor is not a job board: jobs live on each employer's own board or tenant. What the portal can do with a
 platform therefore depends on what the vendor offers without the employer's credentials:
@@ -9,6 +9,9 @@ platform therefore depends on what the vendor offers without the employer's cred
 - `hosts`: host names (or suffixes) on which the platform serves public career pages. Used to recognise result
   addresses of search engines; a posting page on such a host is verified by the page verifier like any employer page.
 
+The four platforms that need the employer's credentials (Bullhorn, CEIPAL, JobDiva, SmartSearch) were removed on
+2026-11-22 at the owner's request: nothing could be read from them.
+
 Nothing here claims that a platform works. The operational state shown to an Admin is computed from evidence
 (readers switched on, boards in the index, last successful read) by services/ats_health.py."""
 from dataclasses import dataclass
@@ -17,7 +20,6 @@ from dataclasses import dataclass
 ACCESS = {
     "public_api": "Official anonymous API or feed per employer board",
     "public_pages": "Public career pages only (no anonymous API); postings are verified page by page",
-    "credentials": "API needs the employer's credentials; nothing is read without them",
     "restricted": "The vendor's robots.txt or terms forbid automated reading; switched off",
 }
 
@@ -74,17 +76,6 @@ PLATFORMS: dict[str, Platform] = {p.id: p for p in [
              "API was found. Employer-branded career sites on the employer's own domain are treated like any other "
              "employer page; they cannot be recognised as SuccessFactors by their address. Going further needs the "
              "employer's own SuccessFactors API access."),
-    Platform("bullhorn", "Bullhorn", "credentials", (), "", False, "https://bullhorn.github.io/Public-API/",
-             "Nothing is read. Bullhorn's public job endpoint answers without a login, but only for a staffing firm whose "
-             "cluster number and corp token are known (issued by Bullhorn Support to that firm), and it gives no public "
-             "posting address; the owner must supply cluster, corp token and career-portal address per firm. The full "
-             "REST API needs an OAuth 2.0 login with the firm's own API user."),
-    Platform("ceipal", "CEIPAL", "credentials", (), "", False, "https://developer.ceipal.com/",
-             "Nothing is read. The CEIPAL ATS API issues a token only for a customer's own API credentials (generated "
-             "through the customer's CEIPAL account representative), and jobsapi.ceipal.com/robots.txt disallows everything."),
-    Platform("jobdiva", "JobDiva", "credentials", (), "", False, "",
-             "Nothing is read. api.jobdiva.com answers HTTP 401 without a login; the owner would need a staffing firm's "
-             "JobDiva API client id and an API user (user name and password) issued by JobDiva."),
     Platform("bamboohr", "BambooHR", "restricted", (".bamboohr.com",), "bamboohr", False,
              "https://www.bamboohr.com/legal/terms-of-service",
              "A reader for the public careers list exists but stays off: BambooHR's terms of service (section 4.2, last "
@@ -112,9 +103,6 @@ PLATFORMS: dict[str, Platform] = {p.id: p for p in [
              "No Rippling board is read: the reader is switched off until Rippling's terms are reviewed. It uses the job "
              "list Rippling's hosted career pages call, which is not in Rippling's public documentation, and the terms "
              "pages could not be read (robots.txt allows the endpoint). RIPPLING_ENABLED=1 switches it on after that review."),
-    Platform("smartsearch", "SmartSearch", "credentials", (), "", False, "",
-             "Nothing is read. No public documentation of an anonymous job feed or of public career-page addresses was "
-             "found; the owner would need API access arranged with SmartSearch for a customer account."),
     Platform("adp", "ADP Workforce Now", "public_pages", ("workforcenow.adp.com",), "", False, "https://www.adp.com/legal.aspx",
              "No anonymous API is documented. Career-centre posting addresses (recruitment.html?cid=...&jobId=...) found "
              "by web search are verified one by one; each needs a rendered page from the browser budget (10 to 13 s on "
@@ -122,6 +110,26 @@ PLATFORMS: dict[str, Platform] = {p.id: p for p in [
              "the posting text names it), so few postings can be shown. Reading whole boards would need API access "
              "arranged with ADP and the employer."),
 ]}
+
+# Ids of platforms removed from PLATFORMS. Searches and presets stored before the removal may still name them: such an
+# id is dropped when a search is started or a preset is saved (schemas.py, portal/schemas.py) and skipped when a stored
+# search runs (portal/search_runner.py), as if it were absent. Any other unknown id is still refused.
+REMOVED_PLATFORMS: frozenset[str] = frozenset({"bullhorn", "ceipal", "jobdiva", "smartsearch"})      # 2026-11-22
+
+
+def chosen_platform_ids(values) -> list[str]:
+    """Normalised, unique platform ids of a search request, with REMOVED_PLATFORMS left out. Raises ValueError for an
+    id that is neither a platform nor a removed one, and when every id named was removed (an empty list would mean
+    "every platform", which is not what was asked for)."""
+    out = list(dict.fromkeys(str(i).strip().lower() for i in values))
+    unknown = [i for i in out if i not in PLATFORMS and i not in REMOVED_PLATFORMS]
+    if unknown:
+        raise ValueError(f"Unknown ATS platform: {', '.join(unknown)}")
+    kept = [i for i in out if i in PLATFORMS]
+    if out and not kept:
+        raise ValueError("The ATS platforms chosen are no longer available")
+    return kept
+
 
 STARTUP_PLATFORMS: tuple[str, ...] = tuple(p.id for p in PLATFORMS.values() if p.startup)
 

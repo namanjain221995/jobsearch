@@ -41,11 +41,11 @@ def _reset():
 
 @pytest.fixture
 def extra_platforms(monkeypatch):
-    """Two platforms without a board reader, added to the registry for one test: public pages only, and credentials."""
+    """Two platforms without a board reader, added to the registry for one test: public pages only, and restricted."""
     monkeypatch.setitem(ats_platforms.PLATFORMS, "pagesats", Platform(
         "pagesats", "Pages ATS", "public_pages", ("jobs.pagesats.example",), note="Public career pages only, no feed."))
     monkeypatch.setitem(ats_platforms.PLATFORMS, "lockedats", Platform(
-        "lockedats", "Locked ATS", "credentials", (), note="Its API needs the employer's credentials"))
+        "lockedats", "Locked ATS", "restricted", (), note="Its terms forbid automated reading"))
 
 
 def site_of(query: str) -> str:
@@ -197,7 +197,7 @@ def test_hosts_nobody_can_use_are_never_asked():
     assert Scope.of(["recruitee", "lever"], False, READERS).hosts(configured) == ["jobs.lever.co", "recruitee.com"]
     assert Scope.of(["greenhouse"], False, READERS).hosts(HOSTS) == ["boards.greenhouse.io", "job-boards.greenhouse.io"]      # configured hosts are kept as they are
     assert Scope.of(["smartrecruiters", "jobvite"], False, READERS).hosts(HOSTS) == ["jobs.smartrecruiters.com", "jobs.jobvite.com"]
-    assert Scope.of(["icims", "bullhorn"], False, READERS).hosts(HOSTS) == []                # restricted / credentials only: nothing to ask
+    assert Scope.of(["icims", "bullhorn"], False, READERS).hosts(HOSTS) == []                # restricted, or removed (bullhorn): nothing to ask
 
 
 def test_a_reader_that_is_off_is_not_queried_by_any_search_engine():
@@ -262,7 +262,7 @@ def test_a_platform_without_a_reader_is_searched_through_page_leads_and_says_so(
     assert rows["pagesats"]["coverage"] == "limited" and rows["pagesats"]["unique"] == 1 and rows["pagesats"]["leads"] == 1
     assert rows["lockedats"]["coverage"] == "none" and rows["lockedats"]["considered"] == 0 and rows["lever"]["coverage"] == "full"
     warnings = state.stats["coverage_warnings"]
-    assert warnings == ["Locked ATS could not be searched: Its API needs the employer's credentials.",
+    assert warnings == ["Locked ATS could not be searched: Its terms forbid automated reading.",
                         "Pages ATS has limited coverage: Public career pages only, no feed. They are found only through web search results."]
     assert all(w in state.warnings for w in warnings) and not any("Lever" in w for w in warnings)
 
@@ -287,6 +287,6 @@ def test_a_reader_that_is_switched_off_is_not_replaced_by_page_reading():
 def test_coverage_levels_follow_access_and_reader():
     pages = Platform("p", "P", "public_pages", ("jobs.p.example",))
     assert coverage(pages, False)[0] == "limited" and coverage(pages, True)[0] == "full"
-    assert coverage(Platform("c", "C", "credentials"), False) == ("none", ats_platforms.ACCESS["credentials"] + ".")
+    assert coverage(Platform("c", "C", "restricted"), False) == ("none", ats_platforms.ACCESS["restricted"] + ".")
     assert coverage(Platform("r", "R", "restricted", (".r.example",), "r"), False)[0] == "none"
     assert Scope.of(["nosuch", "lever"], False, READERS).chosen == {"lever"}

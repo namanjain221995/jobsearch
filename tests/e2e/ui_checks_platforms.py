@@ -1,4 +1,4 @@
-"""Fifth browser check list: the 21 ATS platforms.
+"""Fifth browser check list: the 17 ATS platforms.
 
 Admin: Settings, tab "ATS Platforms" (every platform with its state in plain words, the startup filter, counts and the
 last successful read, the note, loading, empty and error states, cards on a phone, the search providers), in light and
@@ -52,9 +52,9 @@ PICKER = "Candidates in the portal"
 HEALTH_TABLE = "Applicant tracking systems and their state"
 SHARED = {}                       # what one step leaves for the next (the ids of the two searches)
 
-# The six states of GET /api/integrations/ats and the three of a search provider, in the words the screen uses.
+# The five states of GET /api/integrations/ats and the three of a search provider, in the words the screen uses.
 STATE_WORDS = {"verified_working": "Verified working", "configured_unverified": "Configured, not verified yet",
-               "requires_credentials": "Needs employer credentials", "public_discovery_only": "Public pages only",
+               "public_discovery_only": "Public pages only",
                "temporarily_unavailable": "Temporarily unavailable", "unsupported": "Not supported"}
 PROVIDER_WORDS = {"configured": "Set up", "not_configured": "Not set up", "switched_off": "Switched off"}
 REASON_WORDS = {"not_relevant": "title did not match", "non_us": "outside the United States", "work_mode": "work arrangement did not match",
@@ -223,7 +223,7 @@ def ats_checks(page, mode):
     health = api(page, "/api/integrations/ats")
     platforms = health["platforms"]
     rows = health_rows(page)
-    check(f"ATS tab ({mode}): all 21 platforms are listed", rows.count() == len(platforms) == 21, f"{rows.count()} rows, {len(platforms)} from the API")
+    check(f"ATS tab ({mode}): all 17 platforms are listed", rows.count() == len(platforms) == 17, f"{rows.count()} rows, {len(platforms)} from the API")
     wrong = []
     for row, platform in zip(rows.all(), platforms):
         text = words(row.inner_text())
@@ -238,7 +238,7 @@ def ats_checks(page, mode):
     readable(page, page.get_by_role("tabpanel").locator('[data-slot="tag"]'), f"ATS tab ({mode}): every badge is readable (contrast, not cut off, inside the window)")
     verified = sum(1 for p in platforms if p["state"] == "verified_working")
     check(f"ATS tab ({mode}): the introduction says how many platforms are verified and in which time window",
-          f"{verified} of 21 are verified" in panel.replace("\n", " ") and f"in the last {health['window_days']} days" in panel, panel[:260])
+          f"{verified} of 17 are verified" in panel.replace("\n", " ") and f"in the last {health['window_days']} days" in panel, panel[:260])
 
     # counts and the last successful read
     wrong = []
@@ -314,7 +314,7 @@ def step_ats(browser):
         cards = health_rows(page)
         wide = [words(c.inner_text())[:30] for c in cards.all() if c.bounding_box()["x"] < 0 or c.bounding_box()["x"] + c.bounding_box()["width"] > A.w + 1]
         check("ATS tab at 390 px: platforms are cards, not a table, and every card fits the screen",
-              page.get_by_role("table", name=HEALTH_TABLE, exact=True).count() == 0 and cards.count() == 21 and not wide, str(wide[:3]))
+              page.get_by_role("table", name=HEALTH_TABLE, exact=True).count() == 0 and cards.count() == 17 and not wide, str(wide[:3]))
     else:
         scroller = page.get_by_role("group", name=f"{HEALTH_TABLE}, scrollable")
         inner = scroller.evaluate("(el) => el.scrollWidth - el.clientWidth")
@@ -334,9 +334,9 @@ def step_ats(browser):
     no_overflow(page, "ATS tab, startup platforms")
     shot(page, "ats_startup")
     shown.get_by_text("All platforms", exact=True).click()
-    page.wait_for_function("() => document.querySelectorAll('[data-slot=\"data-table\"] [data-state][data-slot=\"tag\"]').length === 21", timeout=T)
+    page.wait_for_function("() => document.querySelectorAll('[data-slot=\"data-table\"] [data-state][data-slot=\"tag\"]').length === 17", timeout=T)
     marked = [words(row.inner_text())[:20] for row in health_rows(page).all() if row.locator('[data-slot="tag"]').filter(has_text="Startup").count()]
-    check("ATS tab: back on all platforms, 21 are listed again and only the seven carry the startup mark", len(marked) == 7, str(marked))
+    check("ATS tab: back on all platforms, 17 are listed again and only the seven carry the startup mark", len(marked) == 7, str(marked))
 
     # search providers
     section = page.locator("section").filter(has=page.get_by_role("heading", name="Search providers", exact=True))
@@ -387,7 +387,7 @@ def step_ats(browser):
         page.wait_for_timeout(300)
     page.get_by_role("tabpanel").get_by_role("button", name="Try again").click()
     health_rows(page).first.wait_for(timeout=T)
-    check("ATS tab: 'Try again' loads the platforms", health_rows(page).count() == 21)
+    check("ATS tab: 'Try again' loads the platforms", health_rows(page).count() == 17)
     ctx.close()
 
 
@@ -504,8 +504,8 @@ def step_filter(browser):
     open_platform_list(page)
     items = page.locator("li[data-platform]")
     listed = [item.get_attribute("data-platform") for item in items.all()]
-    check("platform filter: the list holds the 21 platforms of the API, in its order, nothing ticked",
-          listed == [p["id"] for p in platforms] and len(listed) == 21 and not any(box.is_checked() for box in items.get_by_role("checkbox").all()), str(listed[:5]))
+    check("platform filter: the list holds the 17 platforms of the API, in its order, nothing ticked",
+          listed == [p["id"] for p in platforms] and len(listed) == 17 and not any(box.is_checked() for box in items.get_by_role("checkbox").all()), str(listed[:5]))
     footer = panel.get_by_text("Nothing chosen: all platforms")
     check("platform filter: with nothing ticked the list says all platforms are searched, and 'All platforms' has nothing to reset",
           footer.is_visible() and not panel.get_by_role("button", name="All platforms", exact=True).is_enabled())
@@ -525,7 +525,7 @@ def step_filter(browser):
     readable(page, items.locator('[data-slot="tag"]'), "platform filter: the marks are readable")
     readable(page, items.locator("span.text-muted-foreground"), "platform filter: the reasons are readable")
     check("platform filter: there is nothing to type a platform into (only the listed ones can be ticked)",
-          panel.locator("input:not([type=checkbox]), textarea").count() == 0 and panel.get_by_role("checkbox").count() == 21)
+          panel.locator("input:not([type=checkbox]), textarea").count() == 0 and panel.get_by_role("checkbox").count() == 17)
     no_overflow(page, "search form, platform list open")
     shot(page, "filter_open")
 
@@ -624,7 +624,7 @@ def step_filter(browser):
     check("Admin: the same 'Where to search' panel, at all platforms and startup focus off",
           words(trigger(page).inner_text()) == "All platforms" and page.get_by_role("switch", name="Startup focus").get_attribute("aria-checked") == "false")
     open_platform_list(page)
-    check("Admin: the same 21 platforms", [item.get_attribute("data-platform") for item in page.locator("li[data-platform]").all()] == [p["id"] for p in platforms])
+    check("Admin: the same 17 platforms", [item.get_attribute("data-platform") for item in page.locator("li[data-platform]").all()] == [p["id"] for p in platforms])
     tick(page, "lever")
     no_overflow(page, "Admin search form, platform list open")
     window = start_search(page, "Lucas Meyer", 3)
@@ -933,11 +933,11 @@ def step_states(browser):
     bodies = posted_searches(page)
     open_search_form(page, "/tl")
     open_platform_list(page)
-    tick(page, "bullhorn")
+    tick(page, "icims")
     panel = page.locator("section").filter(has=page.get_by_role("heading", name="Where to search", exact=True))
     check("a platform that cannot be searched can be chosen, and the form warns about it",
-          words(trigger(page).inner_text()) == "Bullhorn" and panel.get_by_text(re.compile(r"Bullhorn has limited\s+or no coverage")).is_visible()
-          and "ATS platforms Bullhorn" in words(this_search(page).inner_text()), words(this_search(page).inner_text())[-200:])
+          words(trigger(page).inner_text()) == "iCIMS" and panel.get_by_text(re.compile(r"iCIMS has limited\s+or no coverage")).is_visible()
+          and "ATS platforms iCIMS" in words(this_search(page).inner_text()), words(this_search(page).inner_text())[-200:])
     window = start_search(page, "Hannah Kim", 5)
     status = wait_finished(window)
     window.get_by_role("link", name="View Results").click()
@@ -946,14 +946,14 @@ def step_states(browser):
     page.wait_for_load_state("networkidle")
     nothing = api(page, f"/api/searches/{page.url.rsplit('/', 1)[1]}")
     data = nothing["targets"][0]["discovery"]
-    row = section.locator('[data-platform="bullhorn"]')
+    row = section.locator('[data-platform="icims"]')
     row.wait_for(timeout=T)
     warnings = [words(w.inner_text()) for w in section.locator('[data-slot="coverage-warnings"] li').all()]
     check("a search on a platform that cannot be searched: finished with nothing found, the platform marked 'Not searched', the reason in the API's words",
-          status == "completed" and (bodies[0] or {}).get("filters", {}).get("ats_platforms") == ["bullhorn"] and nothing["matched_count"] == 0
+          status == "completed" and (bodies[0] or {}).get("filters", {}).get("ats_platforms") == ["icims"] and nothing["matched_count"] == 0
           and [words(t.inner_text()) for t in row.locator('[data-slot="tag"]').all()] == ["Not searched"]
           and [words(f.inner_text()) for f in row.locator('[data-slot="origin-figure"]').all()] == ["0", "0", "0", "0"]
-          and warnings == data["coverage_warnings"] and len(warnings) == 1 and warnings[0].startswith("Bullhorn could not be searched:"),
+          and warnings == data["coverage_warnings"] and len(warnings) == 1 and warnings[0].startswith("iCIMS could not be searched:"),
           f"{status} {nothing['matched_count']} {warnings}")
     facts = words(section.locator("dl").first.inner_text())
     sources = words(page.locator("section").filter(has=page.get_by_role("heading", name="Sources", exact=True)).inner_text())
@@ -961,7 +961,7 @@ def step_states(browser):
           page.get_by_text("This search found no matching jobs").is_visible() and data["providers"] == {}
           and section.get_by_text("No search engine or AI provider contributed to this search.", exact=True).is_visible()
           and "Time to first verified results No verified result Total time" in facts and "No job source was read in this search." in sources
-          and "yet" not in facts and "yet" not in sources and "ATS platforms Bullhorn Startup focus Off" in settings_used(page), f"{facts} / {sources}")
+          and "yet" not in facts and "yet" not in sources and "ATS platforms iCIMS Startup focus Off" in settings_used(page), f"{facts} / {sources}")
     readable(page, row.locator('[data-slot="tag"]'), "the 'Not searched' mark is readable")
     no_overflow(page, "search page, platform that cannot be searched")
     shot(page, "search_detail_not_searched")

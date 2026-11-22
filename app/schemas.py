@@ -32,11 +32,7 @@ class SearchRequest(BaseModel):
     @classmethod
     def _platforms(cls, v: list[str]) -> list[str]:
         from . import ats_platforms
-        out = list(dict.fromkeys(str(i).strip().lower() for i in v))
-        unknown = [i for i in out if i not in ats_platforms.PLATFORMS]
-        if unknown:
-            raise ValueError(f"Unknown ATS platform: {', '.join(unknown)}")
-        return out
+        return ats_platforms.chosen_platform_ids(v)
 
     @field_validator("job_titles")
     @classmethod

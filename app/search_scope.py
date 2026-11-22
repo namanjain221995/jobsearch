@@ -85,7 +85,7 @@ def bump(by: dict | None, job: Job, key: str) -> None:
 
 def coverage(platform: ats_platforms.Platform, enabled: bool) -> tuple[str, str]:
     """(level, one sentence) for a platform: "full" = a board reader is switched on; "limited" = public pages only,
-    found through web search; "none" = nothing can be read (credentials needed, forbidden, or the reader is off)."""
+    found through web search; "none" = nothing can be read (forbidden, or the reader is off)."""
     why = (platform.note or ats_platforms.ACCESS.get(platform.access, "")).strip()
     why = why + "." if why and not why.endswith(".") else why
     if enabled:
@@ -137,8 +137,8 @@ class Scope:
     def readable(self, host: str) -> bool:
         """Whether an address on `host` can become a lead of this engine: the platform's board reader is switched on,
         or its posting pages are verified one by one. A host of no career platform (an employer's own site) is
-        readable. A platform that forbids automated reading or needs the employer's credentials (iCIMS, SAP
-        SuccessFactors, BambooHR, ...) is not, whatever is switched on; a platform with a public API whose reader is
+        readable. A platform that forbids automated reading (iCIMS, SAP SuccessFactors,
+        BambooHR, ...) is not, whatever is switched on; a platform with a public API whose reader is
         switched off (Rippling, Pinpoint) is not either. Only a scope that was not given the engine's sources (tests,
         tools) cannot know which readers are off and lets those through."""
         platform = ats_platforms.PLATFORMS.get(host_platform(host))
@@ -149,7 +149,7 @@ class Scope:
         if platform.access == "public_pages" or bare in PAGE_LEAD_HOSTS or ats_pages.is_page_host(bare):
             return True
         if platform.access != "public_api":
-            return False                               # restricted or credentials only: never read, never a lead
+            return False                               # restricted: never read, never a lead
         return not self.readers
 
     def readable_url(self, url: str) -> bool:

@@ -662,12 +662,8 @@ class SearchFilters(Model):
     @field_validator("ats_platforms")
     @classmethod
     def _known_platforms(cls, v: list[str]) -> list[str]:
-        from ..ats_platforms import PLATFORMS
-        out = list(dict.fromkeys(str(i).strip().lower() for i in v))
-        unknown = [i for i in out if i not in PLATFORMS]
-        if unknown:
-            raise ValueError(f"Unknown ATS platform: {', '.join(unknown)}")
-        return out
+        from ..ats_platforms import chosen_platform_ids
+        return chosen_platform_ids(v)
 
 
 class SearchCreate(Model):
@@ -770,7 +766,7 @@ class SearchPlatformOption(Model):
     startup: bool = False                          # one of the startup-focused platforms
     reader: str = ""                               # name of its board reader among `sources`, "" when there is none
     reader_enabled: bool = False                   # a board reader for it is switched on
-    access: str = ""                               # public_api | public_pages | credentials | restricted
+    access: str = ""                               # public_api | public_pages | restricted
     coverage: str = "full"                         # full | limited (public pages, through web search only) | none (cannot be searched)
     hint: str = ""                                 # one sentence: what can be read, and why
 
@@ -1094,7 +1090,7 @@ class IntegrationsOut(Model):
     aws_web_search: "AwsWebSearchStatus | None" = None
 
 
-AtsState = Literal["verified_working", "configured_unverified", "requires_credentials", "public_discovery_only",
+AtsState = Literal["verified_working", "configured_unverified", "public_discovery_only",
                    "temporarily_unavailable", "unsupported"]
 
 

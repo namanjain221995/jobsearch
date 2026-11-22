@@ -151,3 +151,37 @@ async def test_presets_keep_the_options_and_old_presets_still_load(world):
     assert started.status_code == 202, started.text
     run = await wait_done(world, tl, started.json()["search"]["id"])
     assert run["status"] == "completed" and run["matched_count"] == 5 and "ats_platforms" not in run["filters"] and CALLS[GH] == 1
+
+
+async def test_a_removed_platform_in_a_stored_search_or_preset_is_treated_as_absent(world):
+    """Bullhorn, CEIPAL, JobDiva and SmartSearch were removed on 2026-11-22: searches and presets stored before still
+    name them. Such an id is skipped when the stored search runs and dropped when a preset is sent back."""
+    assert "bullhorn" not in PLATFORMS
+    tl = await world.as_tl("alpha")
+    worker = hold_worker(world)
+    started = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "target_count": 5, "deep_search": False,
+                                                   "filters": {"ats_platforms": ["lever"]}})
+    run_id = started.json()["search"]["id"]
+    async with world.sessions() as db:
+        target = (await db.execute(select(SearchTarget).where(SearchTarget.search_run_id == run_id))).scalar_one()
+        await db.execute(update(SearchTarget).where(SearchTarget.search_run_id == target.search_run_id).values(
+            candidate_specific_filters={**target.candidate_specific_filters, "ats_platforms": ["bullhorn", "lever"]}))
+        await db.commit()
+    worker.set()
+    run = await wait_done(world, tl, run_id)
+    assert run["status"] == "completed" and CALLS[LEVER] == 1 and CALLS[GH] == 0          # as if only "lever" was stored
+    assert run["targets"][0]["discovery"]["platform_filter"] == ["lever"]
+    # A preset saved before the removal: it lists, and sent back as the form sends it, the removed id is dropped.
+    async with world.sessions() as db:
+        db.add(SearchPreset(owner_id=world.ids["tl_alpha"], team_id=world.ids["team_alpha"], name="Staffing",
+                            filters={"mode": "review", "target_count": 5, "deep_search": False,
+                                     "filters": {"job_titles": ["AI Engineer"], "ats_platforms": ["ceipal", "lever"]}}))
+        await db.commit()
+    presets = {p["name"]: p["filters"] for p in (await tl.get("/api/search-presets")).json()}
+    old = presets["Staffing"]
+    again = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "mode": old["mode"],
+                                                 "target_count": old["target_count"], "deep_search": old["deep_search"], "filters": old["filters"]})
+    assert again.status_code == 202, again.text
+    assert again.json()["search"]["filters"]["ats_platforms"] == ["lever"]
+    only = await tl.post("/api/searches", json={"candidate_ids": [str(world.ids["cand_a1"])], "filters": {"ats_platforms": ["jobdiva"]}})
+    assert only.status_code == 422 and "no longer available" in only.json()["detail"]  # never widened to every platform

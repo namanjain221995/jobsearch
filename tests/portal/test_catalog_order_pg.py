@@ -263,11 +263,11 @@ async def test_health_reports_rippling_as_not_supported_with_the_reason(world):
     assert rippling["reason"] == "Its reader is switched off in the server settings."
     assert "switched off until Rippling's terms are reviewed" in rippling["note"] and "RIPPLING_ENABLED=1" in rippling["note"]
     assert rippling["note"] == ats_platforms.PLATFORMS["rippling"].note and rippling["startup"] is True
-    # Oracle and Pinpoint are off exactly as before; Recruitee stays on; all 21 platforms are listed.
+    # Oracle and Pinpoint are off exactly as before; Recruitee stays on; all 17 platforms are listed.
     assert found["pinpoint"]["state"] == "unsupported" and found["pinpoint"]["reader_enabled"] is False
     assert found["oracle"]["state"] == "public_discovery_only" and found["oracle"]["reader_enabled"] is False
     assert found["recruitee"]["state"] == "configured_unverified" and found["recruitee"]["reader_enabled"] is True
-    assert len(found) == 21
+    assert len(found) == 17
 
 
 async def test_remembered_company_pages_are_kept_current_by_the_background_reader(world):

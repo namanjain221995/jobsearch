@@ -13,7 +13,7 @@ from tests.portal.conftest import PLAIN_URL
 
 URL = "/api/integrations/ats"
 DAY = 86400.0
-STATES = {"verified_working", "configured_unverified", "requires_credentials", "public_discovery_only", "temporarily_unavailable",
+STATES = {"verified_working", "configured_unverified", "public_discovery_only", "temporarily_unavailable",
           "unsupported"}
 SAMPLE = {p.id: p for p in [
     Platform("greenhouse", "Greenhouse", "public_api", ("boards.greenhouse.io",), "greenhouse", True),
@@ -22,7 +22,6 @@ SAMPLE = {p.id: p for p in [
     Platform("workday", "Workday", "public_api", (".myworkdayjobs.com",), "workday"),
     Platform("workable", "Workable", "public_api", ("apply.workable.com",), "workable", True),
     Platform("icims", "iCIMS", "public_pages", (".icims.com",)),
-    Platform("bullhorn", "Bullhorn", "credentials"),
     Platform("smartrecruiters", "SmartRecruiters", "restricted", ("jobs.smartrecruiters.com",), "smartrecruiters"),
     Platform("notbuilt", "Not Built Yet", "public_api", (), "notbuilt"),         # names a reader the registry does not have
 ]}
@@ -60,7 +59,7 @@ async def test_admin_only(world):
 async def test_lists_every_platform_in_order_and_claims_nothing_on_an_empty_index(world):
     body = (await (await world.as_admin()).get(URL)).json()
     listed = body["platforms"]
-    assert [p["id"] for p in listed] == list(ats_platforms.PLATFORMS) and len(listed) == 21
+    assert [p["id"] for p in listed] == list(ats_platforms.PLATFORMS) and len(listed) == 17
     assert body["window_days"] == 7
     for item in listed:
         source = ats_platforms.PLATFORMS[item["id"]]
@@ -70,9 +69,7 @@ async def test_lists_every_platform_in_order_and_claims_nothing_on_an_empty_inde
             source.label, source.startup, source.access, list(source.hosts), source.docs, source.note, source.reader)
         assert item["access_note"] == ats_platforms.ACCESS[source.access]
         assert (item["boards_known"], item["boards_read_ok"], item["open_postings"], item["last_success_at"]) == (0, 0, 0, None)
-        if source.access == "credentials":
-            assert item["state"] == "requires_credentials"
-        elif source.access == "restricted":
+        if source.access == "restricted":
             assert item["state"] == "unsupported"
         elif not source.reader:
             assert item["state"] == "public_discovery_only"
@@ -95,7 +92,7 @@ async def test_each_state_comes_from_its_evidence(world, monkeypatch):
     assert {key: item["state"] for key, item in found.items()} == {
         "greenhouse": "configured_unverified", "lever": "configured_unverified", "ashby": "configured_unverified",
         "workday": "configured_unverified", "workable": "configured_unverified", "icims": "public_discovery_only",
-        "bullhorn": "requires_credentials", "smartrecruiters": "unsupported", "notbuilt": "unsupported"}
+        "smartrecruiters": "unsupported", "notbuilt": "unsupported"}
     assert found["notbuilt"]["reader_enabled"] is False and found["greenhouse"]["reader_enabled"] is True
 
     # Greenhouse: one board read yesterday with postings, one unread catalogue board, one dead board.
@@ -116,7 +113,8 @@ async def test_each_state_comes_from_its_evidence(world, monkeypatch):
     # Evidence never overrides the access class or a missing reader.
     await board("smartrecruiters", "acme", True, 9, 1)
     await unit("notbuilt", "acme", True, 9, 1)
-    await unit("bullhorn", "acme", True, 9, 1)
+    await unit("bullhorn", "acme", True, 9, 1)                 # a removed platform's old rows: ignored, not listed
+    await board("ceipal", "acme", True, 9, 1)
     await unit("icims", "acme", True, 9, 1)
 
     found = await states(world, admin)
@@ -133,7 +131,7 @@ async def test_each_state_comes_from_its_evidence(world, monkeypatch):
     w = found["workable"]
     assert w["state"] == "verified_working" and (w["boards_known"], w["boards_read_ok"], w["open_postings"]) == (0, 0, 4)
     assert found["smartrecruiters"]["state"] == "unsupported" and found["notbuilt"]["state"] == "unsupported"
-    assert found["bullhorn"]["state"] == "requires_credentials" and found["icims"]["state"] == "public_discovery_only"
+    assert "bullhorn" not in found and "ceipal" not in found and found["icims"]["state"] == "public_discovery_only"
     for item in found.values():                                 # the invariant: no "verified" without a successful read
         if item["state"] == "verified_working":
             assert item["reader_enabled"] and item["last_success_at"] and item["open_postings"] > 0

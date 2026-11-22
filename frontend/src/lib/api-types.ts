@@ -2145,7 +2145,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "verified_working" | "configured_unverified" | "requires_credentials" | "public_discovery_only" | "temporarily_unavailable" | "unsupported";
+            state: "verified_working" | "configured_unverified" | "public_discovery_only" | "temporarily_unavailable" | "unsupported";
         };
         /** AuditOut */
         AuditOut: {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Ban, CircleCheck, CircleDashed, ExternalLink, Globe, KeyRound, Layers, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Ban, CircleCheck, CircleDashed, ExternalLink, Globe, Layers, TriangleAlert, type LucideIcon } from "lucide-react";
 
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { SegmentedFilter } from "@/components/shared/filters";
@@ -17,11 +17,10 @@ type Platform = AtsHealth["platforms"][number];
 type Provider = AtsHealth["providers"][number];
 type Tone = "neutral" | "primary" | "success" | "warning" | "danger";
 
-/** The six states the API computes, in plain words. The API decides the state; this only names it. */
+/** The five states the API computes, in plain words. The API decides the state; this only names it. */
 const STATE: Record<Platform["state"], { label: string; tone: Tone; icon: LucideIcon }> = {
   verified_working: { label: "Verified working", tone: "success", icon: CircleCheck },
   configured_unverified: { label: "Configured, not verified yet", tone: "neutral", icon: CircleDashed },
-  requires_credentials: { label: "Needs employer credentials", tone: "neutral", icon: KeyRound },
   public_discovery_only: { label: "Public pages only", tone: "primary", icon: Globe },
   temporarily_unavailable: { label: "Temporarily unavailable", tone: "warning", icon: TriangleAlert },
   unsupported: { label: "Not supported", tone: "neutral", icon: Ban },

@@ -131,8 +131,6 @@ def platform_state(platform: ats_platforms.Platform, settings: Settings, off: se
     """(state, reason) of one platform. `found` is the index evidence for the platform's reader."""
     if platform.access == "restricted":
         return "unsupported", "The vendor's terms or robots.txt do not allow automated reading, so nothing is read."
-    if platform.access == "credentials":
-        return "requires_credentials", "Its API only answers with an employer's own credentials, so nothing is read without them."
     if not platform.reader:
         return "public_discovery_only", ("There is no reader for this platform. Postings are found on public career pages "
                                          "and each one is verified on its own page.")
