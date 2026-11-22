@@ -157,8 +157,6 @@ class Settings(BaseSettings):
     ollama_api_key: str = ""                         # Ollama web search API (providers/ollama_search.py); empty = not used
     ollama_web_searches_per_search: int = 40         # queries one search may send to it, beside SearXNG and the other engines
     ollama_web_search_concurrency: int = 4
-    ollama_model: str = "deepseek-v4.1-flash"        # Ollama cloud model for small text tasks (title variants, extra search queries); "" = not used
-    ollama_query_ideas: int = 8                      # extra search-engine queries per search proposed by that model (0 = none)
     techsara_web_search_enabled: bool = True         # the model's web_search tool as one more search engine for employer job boards
     techsara_web_searches_per_search: int = 40       # most web searches one job search may ask the model for (hard ceiling)
     techsara_web_searches_base: int = 12             # ... for a request of 50 or fewer; larger requests scale up to the ceiling above

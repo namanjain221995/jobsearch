@@ -19,7 +19,6 @@ from .providers.claude_provider import ClaudeProvider
 from .providers.openai_provider import MAX_FILTER_DOMAINS, OpenAIProvider, ProviderError, url_key
 from .providers.paid import aggregator_hosts, is_aggregator
 from .providers.searxng import BOARD_SOURCES, site_hosts, valid_board
-from .providers.ollama_chat import OllamaChat
 from .providers.techsara_provider import TechsaraProvider
 from .rank_cache import item_key, scope_key
 from .resume_parser import find_skills
@@ -160,15 +159,6 @@ EXPLAIN_SCHEMA = {
         "properties": {"id": {"type": "string"}, "matching_skills": {"type": "array", "items": {"type": "string"}},
                        "missing_skills": {"type": "array", "items": {"type": "string"}}, "reason": {"type": "string"}}}}},
 }
-QUERY_IDEAS_SYSTEM = (
-    "You write web-search queries that find CURRENT job postings in the United States on employers' own career sites, for "
-    "one job seeker. Vary them: different real-world title variants, kinds of employers that hire for this role (for "
-    "example hospitals, banks, insurers, manufacturers, retailers, universities, government contractors, consultancies), "
-    "and the preferred states or cities. Plain words only: no search operators, no site:, no quotation marks, and never "
-    "a job board or aggregator name (LinkedIn, Indeed, Glassdoor, ZipRecruiter). Each query at most 12 words."
-)
-QUERY_IDEAS_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["queries"],
-                      "properties": {"queries": {"type": "array", "items": {"type": "string"}}}}
 RANK_TEXT_CHARS = 1800           # posting text shown per job to OpenAI / Claude when they judge the shortlist
 EXPLAIN_TEXT_CHARS = 1500        # ... and to the company chat model when it writes an explanation
 RERANK_INSTRUCTION = ("Given a job seeker's profile, judge how well the job posting fits: same kind of role as the desired "
@@ -310,20 +300,6 @@ class DiscoverySlice:
         return place if place.lower() in _STATE_NAMES else ""
 
 
-def _ollama_chat(settings: Settings) -> "OllamaChat | None":
-    """One Ollama chat client per process: a refusal (no credits) is then remembered across searches."""
-    global _OLLAMA
-    key, model = (settings.ollama_api_key or "").strip(), (settings.ollama_model or "").strip()
-    if not key or not model:
-        return None
-    if _OLLAMA is None or _OLLAMA.model != model:
-        _OLLAMA = OllamaChat(key, model, settings.ai_timeout_seconds)
-    return _OLLAMA
-
-
-_OLLAMA = None
-
-
 class AIOrchestrator:
     """One instance per search: holds the call budget and degraded-service notes."""
 
@@ -368,7 +344,6 @@ class AIOrchestrator:
         if techsara is not None:          # listed only when configured: it is an addition, not a third "missing provider"
             self.status[techsara.name] = {"configured": True, "ok_calls": 0, "failed_calls": 0, "web_searches": 0,
                                           "last_error": "", "model": techsara.model}
-        self.ollama = None                # an Ollama cloud model (providers/ollama_chat.py), set by from_settings
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "AIOrchestrator":
@@ -379,16 +354,7 @@ class AIOrchestrator:
         techsara = TechsaraProvider(
             settings.techsara_api_key, settings.techsara_base_url, settings.techsara_model, settings.techsara_rerank_model,
             settings.techsara_timeout_seconds, settings.techsara_retries, settings.techsara_concurrency) if settings.techsara_configured else None
-        made = cls(settings, openai, claude, techsara)
-        made.use_ollama(_ollama_chat(settings))
-        return made
-
-    def use_ollama(self, chat: "OllamaChat | None") -> None:
-        """Add an Ollama cloud model for small text tasks. Listed only when it can answer (a key, and no refusal)."""
-        self.ollama = chat if chat is not None and chat.usable else None
-        if self.ollama is not None:
-            self.status[self.ollama.name] = {"configured": True, "ok_calls": 0, "failed_calls": 0, "web_searches": 0,
-                                             "last_error": "", "model": self.ollama.model}
+        return cls(settings, openai, claude, techsara)
 
     @property
     def available(self) -> bool:
@@ -407,7 +373,7 @@ class AIOrchestrator:
     def usage(self) -> dict:
         """Calls and tokens of this search per provider (for statistics and the cost report). No content, no keys."""
         out = {}
-        for name, provider in (("OpenAI", self.openai), ("Claude", self.claude), ("TechSara", self.techsara), ("Ollama", self.ollama)):
+        for name, provider in (("OpenAI", self.openai), ("Claude", self.claude), ("TechSara", self.techsara)):
             if provider is None:
                 continue
             st, used = self.status[name], getattr(provider, "usage", {}) or {}
@@ -1134,30 +1100,9 @@ class AIOrchestrator:
         The caller validates and caps them (search_plan.clean_variants)."""
         user = json.dumps({"desired_titles": titles[:8], "candidate_skills": profile.all_skills[:20],
                            "how_many": max(4, self.settings.title_expansion_max + 6)})
-        data, provider = await self._json([self.techsara, self.ollama, self.openai, self.claude], EXPAND_SYSTEM, user, EXPAND_SCHEMA, "title_variants")
+        data, provider = await self._json([self.techsara, self.openai, self.claude], EXPAND_SYSTEM, user, EXPAND_SCHEMA, "title_variants")
         raw = (data or {}).get("titles")
         return (raw if isinstance(raw, list) else []), provider
-
-    async def query_ideas(self, titles: list[str], profile: Profile, req: SearchRequest, how_many: int) -> list[str]:
-        """Extra plain web-search queries for the search engines (SearXNG, Ollama web search, TinyFish), written by the
-        Ollama model, else the company model: kinds of employers and wordings a fixed query form misses. Only the query
-        text is used, cleaned to plain words; what the engines return is checked like every other result. [] when no
-        model answers."""
-        if how_many <= 0 or not (self.ollama or self.techsara):
-            return []
-        user = json.dumps({"desired_titles": titles[:6], "skills": profile.all_skills[:15], "years_experience": req.years_experience,
-                           "preferred_us_states": req.locations[:4], "work_arrangement": req.work_mode, "how_many": how_many})
-        data, _ = await self._json([self.ollama, self.techsara], QUERY_IDEAS_SYSTEM, user, QUERY_IDEAS_SCHEMA, "search_queries")
-        out = []
-        for raw in (data or {}).get("queries") or []:
-            if re.search(r"\b(site|inurl|intitle|filetype)\s*:", str(raw), re.I):
-                continue                                   # a search operator: not a plain query
-            text = " ".join(re.sub(r"[^A-Za-z0-9 .,&'()+#/-]", " ", str(raw)).split())[:140]
-            low = text.lower()
-            if len(text) >= 8 and not any(
-                    bad in low for bad in ("linkedin", "indeed", "glassdoor", "ziprecruiter")):
-                out.append(text)
-        return list(dict.fromkeys(out))[:how_many]
 
     # ------------------------------------------------------------ company model: rerank + explanations
     @property
