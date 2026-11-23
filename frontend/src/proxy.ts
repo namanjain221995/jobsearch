@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * (GET /api/auth/me with the visitor's own cookies):
  *   - not signed in            -> /login?next=<where they were going>
  *   - signed in, another role's area (/admin, /tl, /member) -> their own home
- *   - "/"                      -> their home, or /login
+ *   - "/"                      -> signed in: their home; otherwise the public landing page
  *   - signed in and on /login  -> their home
  *
  * This only decides which screen to show. The API enforces every permission
@@ -75,12 +75,14 @@ export async function proxy(request: NextRequest) {
   }
 
   if (session.state === "unknown") {
-    // The page shell explains that the service is unreachable and offers a retry.
+    // The page shell explains that the service is unreachable and offers a retry
+    // ("/" shows the landing page, whose links lead to the sign-in page).
     return NextResponse.next();
   }
 
   if (session.state === "signed-out") {
-    if (pathname === "/") return redirect(request, "/login");
+    // The landing page is the front door for visitors without a session.
+    if (pathname === "/") return NextResponse.next();
     return redirect(request, "/login", `?next=${encodeURIComponent(pathname + search)}`);
   }
 
@@ -88,7 +90,6 @@ export async function proxy(request: NextRequest) {
 
   const area = AREA_PREFIXES.find((prefix) => within(pathname, prefix));
   if (area && area !== ROLE_AREAS[session.role]) return redirect(request, session.home);
-
 
   return NextResponse.next();
 }

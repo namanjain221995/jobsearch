@@ -240,7 +240,11 @@ def step_auth(browser):
     ctx = new_context(browser)
     page = ctx.new_page()
     page.goto(BASE + "/")
-    check("signed out: / goes to /login", page.url.rstrip("/").endswith("/login"), page.url)
+    check("signed out: / shows the landing page", page.url.rstrip("/") == BASE.rstrip("/"), page.url)
+    expect(page.get_by_role("heading", level=1)).to_contain_text("Real US jobs")
+    page.get_by_role("banner").get_by_role("link", name="Sign in").click()
+    page.wait_for_url(lambda u: u.rstrip("/").endswith("/login"), timeout=10000)
+    check("signed out: the landing page's Sign in leads to /login", page.url.rstrip("/").endswith("/login"), page.url)
     page.goto(BASE + "/member/jobs?applied=false")
     check("signed out: protected page goes to /login?next=...", "/login?next=%2Fmember%2Fjobs%3Fapplied%3Dfalse" in page.url, page.url)
 
