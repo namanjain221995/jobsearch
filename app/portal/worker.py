@@ -69,7 +69,7 @@ async def _hand_over_runs(ctx: dict) -> None:
     if resumed or closed:
         log.warning("interrupted search runs: %s resumed, %s closed", len(resumed), closed)
     async with ctx["sessions"]() as db:
-        waiting = (await db.execute(select(SearchRun.id, SearchRun.attempts).where(SearchRun.status == "queued"))).all()
+        waiting = (await db.execute(select(SearchRun.id, SearchRun.attempts).where(SearchRun.status == "queued").order_by(SearchRun.created_at))).all()      # oldest first: first come, first served
     for run_id, attempts in waiting:
         if str(run_id) not in ctx["active"]:
             await ctx["redis"].enqueue_job("run_search", str(run_id), _job_id=job_id(run_id, attempts or 0))
