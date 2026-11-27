@@ -7,6 +7,7 @@ Resume and posting text are always passed as delimited, untrusted data."""
 import asyncio
 import itertools
 import json
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -281,6 +282,7 @@ POSTING_PAGES = ("Wanted are DIRECT posting pages: one opening per address, as a
 DEADLINE_MARGIN_SECONDS = 15.0
 _NOT_PLAIN = re.compile(r"[^A-Za-z0-9 .,&/+#()'-]")
 _RATE_LIMIT = re.compile(r"(?i)\b429\b|rate.?limit|too many requests")
+RATE_LIMIT_WAITS = (12.0, 30.0)      # seconds a rate-limited web-search call waits before it asks again (twice at most)
 _STATE_NAMES = {str(name).lower() for name in US_STATES.values()}
 
 
@@ -961,18 +963,29 @@ class AIOrchestrator:
         name, limit = provider.name, max(1.0, self.settings.ai_discovery_call_timeout_seconds)
         where = {"allowed_domains": sl.hosts} if sl.cells else {"blocked_domains": self._blocked()}
         async with gates[name]:
-            if name in self._down:
-                return None, False                    # switched off while this call waited for its turn
-            try:
-                found, ran = await asyncio.wait_for(
-                    provider.web_discover(DISCOVERY_SYSTEM, prompt, searches, bool(sl.cells), **where, region=sl.region,
-                                          own_searches=not sl.cells, timeout=limit), timeout=limit + 10.0)
-            except ProviderError as exc:
-                self._failed(provider, exc)
-                return None, True
-            except asyncio.TimeoutError:
-                self._failed(provider, ProviderError("web search call timed out"))
-                return None, True
+            # "Too many requests" is the provider asking for a pause, not a failure: the call waits and asks again
+            # (RATE_LIMIT_WAITS), keeping its turn so that fewer calls of this provider run meanwhile. Only a call that
+            # is still refused after that counts as failed (and the other provider takes its slice over).
+            for attempt in range(len(RATE_LIMIT_WAITS) + 1):
+                if name in self._down:
+                    return None, attempt > 0          # switched off while this call waited for its turn
+                try:
+                    found, ran = await asyncio.wait_for(
+                        provider.web_discover(DISCOVERY_SYSTEM, prompt, searches, bool(sl.cells), **where, region=sl.region,
+                                              own_searches=not sl.cells, timeout=limit), timeout=limit + 10.0)
+                    break
+                except ProviderError as exc:
+                    # A used-up quota is marked fatal by the provider (openai_provider.is_fatal): waiting does not help.
+                    if attempt < len(RATE_LIMIT_WAITS) and not getattr(exc, "fatal", False) and _RATE_LIMIT.search(str(exc)):
+                        st = self.status[name]
+                        st["rate_limit_retries"] = st.get("rate_limit_retries", 0) + 1
+                        await asyncio.sleep(RATE_LIMIT_WAITS[attempt] * (1 + random.random() * 0.25))
+                        continue
+                    self._failed(provider, exc)
+                    return None, True
+                except asyncio.TimeoutError:
+                    self._failed(provider, ProviderError("web search call timed out"))
+                    return None, True
         self.status[name]["web_searches"] += ran
         if ran == 0:
             self._failed(provider, ProviderError("no live web search was executed"))

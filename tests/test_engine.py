@@ -105,3 +105,63 @@ def test_ai_scored_jobs_rank_ahead_of_keyword_only_jobs(make_engine):
     kinds = [j.score_source for j in state.results]
     assert kinds[:3] == ["ai", "ai", "ai"] and "ai" not in kinds[3:]
     assert state.results[0].score == 30 and state.results[3].score > 30      # lower AI score still outranks keyword score
+
+
+# ---------------------------------------------------------------- warnings a person can act on (2026-11-28)
+def test_boards_still_loading_are_a_warning_only_when_jobs_are_missing(make_engine):
+    """Production, 2026-11-27: a search that delivered the 100 jobs asked for warned that 3,116 source requests were
+    still loading. The note is kept for the search that came up short; the other one found what was asked for."""
+    from app.search_engine import SearchState
+
+    engine = make_engine()
+    note = "12 source request(s) (Greenhouse) were still loading at the time limit."
+
+    def searched(result_count):
+        seen = {}
+        original = SearchState.publish
+
+        def publish(self, final, partial=False):
+            seen["state"] = self
+            return original(self, final, partial=partial)
+
+        SearchState.publish = publish
+        try:
+            report = engine._source_report
+
+            async def with_pending(state, failed, pending):
+                await report(state, failed, pending)
+                state.pending_note = note
+            engine._source_report = with_pending
+            return run(run_search(engine, make_request(result_count=result_count)))
+        finally:
+            SearchState.publish = original
+
+    full = searched(5)
+    assert len(full.results) == 5 and not any("still loading" in w for w in full.warnings)
+    short = searched(400)
+    assert len(short.results) < 400 and any("still loading" in w for w in short.warnings)
+
+
+def test_a_few_failed_boards_out_of_many_are_not_a_warning_and_a_refusing_source_is_said_once(make_engine):
+    from app.providers.registry import SPECS
+    from app.search_engine import SearchState, Unit
+
+    engine = make_engine()
+    state = SearchState("s1", 25)
+
+    async def stats():
+        return {"by_source": {"greenhouse": {"units": 2000, "postings": 9000}, "ashby": {"units": 4, "postings": 30}},
+                "fresh_units": 2004, "fresh_postings": 9030}
+
+    engine.index.index_stats = stats
+    failed = [(Unit("greenhouse", f"g{i}", ""), "HTTP 503 from boards-api.greenhouse.io") for i in range(3)]
+    failed += [(Unit("ashby", "acme", ""), "HTTP 500 from api.ashbyhq.com")]
+    failed += [(Unit("workday", f"t{i}|wd1|x", ""), "t.wd1.myworkdayjobs.com answered with a bot check (HTTP 429); not read") for i in range(40)]
+    run(engine._source_report(state, failed, []))
+    notes = state.source_notes
+    assert not any(n.startswith(SPECS["greenhouse"].label) for n in notes)                    # 3 of 2,003
+    assert any(n.startswith("Ashby: 1 of 5 sources could not be read") for n in notes)        # 1 of 5
+    workday = [n for n in notes if n.startswith("Workday")]
+    assert len(workday) == 1 and "bot check" in workday[0] and "never works around" in workday[0]
+    assert state.sources["Workday"]["boards_failed"] == 0 and state.sources["Workday"]["refuses"] is True
+    assert state.warnings == []                                                                # said at the end of the search, once

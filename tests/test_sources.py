@@ -141,3 +141,76 @@ def test_host_limiter_paces_requests_and_backs_off_after_429():
             pass
         assert loop.time() - t2 < 0.1
     run(go())
+
+
+# ---------------------------------------------------------------- a site that answers with a bot check (2026-11-28)
+def test_a_bot_check_is_a_refusal_and_the_source_is_left_alone_after_three(monkeypatch):
+    """Workday answered the production server with Cloudflare's `cf-mitigated: challenge` (HTTP 429) on nearly every
+    request for days, and the engine asked again every ten minutes. A bot check is never solved or worked around:
+    after three in a row the source gets no request for hours, and one answer with content lifts that."""
+    import asyncio
+
+    import httpx
+
+    from app.providers import base
+
+    sent = []
+    answer = {"challenge": True}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if answer["challenge"]:
+            return httpx.Response(429, headers={"cf-mitigated": "challenge"}, text="<html>Just a moment...</html>")
+        return httpx.Response(200, json={"ok": True})
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            ctx = base.Ctx(client, base.HostLimiter(intervals={}))
+            for _ in range(base.CHALLENGES_BEFORE_BLOCK):
+                try:
+                    await ctx.json("workday", "GET", "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/x/jobs", check_robots=True, retries=2)
+                    raise AssertionError("a bot check must not read as an answer")
+                except base.BotChallenge as exc:
+                    assert "bot check" in str(exc)
+            requests_so_far = len(sent)
+            assert requests_so_far == 1 + base.CHALLENGES_BEFORE_BLOCK          # robots.txt once, then one request each: a bot check is not retried
+            assert "bot check" in ctx.limiter.blocked("workday") and ctx.limiter.blocked("greenhouse") == ""
+            for _ in range(5):                                                   # blocked: refused without a request
+                try:
+                    await ctx.json("workday", "GET", "https://other.wd5.myworkdayjobs.com/wday/cxs/other/y/jobs", check_robots=True)
+                    raise AssertionError("no request may go out while the source refuses this server")
+                except base.BotChallenge:
+                    pass
+            assert len(sent) == requests_so_far
+            # The pause is over and the site answers with content again: the block is lifted.
+            answer["challenge"] = False
+            ctx.limiter._blocked["workday"] = (0.0, "over")
+            assert await ctx.json("workday", "GET", "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/x/jobs", check_robots=True) == {"ok": True}
+            assert ctx.limiter.blocked("workday") == "" and "workday" not in ctx.limiter._challenges
+
+    asyncio.run(scenario())
+
+
+def test_a_bot_check_on_robots_txt_counts_too():
+    import asyncio
+
+    import httpx
+
+    from app.providers import base
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"cf-mitigated": "challenge"}, text="<html></html>")
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            ctx = base.Ctx(client, base.HostLimiter(intervals={}), base.RobotsCache(retry_after=0.0))
+            for _ in range(base.CHALLENGES_BEFORE_BLOCK):
+                try:
+                    await ctx.json("workday", "GET", "https://acme.wd1.myworkdayjobs.com/x", check_robots=True)
+                except base.BotChallenge:
+                    pass
+            assert "bot check" in ctx.limiter.blocked("workday")
+
+    asyncio.run(scenario())

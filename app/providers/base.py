@@ -17,6 +17,16 @@ class SourceError(Exception):
     """A source could not be read. Carries a short, secret-free message."""
 
 
+class BotChallenge(SourceError):
+    """The site answered with a bot check instead of content (Cloudflare `cf-mitigated: challenge`). That is a refusal
+    of automated clients, not a "slow down": asking again sooner or later gets the same answer, and the check is
+    never solved or worked around. HostLimiter.challenged() leaves the whole source alone for hours after a few."""
+
+
+def bot_challenge(response) -> bool:
+    return (response.headers.get("cf-mitigated") or "").strip().lower() == "challenge"
+
+
 class BoardNotFound(SourceError):
     pass
 
@@ -57,6 +67,8 @@ class HostLimiter:
         self._sems: dict[str, asyncio.Semaphore] = {}
         self._gates: dict[str, asyncio.Lock] = {}
         self._next: dict[str, float] = {}
+        self._challenges: dict[str, int] = {}                 # bot checks in a row, per group
+        self._blocked: dict[str, tuple[float, str]] = {}      # group -> (until, reason)
 
     @asynccontextmanager
     async def slot(self, group: str):
@@ -74,11 +86,36 @@ class HostLimiter:
                     self._next[group] = max(self._next.get(group, 0.0), loop.time()) + interval
             yield
 
+    def blocked(self, group: str) -> str:
+        """Why no request of this group is sent right now ("" = requests go out)."""
+        hit = self._blocked.get(group)
+        if hit and time.time() < hit[0]:
+            return hit[1]
+        self._blocked.pop(group, None)
+        return ""
+
+    def challenged(self, group: str, host: str = "") -> None:
+        """One more bot check from the group. After CHALLENGES_BEFORE_BLOCK in a row the source is left alone for
+        CHALLENGE_BLOCK_SECONDS: one request is tried again after that, and a single answer with content lifts it."""
+        self._challenges[group] = self._challenges.get(group, 0) + 1
+        if self._challenges[group] >= CHALLENGES_BEFORE_BLOCK or group in self._blocked:
+            self._blocked[group] = (time.time() + CHALLENGE_BLOCK_SECONDS,
+                                    f"{host or group} answers this server with a bot check; it is not read and the check is not worked around")
+
+    def answered(self, group: str) -> None:
+        """The group answered with content: it is not refusing this server."""
+        if self._challenges.pop(group, None) or group in self._blocked:
+            self._blocked.pop(group, None)
+
     def penalize(self, group: str, seconds: float) -> None:
         """The source said "slow down" (HTTP 429): hold every request of the group for a while."""
         if self.intervals.get(group, 0.0) > 0:
             loop = asyncio.get_running_loop()
             self._next[group] = max(self._next.get(group, 0.0), loop.time() + seconds)
+
+
+CHALLENGES_BEFORE_BLOCK = 3
+CHALLENGE_BLOCK_SECONDS = 6 * 3600.0
 
 
 async def request_json(client: httpx.AsyncClient, method: str, url: str, *, params: dict | None = None,
@@ -94,6 +131,8 @@ async def request_json(client: httpx.AsyncClient, method: str, url: str, *, para
                                      headers={"User-Agent": USER_AGENT, "Accept": "application/json", **(headers or {})})
             if r.status_code in (404, 410, 422):
                 raise BoardNotFound(f"HTTP {r.status_code} from {host}")
+            if bot_challenge(r):
+                raise BotChallenge(f"{host} answered with a bot check (HTTP {r.status_code}); not read")
             if r.status_code == 429 or r.status_code >= 500:
                 last = f"HTTP {r.status_code}"
                 retry_after = r.headers.get("retry-after", "")
@@ -221,6 +260,10 @@ class RobotsCache:
                 r = await client.get(origin + "/robots.txt", timeout=12.0, headers={"User-Agent": USER_AGENT},
                                      follow_redirects=True)
                 status, text = r.status_code, r.text[:500_000]
+                if bot_challenge(r):
+                    rules = RobotsRules(deny_all=True, transient=True)
+                    rules.challenged = True
+                    return rules
         except Exception:
             return RobotsRules(deny_all=True, transient=True)
         if status == 200:
@@ -246,11 +289,18 @@ class Ctx:
 
     async def json(self, group: str, method: str, url: str, *, check_robots: bool = False, **kwargs):
         """Rate-limited JSON request. With check_robots the host's robots.txt must allow the URL."""
+        refusal = self.limiter.blocked(group)
+        if refusal:
+            raise BotChallenge(refusal)                       # no request: the source refused this server a short while ago
         if check_robots:
             rules = self.robots.peek(url)
             if rules is None:
                 async with self.limiter.slot(group):          # robots.txt is fetched at the same polite pace
                     rules = await self.robots.rules(self.client, url)
+            if getattr(rules, "challenged", False):
+                self.limiter.challenged(group, httpx.URL(url).host)
+                self.limiter.penalize(group, THROTTLE_PAUSE_SECONDS)
+                raise BotChallenge(f"{httpx.URL(url).host} answered with a bot check; not read")
             if rules.transient:
                 self.limiter.penalize(group, THROTTLE_PAUSE_SECONDS)
                 raise SourceError(f"robots.txt of {httpx.URL(url).host} is unavailable right now (the site is throttling or down)")
@@ -258,8 +308,14 @@ class Ctx:
                 raise SourceError(f"robots.txt disallows {httpx.URL(url).host}{httpx.URL(url).path}")
         async with self.limiter.slot(group):
             try:
-                return await request_json(self.client, method, url, timeout=kwargs.pop("timeout", self.timeout), **kwargs)
+                data = await request_json(self.client, method, url, timeout=kwargs.pop("timeout", self.timeout), **kwargs)
+            except BotChallenge:
+                self.limiter.challenged(group, httpx.URL(url).host)
+                self.limiter.penalize(group, THROTTLE_PAUSE_SECONDS)
+                raise
             except SourceError as exc:
                 if "HTTP 429" in str(exc):
                     self.limiter.penalize(group, THROTTLE_PAUSE_SECONDS)
                 raise
+            self.limiter.answered(group)
+            return data

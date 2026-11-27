@@ -18,6 +18,7 @@ index through the same registration path and is then read through its official A
 Every stage has a budget. Nothing is shown that was not read from a live source."""
 import asyncio
 import json
+import logging
 import math
 import re
 import time
@@ -77,6 +78,7 @@ def paced_unit(unit: Unit) -> bool:
 
 AI_PROVIDERS = {"OpenAI", "Claude"}          # only a lead a model named gets the relevance floor; a search-engine hit does not
 SEARX = "SearXNG"
+log = logging.getLogger(__name__)
 TECHSARA_WEB = "TechSara web search"
 # Sources whose limiter lets through about one request a second (Workday, Recruitee, Workable accounts, ...). A search
 # waits only a short while for them and asks for at most this many stale units of each per search, its best title
@@ -90,6 +92,8 @@ WORKDAY_NEW_TENANTS_PER_ROUND = 6           # Workday is paced (one request ever
 # Open-web queries of the plain search engines (no `site:`): the two forms that returned postings on employers' own
 # sites in the measurement of 2026-11-21 (`intitle:` / `inurl:` forms returned none that passed the address test).
 OPEN_WEB_QUERY_FORMS = ('"{title}" job opening {place} -linkedin -indeed -glassdoor -ziprecruiter', '"{title}" careers apply {place}')
+AI_FAILED_CALLS_WARN, AI_FAILED_SHARE_WARN = 3, 0.15  # failed calls of one AI provider before the search says "degraded"
+FAILED_SOURCE_SHARE = 0.10          # share of one source's boards that failed before the search warns about it (3 of 2,000 is not a warning)
 PROBES_PER_SITE = 2                        # page leads of one site that are checked before the site has shown what it serves
 PROBE_SECONDS = 8.0                         # how long those first checks are waited for before the other leads start
 _SITE_REFUSES = re.compile(r"Page returned HTTP (401|403|429)|Disallowed by robots\.txt|Source does not permit")
@@ -199,6 +203,8 @@ class SearchState:
         self.partial = False            # True while results are preliminary (keyword-scored, search still running)
         self.results_version = 0
         self.warnings: list[str] = []
+        self.source_notes: list[str] = []        # coverage notes of the last index read; warned at the end of the search
+        self.pending_note = ""                   # boards still loading at the time limit; a warning only when jobs are missing
         self.providers: dict = {}
         self.sources: dict[str, dict] = {}
         self.related_titles: list[str] = []
@@ -477,8 +483,10 @@ class SearchEngine:
         except Exception as exc:
             error = type(exc).__name__
         permanent = "robots.txt disallows" in error or error.startswith(("HTTP 404", "HTTP 410", "HTTP 422"))
-        await self.index.fail_unit(unit.src, unit.key, unit.scope, error, 6 * 3600.0 if permanent else 180.0)
-        await board_catalog.note_read(self.index, unit, None)              # a miss: the catalogue retries it later and later
+        refused = "bot check" in error             # the whole source refuses this server: says nothing about this board
+        await self.index.fail_unit(unit.src, unit.key, unit.scope, error, 6 * 3600.0 if permanent or refused else 180.0)
+        if not refused:
+            await board_catalog.note_read(self.index, unit, None)          # a miss: the catalogue retries it later and later
         return unit, 0, error
 
     async def _store_unit(self, unit: Unit, jobs: list[Job], ttl: int) -> None:
@@ -569,11 +577,22 @@ class SearchEngine:
                 continue
             e = entry(src)
             e["boards_ok"], e["postings"] = info["units"], info["postings"]
+        refusing: dict[str, str] = {}
         for unit, error in failed:
             e = entry(unit.src)
+            if "bot check" in error:                    # the source refuses this server: said once, not counted board by board
+                refusing[SPECS[unit.src].label if unit.src in SPECS else unit.src] = error
+                e["refuses"] = True
+                continue
             e["boards_failed"] += 1
             if len(e["errors"]) < 5:
                 e["errors"].append(f"{unit.key}: {error}")
+        for src in SPECS:
+            reason = self.limiter.blocked(src)
+            if reason and scope.allows_source(src):
+                refusing[SPECS[src].label] = reason
+                entry(src)["refuses"] = True
+        state.stats["sources_refusing"] = refusing
         for unit in pending:
             entry(unit.src)["pending"] += 1
         state.sources = report
@@ -582,15 +601,24 @@ class SearchEngine:
         state.stats["boards_checked"] = index["fresh_units"]
         state.stats["boards_failed"] = len(failed)
         state.stats["sources_pending"] = len(pending)
+        # What is said to the person who searched is decided at the end (_coverage_notes): a few boards that failed out
+        # of thousands, or boards still loading behind a search that found what was asked for, are not a warning.
+        notes = []
         for label, e in report.items():
-            if e["boards_failed"]:
+            read = e["boards_ok"] + e["boards_failed"]
+            if e["boards_failed"] and e["boards_failed"] >= FAILED_SOURCE_SHARE * read:
                 throttled = any("429" in err or "throttling" in err for err in e["errors"])
-                state.warn(f"{label}: {e['boards_failed']} source(s) could not be read; coverage is incomplete."
-                           + (f" {label} is rate-limiting this machine (HTTP 429); the app has backed off and retries later." if throttled else ""))
+                notes.append(f"{label}: {e['boards_failed']} of {read} sources could not be read; coverage is incomplete."
+                             + (f" {label} is slowing this server down (HTTP 429); the app has backed off and tries again later." if throttled else ""))
+        for label in sorted(refusing):
+            notes.append(f"{label} is not read at the moment: its site answers this server with a bot check, which the app "
+                         f"never works around. {label} jobs are missing from this search.")
+        state.source_notes = notes
+        state.pending_note = ""
         if pending:
             slow = sorted({SPECS[u.src].label for u in pending})
-            state.warn(f"{len(pending)} source request(s) ({', '.join(slow)}) were still loading at the time limit. They keep "
-                       f"loading in the background; search again in a few minutes for wider coverage.")
+            state.pending_note = (f"{len(pending)} source request(s) ({', '.join(slow)}) were still loading at the time limit. "
+                                  f"They keep loading in the background; search again in a few minutes for wider coverage.")
 
     @staticmethod
     def _fresh_postings(index: dict, scope: Scope) -> int:
@@ -1074,6 +1102,10 @@ class SearchEngine:
         # Single Workday postings named by a lead: the source is paced (one request every 1.5 s, shared with the reading
         # of the Workday boards), so they are started now and run beside everything else of this lead check. Until
         # 2026-11-27 ten of them got 20 seconds and the rest was dropped unseen.
+        if workday_leads and self.limiter.blocked("workday"):
+            stats["leads_source_refuses"] = stats.get("leads_source_refuses", 0) + len(workday_leads)
+            stats["rejected_unverified"] += len(workday_leads)
+            workday_leads = []
         workday_checks = [asyncio.create_task(check_workday(b, l)) for b, l in workday_leads[:WORKDAY_LEADS_PER_ROUND]]
         if len(workday_leads) > len(workday_checks):
             stats["workday_leads_unchecked"] += len(workday_leads) - len(workday_checks)
@@ -1270,6 +1302,8 @@ class SearchEngine:
         chosen: list[Unit] = []
         pages: list[Unit] = []
         for unit in scope.order_units(stale):
+            if self.limiter.blocked(unit.src):          # the source answers this server with a bot check: no request, no waiting
+                continue
             if unit.src == CAREER_PAGE:                 # one posting each: only those whose title fits, outside the board budget
                 if hits.get((unit.src, unit.key)) and len(pages) < CAREER_PAGES_PER_SEARCH:
                     pages.append(unit)
@@ -2346,12 +2380,19 @@ class SearchEngine:
         if (ai.available or getattr(ai, "can_rerank", False)) and unique:
             unique = await self._ai_rank(state, req, resume_text, ai, profile, unique, target, order=scope.order_key(self._order))
         audited = before_rank - count_platforms(unique)      # dropped by the AI audit (not relevant, or not eligible)
+        down = getattr(ai, "_down", {})
         for name, st in ai.status.items():
-            if st["configured"] and st["failed_calls"]:
-                limited = st.get("rate_limited", 0)
-                state.warn(f"{name} degraded: {st['failed_calls']} call(s) failed ({st['last_error']})."
-                           + (f" {limited} of them were refused as rate-limited (HTTP 429): the provider's limit is below what a "
-                              f"round asks for; lower {name.upper()}_SEARCH_CONCURRENCY or the calls per round." if limited else ""))
+            if not (st["configured"] and st["failed_calls"]):
+                continue
+            failed, calls, limited = st["failed_calls"], st["failed_calls"] + st.get("ok_calls", 0), st.get("rate_limited", 0)
+            if limited:                                # for the operator, in the log: the person who searched cannot change it
+                log.warning("%s: %d of %d call(s) of search %s were rate-limited (HTTP 429) after retries; lower "
+                            "%s_SEARCH_CONCURRENCY or the calls per round if this repeats", name, limited, calls, state.id, name.upper())
+            # A few failed calls out of many change nothing a person would notice: the other provider takes the slice
+            # over (AIOrchestrator._call). It is a warning when the provider was switched off or failed often.
+            if name in down or (failed >= AI_FAILED_CALLS_WARN and failed >= AI_FAILED_SHARE_WARN * calls):
+                state.warn(f"{name} degraded: {failed} of {calls} call(s) failed ({st['last_error']})."
+                           + (f" {limited} of them were refused as rate-limited (HTTP 429)." if limited else ""))
         state.mark("ranked")
         stats["rank_seconds"] = round(state.timings["ranked"] - state.timings.get("leads_verified", state.timings["ranked"]), 1)
 
@@ -2378,6 +2419,10 @@ class SearchEngine:
         stats["coverage_warnings"] = scope.coverage_warnings(stats["platforms"])
         for text in stats["coverage_warnings"]:
             state.warn(text)
+        for text in state.source_notes:
+            state.warn(text)
+        if state.pending_note and len(final) < target:        # everything asked for was found: slow boards cost this search nothing
+            state.warn(state.pending_note)
         state.message = self._outcome(stats, target, len(unique), ai)
         if round_no > 1:
             state.message += f" The search ran {round_no} rounds and stopped because {stats['stop_reason']}."

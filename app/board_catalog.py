@@ -231,6 +231,11 @@ async def catalog_tick(engine, per_minute: dict[str, int] | None = None) -> int:
     rates = per_minute or PER_MINUTE
     wanted = {ats: n for ats, n in rates.items()
               if n > 0 and ats in engine.specs and (engine.specs[ats].keyed or ats in ACCOUNT_SOURCES)}
+    # A source that answers this server with a bot check (providers/base.HostLimiter.challenged) is left alone until
+    # its pause is over: no request, and its boards are not counted as failed reads meanwhile.
+    limiter = getattr(engine, "limiter", None)
+    if limiter is not None:
+        wanted = {ats: n for ats, n in wanted.items() if not limiter.blocked(ats)}
     # Sources that are searched per title (Workday, Oracle) are kept fresh by the searches themselves; here a read only
     # proves that the tenant is alive, so a live one is looked at again after the re-check time, not the refresh time.
     queried = {ats: n for ats, n in wanted.items() if engine.specs[ats].kind == "search" and engine.specs[ats].keyed}

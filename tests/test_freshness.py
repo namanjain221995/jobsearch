@@ -562,4 +562,50 @@ def test_rate_limited_calls_are_counted_apart_and_named_in_the_warning(make_engi
     engine.ai_factory = Limited
     state = run(run_search(engine, make_request()))
     warning = next(w for w in state.warnings if w.startswith("OpenAI degraded"))
-    assert "3 call(s) failed" in warning and "2 of them were refused as rate-limited (HTTP 429)" in warning and "OPENAI_SEARCH_CONCURRENCY" in warning
+    assert "3 of 3 call(s) failed" in warning and "2 of them were refused as rate-limited (HTTP 429)" in warning
+    assert "OPENAI_SEARCH_CONCURRENCY" not in warning          # a setting name is for the operator's log, not for the person who searched
+
+
+# ---------------------------------------------------------------- warnings a person can act on (2026-11-28)
+def test_one_failed_call_out_of_many_is_not_a_degraded_warning(make_engine):
+    class OneOfMany(FakeAI):
+        def __init__(self):
+            super().__init__(leads=[], available=True)
+            self.status["Claude"].update(failed_calls=1, ok_calls=40, rate_limited=1, last_error="web search rate limited")
+
+    engine = make_engine(seeds=[("greenhouse", "acme")], sources=("greenhouse",))
+    engine.ai_factory = OneOfMany
+    state = run(run_search(engine, make_request()))
+    assert not any("degraded" in w for w in state.warnings)
+
+
+def test_a_rate_limited_web_search_call_waits_and_asks_again_instead_of_failing(monkeypatch):
+    import app.ai_orchestrator as orchestrator_module
+    from app.providers.openai_provider import ProviderError
+    monkeypatch.setattr(orchestrator_module, "RATE_LIMIT_WAITS", (0.0, 0.0))
+    ai = default_orchestrator(openai_search_calls=0, claude_search_calls=1, openai_open_web_calls=0, claude_open_web_calls=0, ai_open_web_followup_calls=0)
+    answers = [ProviderError("web search rate limited"), ProviderError("HTTP 429: rate limited")]
+    inner = ai.claude.web_discover
+
+    async def flaky(*args, **kwargs):
+        if answers:
+            raise answers.pop(0)
+        return await inner(*args, **kwargs)
+
+    ai.claude.web_discover = flaky
+    run(ai.discover(Profile(skills=["Python"]), make_request(result_count=25), VARIANTS, []))
+    st = ai.status["Claude"]
+    assert (st["failed_calls"], st.get("rate_limit_retries"), st["ok_calls"] >= 1) == (0, 2, True) and "Claude" not in ai._down
+
+    quota = ProviderError("HTTP 429: rate limited or quota exceeded")
+    quota.fatal = True                                         # a used-up quota: waiting cannot help, no second request
+    ai2 = default_orchestrator(openai_search_calls=0, claude_search_calls=1, openai_open_web_calls=0, claude_open_web_calls=0, ai_open_web_followup_calls=0)
+    calls = []
+
+    async def refused(*args, **kwargs):
+        calls.append(1)
+        raise quota
+
+    ai2.claude.web_discover = refused
+    run(ai2.discover(Profile(skills=["Python"]), make_request(result_count=25), VARIANTS, []))
+    assert len(calls) == 1 and ai2.status["Claude"]["failed_calls"] == 1 and not ai2.status["Claude"].get("rate_limit_retries")
