@@ -139,6 +139,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assignments/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assignment Sections
+         * @description The sizes of the sections of a job list ("To apply", "Applied", "In progress", "Closed") for the caller's
+         *     scope and the same `candidate_id` / `member_id` / `team_id` / `q` filters the list takes. Active assignments
+         *     only. The sections are the statuses in SECTIONS; a list of one section is GET /api/assignments with them.
+         */
+        get: operations["assignment_sections_api_assignments_sections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assignments/{assignment_id}": {
         parameters: {
             query?: never;
@@ -886,6 +908,48 @@ export interface paths {
         put?: never;
         /** Revoke Invitation */
         post: operations["revoke_invitation_api_invitations__invitation_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/job-titles/from-resumes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Titles From Resumes
+         * @description Titles to offer for the selected candidates: saved in the profile, found in the resume, and (when a model
+         *     answers in time) related titles. Never resume text. A candidate outside the caller's scope refuses the request.
+         */
+        post: operations["titles_from_resumes_api_job_titles_from_resumes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/job-titles/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggest Titles
+         * @description Titles matching what was typed so far: the selected candidates' own titles first, then titles that postings
+         *     in the job index carry, the most frequent first. At most 8. Limited per person per minute.
+         */
+        get: operations["suggest_titles_api_job_titles_suggestions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2010,6 +2074,40 @@ export interface components {
             viewed_at?: string | null;
         };
         /**
+         * AssignmentSections
+         * @description How many active assignments are in each section of a job list, within the caller's scope and the filters
+         *     sent. Every assignment is in exactly one section, by its status, so the four add up to `total`:
+         *     to_apply = ASSIGNED, VIEWED, APPLYING; applied = APPLIED; in_progress = INTERVIEWING, OFFER;
+         *     closed = REJECTED, WITHDRAWN, SKIPPED.
+         */
+        AssignmentSections: {
+            /**
+             * Applied
+             * @default 0
+             */
+            applied: number;
+            /**
+             * Closed
+             * @default 0
+             */
+            closed: number;
+            /**
+             * In Progress
+             * @default 0
+             */
+            in_progress: number;
+            /**
+             * To Apply
+             * @default 0
+             */
+            to_apply: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /**
          * AssignmentStats
          * @description Definitions (also shown in the UI):
          *     assigned = active assignments; applied = assignments with a confirmed submission (applied_at set), whatever
@@ -3116,6 +3214,30 @@ export interface components {
              */
             updated_at: string;
         };
+        /** CandidateTitle */
+        CandidateTitle: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "saved" | "resume" | "model";
+            /** Title */
+            title: string;
+        };
+        /** CandidateTitles */
+        CandidateTitles: {
+            candidate: components["schemas"]["CandidateRef"];
+            /**
+             * Has Resume
+             * @default false
+             */
+            has_resume: boolean;
+            /**
+             * Titles
+             * @default []
+             */
+            titles: components["schemas"]["CandidateTitle"][];
+        };
         /**
          * CandidateUpdate
          * @description Only the fields that are sent change. `assigned_member_id: null` takes the candidate away from its member;
@@ -3397,7 +3519,7 @@ export interface components {
              * @default MEMBER
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /**
              * Team Description
              * @default
@@ -3445,7 +3567,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /**
              * Status
              * @enum {string}
@@ -3486,7 +3608,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /**
              * Status
              * @enum {string}
@@ -3511,7 +3633,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /** Team Name */
             team_name?: string | null;
         };
@@ -4721,6 +4843,25 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ResumeTitlesIn */
+        ResumeTitlesIn: {
+            /** Candidate Ids */
+            candidate_ids: string[];
+        };
+        /** ResumeTitlesOut */
+        ResumeTitlesOut: {
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["CandidateTitles"][];
+            /**
+             * Model
+             * @default none
+             * @enum {string}
+             */
+            model: "answered" | "pending" | "none";
+        };
         /**
          * SalesforceCandidate
          * @description A candidate as found in Salesforce (a Person Account), with whether it is already in the portal.
@@ -5544,6 +5685,29 @@ export interface components {
             /** Team Lead Id */
             team_lead_id?: string | null;
         };
+        /** TitleSuggestion */
+        TitleSuggestion: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "candidate" | "jobs";
+            /** Title */
+            title: string;
+        };
+        /** TitleSuggestionsOut */
+        TitleSuggestionsOut: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["TitleSuggestion"][];
+            /**
+             * Vocabulary Ready
+             * @default false
+             */
+            vocabulary_ready: boolean;
+        };
         /** UiSettings */
         UiSettings: {
             /**
@@ -6089,6 +6253,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assignment_sections_api_assignments_sections_get: {
+        parameters: {
+            query?: {
+                candidate_id?: string | null;
+                member_id?: string | null;
+                team_id?: string | null;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentSections"];
                 };
             };
             /** @description Validation Error */
@@ -7587,6 +7785,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                role?: string | null;
                 team_id?: string | null;
                 page?: number;
                 page_size?: number;
@@ -7763,6 +7962,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvitationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    titles_from_resumes_api_job_titles_from_resumes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeTitlesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTitlesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_titles_api_job_titles_suggestions_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                candidate_ids?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleSuggestionsOut"];
                 };
             };
             /** @description Validation Error */

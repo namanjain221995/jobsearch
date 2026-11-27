@@ -99,12 +99,18 @@ function AcceptForm({ token, invitation }: { token: string; invitation: Invitati
         <dt className="text-muted-foreground">E-mail</dt>
         <dd className="min-w-0 break-words font-medium">{invitation.email}</dd>
         <dt className="text-muted-foreground">Team</dt>
-        <dd className="font-medium">{invitation.team_name ?? "No team yet"}</dd>
+        <dd className="font-medium">{invitation.role === "ADMIN" ? "All teams" : (invitation.team_name ?? "No team yet")}</dd>
         <dt className="text-muted-foreground">Role</dt>
         <dd className="font-medium">{roleLabel(invitation.role)}</dd>
         <dt className="text-muted-foreground">Link valid until</dt>
         <dd>{formatDateTime(invitation.expires_at)}</dd>
       </dl>
+
+      {invitation.role === "ADMIN" && (
+        <p className="mb-6 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm">
+          This account will be an Admin: it can see and change everything in the portal. Choose a password you use nowhere else.
+        </p>
+      )}
 
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
         {failure && <FormMessage>{errorMessage(accept.error)}</FormMessage>}

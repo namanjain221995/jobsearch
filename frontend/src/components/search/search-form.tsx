@@ -17,6 +17,7 @@ import { FormField, FormMessage, TextField } from "@/components/shared/form-fiel
 import { PageHeader, Panel } from "@/components/shared/page-header";
 import { ErrorState, LoadingSkeleton } from "@/components/shared/states";
 import { Tag } from "@/components/shared/status-badge";
+import { JobTitlesInput } from "@/components/search/job-titles-input";
 import { TagInput } from "@/components/shared/tag-input";
 import { useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
@@ -514,16 +515,7 @@ function Form({ options }: { options: SearchOptions }) {
                 control={form.control}
                 name="job_titles"
                 render={({ field }) => (
-                  <TagInput
-                    label="Job titles"
-                    optional
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder="Empty: each candidate's saved titles"
-                    description="Press Enter or type a comma after each title."
-                    max={8}
-                    error={errors.job_titles?.message}
-                  />
+                  <JobTitlesInput value={field.value} onChange={field.onChange} selected={selected} error={errors.job_titles?.message} />
                 )}
               />
               <div className="grid gap-5 sm:grid-cols-2">

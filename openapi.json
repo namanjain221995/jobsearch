@@ -1062,6 +1062,38 @@
     "title": "AssignmentOut",
     "type": "object"
    },
+   "AssignmentSections": {
+    "description": "How many active assignments are in each section of a job list, within the caller's scope and the filters\nsent. Every assignment is in exactly one section, by its status, so the four add up to `total`:\nto_apply = ASSIGNED, VIEWED, APPLYING; applied = APPLIED; in_progress = INTERVIEWING, OFFER;\nclosed = REJECTED, WITHDRAWN, SKIPPED.",
+    "properties": {
+     "applied": {
+      "default": 0,
+      "title": "Applied",
+      "type": "integer"
+     },
+     "closed": {
+      "default": 0,
+      "title": "Closed",
+      "type": "integer"
+     },
+     "in_progress": {
+      "default": 0,
+      "title": "In Progress",
+      "type": "integer"
+     },
+     "to_apply": {
+      "default": 0,
+      "title": "To Apply",
+      "type": "integer"
+     },
+     "total": {
+      "default": 0,
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "title": "AssignmentSections",
+    "type": "object"
+   },
    "AssignmentStats": {
     "description": "Definitions (also shown in the UI):\nassigned = active assignments; applied = assignments with a confirmed submission (applied_at set), whatever\nhappened later; not_applied = active assignments without a confirmed submission, excluding skipped/withdrawn;\ninterviews / offers = assignments that reached that stage; closed = REJECTED + WITHDRAWN + SKIPPED;\ncompletion_rate = applied / (assigned - skipped - withdrawn-before-applying), 0..100; link_opens = how many\ntimes \"Open Job\" was used (never counted as applied).",
     "properties": {
@@ -3220,6 +3252,54 @@
     "title": "CandidateSyncOut",
     "type": "object"
    },
+   "CandidateTitle": {
+    "properties": {
+     "source": {
+      "enum": [
+       "saved",
+       "resume",
+       "model"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "source"
+    ],
+    "title": "CandidateTitle",
+    "type": "object"
+   },
+   "CandidateTitles": {
+    "properties": {
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
+     "has_resume": {
+      "default": false,
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "titles": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CandidateTitle"
+      },
+      "title": "Titles",
+      "type": "array"
+     }
+    },
+    "required": [
+     "candidate"
+    ],
+    "title": "CandidateTitles",
+    "type": "object"
+   },
    "CandidateUpdate": {
     "description": "Only the fields that are sent change. `assigned_member_id: null` takes the candidate away from its member;\n`email: null` (or \"\") removes the address.",
     "properties": {
@@ -3852,6 +3932,7 @@
      "role": {
       "default": "MEMBER",
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -3961,6 +4042,7 @@
      },
      "role": {
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -4060,6 +4142,7 @@
      },
      "role": {
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -4121,6 +4204,7 @@
      },
      "role": {
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -7003,6 +7087,49 @@
     "title": "ResumeOut",
     "type": "object"
    },
+   "ResumeTitlesIn": {
+    "properties": {
+     "candidate_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Candidate Ids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "candidate_ids"
+    ],
+    "title": "ResumeTitlesIn",
+    "type": "object"
+   },
+   "ResumeTitlesOut": {
+    "properties": {
+     "candidates": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CandidateTitles"
+      },
+      "title": "Candidates",
+      "type": "array"
+     },
+     "model": {
+      "default": "none",
+      "enum": [
+       "answered",
+       "pending",
+       "none"
+      ],
+      "title": "Model",
+      "type": "string"
+     }
+    },
+    "title": "ResumeTitlesOut",
+    "type": "object"
+   },
    "SalesforceCandidate": {
     "description": "A candidate as found in Salesforce (a Person Account), with whether it is already in the portal.",
     "properties": {
@@ -8699,6 +8826,47 @@
     "title": "TeamUpdate",
     "type": "object"
    },
+   "TitleSuggestion": {
+    "properties": {
+     "source": {
+      "enum": [
+       "candidate",
+       "jobs"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "source"
+    ],
+    "title": "TitleSuggestion",
+    "type": "object"
+   },
+   "TitleSuggestionsOut": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TitleSuggestion"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "vocabulary_ready": {
+      "default": false,
+      "title": "Vocabulary Ready",
+      "type": "boolean"
+     }
+    },
+    "title": "TitleSuggestionsOut",
+    "type": "object"
+   },
    "UiSettings": {
     "properties": {
      "ai_providers": {
@@ -10076,6 +10244,108 @@
      }
     },
     "summary": "Export Assignments",
+    "tags": [
+     "assignments"
+    ]
+   }
+  },
+  "/api/assignments/sections": {
+   "get": {
+    "description": "The sizes of the sections of a job list (\"To apply\", \"Applied\", \"In progress\", \"Closed\") for the caller's\nscope and the same `candidate_id` / `member_id` / `team_id` / `q` filters the list takes. Active assignments\nonly. The sections are the statuses in SECTIONS; a list of one section is GET /api/assignments with them.",
+    "operationId": "assignment_sections_api_assignments_sections_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "candidate_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Candidate Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "member_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Member Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Team Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 120,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AssignmentSections"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Assignment Sections",
     "tags": [
      "assignments"
     ]
@@ -12410,6 +12680,23 @@
      },
      {
       "in": "query",
+      "name": "role",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(ADMIN|TEAM_LEAD|MEMBER)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Role"
+      }
+     },
+     {
+      "in": "query",
       "name": "team_id",
       "required": false,
       "schema": {
@@ -12681,6 +12968,110 @@
     "summary": "Revoke Invitation",
     "tags": [
      "invitations"
+    ]
+   }
+  },
+  "/api/job-titles/from-resumes": {
+   "post": {
+    "description": "Titles to offer for the selected candidates: saved in the profile, found in the resume, and (when a model\nanswers in time) related titles. Never resume text. A candidate outside the caller's scope refuses the request.",
+    "operationId": "titles_from_resumes_api_job_titles_from_resumes_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResumeTitlesIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResumeTitlesOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Titles From Resumes",
+    "tags": [
+     "job titles"
+    ]
+   }
+  },
+  "/api/job-titles/suggestions": {
+   "get": {
+    "description": "Titles matching what was typed so far: the selected candidates' own titles first, then titles that postings\nin the job index carry, the most frequent first. At most 8. Limited per person per minute.",
+    "operationId": "suggest_titles_api_job_titles_suggestions_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "default": "",
+       "maxLength": 80,
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "candidate_ids",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 2000,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Candidate Ids"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TitleSuggestionsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Suggest Titles",
+    "tags": [
+     "job titles"
     ]
    }
   },

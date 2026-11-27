@@ -256,11 +256,13 @@ export function MemberCandidateView({ candidateId }: { candidateId: string }) {
         stats={data.stats}
         loading={false}
         hrefs={{
-          assigned: here,
-          not_applied: `${here}?applied=false`,
-          applied: `${here}?applied=true`,
-          interviews: `${here}?status=INTERVIEWING`,
-          offers: `${here}?status=OFFER`,
+          // The sections of this candidate's job list (the Jobs tab below).
+          assigned: `${here}?section=all`,
+          not_applied: here,
+          applied: `${here}?section=applied`,
+          interviews: `${here}?section=in_progress&status=INTERVIEWING`,
+          offers: `${here}?section=in_progress&status=OFFER`,
+          closed: `${here}?section=closed`,
         }}
       />
 

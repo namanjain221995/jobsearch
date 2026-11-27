@@ -70,7 +70,7 @@ export function JobFactLine({ job, className, company = false }: { job: JobSumma
       {workMode !== NOT_STATED && <Fact icon={Laptop}>{workMode}</Fact>}
       {salary !== NOT_STATED && <Fact icon={Banknote}>{salary}</Fact>}
       <Fact icon={CalendarDays} muted={!job.posted_at}>
-        <PostedAge value={job.posted_at} />
+        <span data-slot="posted-age"><PostedAge value={job.posted_at} /></span>
       </Fact>
     </div>
   );

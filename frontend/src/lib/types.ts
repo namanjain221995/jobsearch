@@ -78,6 +78,7 @@ export type PresetIn = Schemas["PresetIn"];
 
 export type Assignment = Schemas["AssignmentOut"];
 export type AssignmentDetail = Schemas["AssignmentDetail"];
+export type AssignmentSections = Schemas["AssignmentSections"];
 export type AssignmentStatus = Assignment["status"];
 export type AssignmentEvent = Schemas["EventOut"];
 export type AssignmentNote = Schemas["NoteOut"];
@@ -107,6 +108,7 @@ export type Health = Schemas["HealthOut"];
 
 /* Query-string parameters, taken from the operation definitions. */
 export type AssignmentListParams = QueryOf<"list_assignments_api_assignments_get">;
+export type AssignmentSectionParams = QueryOf<"assignment_sections_api_assignments_sections_get">;
 export type AssignmentExportParams = QueryOf<"export_assignments_api_assignments_export_csv_get">;
 export type CandidateListParams = QueryOf<"list_candidates_api_candidates_get">;
 export type UserListParams = QueryOf<"list_users_api_users_get">;

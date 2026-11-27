@@ -839,7 +839,8 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
     import importlib
     import pkgutil
     from app.portal import routers
-    from app.portal.routers import admin, assignments, auth, auto_apply, candidates, invitations, jobs, salesforce, searches, teams, users, web_search
+    from app.portal.routers import (admin, assignments, auth, auto_apply, candidates, invitations, job_titles, jobs, salesforce, searches, teams,
+                                    users, web_search)
 
     def reached(dependant, found):
         for inner in dependant.dependencies:
@@ -848,7 +849,7 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
         return found
 
     protection = {}
-    modules = (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin, web_search, auto_apply)
+    modules = (auth, invitations, teams, users, candidates, jobs, searches, job_titles, assignments, salesforce, admin, web_search, auto_apply)
     with_routes = {info.name for info in pkgutil.iter_modules(routers.__path__)
                    if hasattr(importlib.import_module(f"{routers.__name__}.{info.name}"), "router")}
     assert with_routes == {module.__name__.rsplit(".", 1)[1] for module in modules}       # a new router module cannot stay outside this test
@@ -875,6 +876,10 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
     assert {key: level for key, level in protection.items() if key[1].startswith("/api/integrations")} == {
         ("GET", "/api/integrations"): "session", ("GET", "/api/integrations/ats"): "session"}
     assert {protection[key] for key in protection if key[1].startswith("/api/candidates")} == {"session"}
+    # Job-title suggestions (Find Jobs): both need the session; the one that can cost a model call is a POST, so it also needs the CSRF token.
+    assert {key: level for key, level in protection.items() if key[1].startswith("/api/job-titles")} == {
+        ("GET", "/api/job-titles/suggestions"): "session", ("POST", "/api/job-titles/from-resumes"): "session"}
+    assert protection[("GET", "/api/assignments/sections")] == "session"
     assert not any(path.startswith(("/api/resumes", "/api/members")) or path.endswith("/profile") and path.startswith("/api/users")
                    for _, path in protection)                                              # the routes the candidate ones replaced are gone
     assert {key for key, level in protection.items() if level == "public"} == {("GET", "/api/health"), ("GET", "/api/invitations/validate"), ("GET", "/api/auth/password-policy")}

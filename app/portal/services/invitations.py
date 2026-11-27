@@ -2,7 +2,10 @@
 
 A token is random (256 bit), handed out once, stored only as a SHA-256 hash, valid for a limited time
 and usable once. The role and team are fixed on the invitation row at creation time by the server,
-so nothing in the link can be altered to obtain another role or team."""
+so nothing in the link can be altered to obtain another role or team.
+
+An invitation with the role ADMIN grants everything, so it is held to more: only an Admin creates, resends or revokes
+it, it never has a team, and its link only works while the Admin who issued it is still an active Admin."""
 import uuid
 from datetime import timedelta
 
@@ -80,6 +83,10 @@ async def create_invitation(db: AsyncSession, settings: Settings, emailer: Email
         if not actor.team_id:
             raise HTTPException(409, "You are not assigned to a team yet")
         team = await db.get(Team, actor.team_id)
+    elif principal.is_admin and data.role == "ADMIN":
+        # A further Admin: no team, and nothing team-shaped is silently dropped from the request.
+        if data.team_id or data.team_name or data.team_description.strip():
+            raise HTTPException(422, "An Admin does not belong to a team. Send the invitation without a team.")
     elif principal.is_admin:
         if data.team_id:
             team = await db.get(Team, data.team_id)
@@ -130,11 +137,14 @@ async def resend(db: AsyncSession, settings: Settings, emailer: Emailer, princip
         raise HTTPException(409, "This invitation was already accepted or the account is deactivated")
     if not still_covers(principal.user, user):               # the person was moved to another team meanwhile
         raise HTTPException(403, "You do not have access to this resource")
+    if (user.role == "ADMIN" or invitation.invited_role == "ADMIN") and not principal.is_admin:
+        raise HTTPException(403, "You do not have access to this resource")      # the router's scope refuses it first
     team = await db.get(Team, user.team_id) if user.team_id else None
     if team is not None and not team.is_active:
         raise HTTPException(409, "This team is deactivated")
     fresh, url, sent = await _issue(db, settings, emailer, principal.user, user, team, hours)
-    audit(db, principal.user, "invitation.resent", "user", user.id, user.team_id, {"delivery": fresh.delivery}, ip)
+    audit(db, principal.user, "invitation.resent", "user", user.id, user.team_id,
+          {"role": user.role, "delivery": fresh.delivery}, ip)
     return fresh, url, sent
 
 
@@ -150,7 +160,15 @@ async def find_valid(db: AsyncSession, token: str) -> tuple[Invitation, User] | 
         return None
     if invitation.team_id != user.team_id:                   # moved to another team after the link was made
         return None
-    if invitation.invited_by is not None and not still_covers(await db.get(User, invitation.invited_by), user):
+    if invitation.invited_role != user.role:                 # the link gives the role it was made for, or nothing
+        return None
+    inviter = await db.get(User, invitation.invited_by) if invitation.invited_by is not None else None
+    if invitation.invited_role == "ADMIN":
+        # The link that makes an Admin works only while the Admin who issued it is still an active Admin. An
+        # invitation whose issuer is unknown (the account was deleted) is not honoured for this role.
+        if inviter is None or inviter.role != "ADMIN" or not inviter.is_active or user.team_id is not None:
+            return None
+    elif invitation.invited_by is not None and not still_covers(inviter, user):
         return None
     return invitation, user
 

@@ -172,7 +172,7 @@ PersonName = Annotated[str, BeforeValidator(_person_name)]
 class InvitationCreate(Model):
     name: PersonName
     email: EmailStr
-    role: Literal["TEAM_LEAD", "MEMBER"] = "MEMBER"
+    role: Role = "MEMBER"                  # ADMIN: only an Admin may ask for it, and it never comes with a team
     team_id: uuid.UUID | None = None       # required for MEMBER invited by Admin; a Team Lead's own team is used (another team is refused)
     team_name: str | None = Field(default=None, max_length=120)      # Admin creating a Team Lead together with a new team
     team_description: str = Field(default="", max_length=2000)
@@ -182,7 +182,7 @@ class InvitationOut(Model):
     id: uuid.UUID
     email: str
     name: str
-    role: Literal["TEAM_LEAD", "MEMBER"]
+    role: Role
     team: TeamRef | None = None
     status: Literal["pending", "accepted", "expired", "revoked"]
     delivery: Literal["email", "manual"]
@@ -200,7 +200,7 @@ class InvitationCreated(InvitationOut):
 class InvitationPreview(Model):
     email: str
     name: str
-    role: Literal["TEAM_LEAD", "MEMBER"]
+    role: Role
     team_name: str | None = None
     expires_at: datetime
     password_min_length: int
@@ -894,6 +894,52 @@ class AssignmentDetail(AssignmentOut):
     allowed_statuses: list[AssignmentStatus] = []
     other_assignees: list[JobAssignee] = []        # managers only, within their scope
     job_urls: dict | None = None                   # managers only: {"canonical_url": ..., "apply_url": ...}
+
+
+class AssignmentSections(Model):
+    """How many active assignments are in each section of a job list, within the caller's scope and the filters
+    sent. Every assignment is in exactly one section, by its status, so the four add up to `total`:
+    to_apply = ASSIGNED, VIEWED, APPLYING; applied = APPLIED; in_progress = INTERVIEWING, OFFER;
+    closed = REJECTED, WITHDRAWN, SKIPPED."""
+    to_apply: int = 0
+    applied: int = 0
+    in_progress: int = 0
+    closed: int = 0
+    total: int = 0
+
+
+class TitleSuggestion(Model):
+    title: str
+    source: Literal["candidate", "jobs"]           # a selected candidate's own title, or a title postings in the job index carry
+
+
+class TitleSuggestionsOut(Model):
+    items: list[TitleSuggestion] = []
+    vocabulary_ready: bool = False                 # false until the job index's titles were read once (then only candidate titles)
+
+
+class ResumeTitlesIn(Model):
+    candidate_ids: list[uuid.UUID] = Field(min_length=1, max_length=50)
+
+
+class CandidateTitle(Model):
+    title: str
+    # saved = in the candidate's profile; resume = found in the resume text when it was uploaded;
+    # model = another name employers use for the same work, proposed by an AI model from the titles and skills
+    source: Literal["saved", "resume", "model"]
+
+
+class CandidateTitles(Model):
+    candidate: CandidateRef
+    has_resume: bool = False
+    titles: list[CandidateTitle] = []
+
+
+class ResumeTitlesOut(Model):
+    candidates: list[CandidateTitles] = []
+    # answered = model titles are included; pending = a model is still working, ask again in a few seconds;
+    # none = no model is configured or it did not answer: the titles are the saved and resume ones only
+    model: Literal["answered", "pending", "none"] = "none"
 
 
 class ActivityItem(Model):

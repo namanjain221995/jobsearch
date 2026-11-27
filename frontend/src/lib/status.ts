@@ -121,6 +121,29 @@ export function statusColor(value: string): string {
 export const APPLIED_STATUSES: AssignmentStatus[] = ["APPLIED", "INTERVIEWING", "OFFER", "REJECTED"];
 export const PRE_APPLICATION_STATUSES: AssignmentStatus[] = ["ASSIGNED", "VIEWED", "APPLYING"];
 
+/* ------------------------------------------------------------------ sections of a member's job list */
+
+export type JobSection = "to_apply" | "applied" | "in_progress" | "closed";
+
+/**
+ * The sections a member's jobs are sorted into, in the order the work goes. Every job is in exactly
+ * one, by its status. The API counts them the same way (GET /api/assignments/sections).
+ */
+export const JOB_SECTIONS: Array<{ value: JobSection; label: string; statuses: AssignmentStatus[]; meaning: string }> = [
+  { value: "to_apply", label: "To apply", statuses: PRE_APPLICATION_STATUSES, meaning: "Jobs you have not applied to yet." },
+  { value: "applied", label: "Applied", statuses: ["APPLIED"], meaning: "Applications sent, waiting for the employer's answer." },
+  { value: "in_progress", label: "In progress", statuses: ["INTERVIEWING", "OFFER"], meaning: "Interviews and offers." },
+  { value: "closed", label: "Closed", statuses: ["REJECTED", "WITHDRAWN", "SKIPPED"], meaning: "Rejected, withdrawn and skipped jobs." },
+];
+
+export function isJobSection(value: string): value is JobSection {
+  return JOB_SECTIONS.some((section) => section.value === value);
+}
+
+export function sectionOf(status: AssignmentStatus): JobSection {
+  return JOB_SECTIONS.find((section) => section.statuses.includes(status))?.value ?? "closed";
+}
+
 /* ------------------------------------------------------------------ stage rail */
 
 export const RAIL_STAGES = [

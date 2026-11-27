@@ -104,7 +104,7 @@ class Invitation(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = created()
     __table_args__ = (
-        CheckConstraint(_in("invited_role", ("TEAM_LEAD", "MEMBER")), name="ck_invitations_role"),
+        CheckConstraint(_in("invited_role", ROLES), name="ck_invitations_role"),      # ADMIN since migration c9e4b7a2d615
         Index("ix_invitations_team_id", "team_id"),
         Index("ix_invitations_user_id", "user_id"),
     )

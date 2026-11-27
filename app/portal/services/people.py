@@ -262,6 +262,19 @@ async def deactivated_by_admin(db: AsyncSession, user_ids: list[uuid.UUID]) -> s
     return {i for i in user_ids if str(i) not in by_lead}
 
 
+async def ensure_another_admin(db: AsyncSession, leaving: User) -> None:
+    """Refuse (409) to take away the last Admin who can sign in. Called before an Admin account is deactivated.
+
+    The rows of the Admins who can sign in are locked, in one order, until the caller's transaction ends. Two Admins
+    who deactivate each other at the same moment therefore go one after the other, and the second one finds that
+    nobody else is left. Nobody can deactivate themselves (the route refuses that before this is reached), and no
+    request changes a role, so this is the only way the portal could end up without an Admin."""
+    able = (await db.execute(select(User.id).where(User.role == "ADMIN", User.is_active, User.password_hash.is_not(None))
+                             .order_by(User.id).with_for_update())).scalars().all()
+    if not [admin_id for admin_id in able if admin_id != leaving.id]:
+        raise HTTPException(409, "This is the only Admin account that can sign in. Invite or reactivate another Admin first.")
+
+
 async def transfer_member(db: AsyncSession, actor: User, member: User, team: Team) -> None:
     """Move a member (a recruiter) to another team. Candidates belong to their team and stay in it with all their
     jobs and history: the ones this member was responsible for become unassigned, for the Team Lead to hand on."""

@@ -57,11 +57,14 @@ export function MemberAnalyticsPanels({ memberId, embedded = false }: { memberId
         hrefs={
           own
             ? {
-                assigned: "/member/jobs",
-                not_applied: "/member/jobs?applied=false",
+                // The figures and the lists behind them: "Not Applied" is the "To apply" section of Jobs (the same
+                // count), and Applications holds every job with a confirmed submission, which is what "Applied" counts.
+                assigned: "/member/jobs?section=all",
+                not_applied: "/member/jobs",
                 applied: "/member/applications",
                 interviews: "/member/applications?status=INTERVIEWING",
                 offers: "/member/applications?status=OFFER",
+                closed: "/member/jobs?section=closed",
               }
             : undefined
         }

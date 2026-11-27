@@ -117,7 +117,7 @@ export const NAVIGATION: Record<Role, NavGroup[]> = {
       items: [
         { label: "Dashboard", href: "/member/dashboard", icon: LayoutDashboard },
         { label: "My Candidates", href: "/member/candidates", icon: Contact },
-        { label: "All Jobs", href: "/member/jobs", icon: BriefcaseBusiness, badge: "my-open-jobs" },
+        { label: "Jobs", href: "/member/jobs", icon: BriefcaseBusiness, badge: "my-open-jobs" },
         { label: "Applications", href: "/member/applications", icon: SendHorizontal },
         { label: "Activity", href: "/member/activity", icon: Activity },
       ],

@@ -36,7 +36,14 @@ async def test_the_migration_added_two_tables_and_touched_nothing_else(database)
         assert cols[("index_career_sites", "host")] == "text" and cols[("index_career_sites", "next_at")] == "double precision"
         assert cols[("index_career_sites", "seen")] == "ARRAY" and cols[("index_career_crawls", "requests")] == "integer"
         assert {t for t, _ in cols} == {"index_career_sites", "index_career_crawls"}
-        assert await conn.fetchval("SELECT version_num FROM alembic_version") == "a8c5e3f1d2b7"
+        # The database is at the newest migration, and that one comes after (or is) the one that made these tables.
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from tests.portal.conftest import ROOT
+        script = ScriptDirectory.from_config(Config(f"{ROOT}/alembic.ini"))
+        version = await conn.fetchval("SELECT version_num FROM alembic_version")
+        assert version == script.get_current_head()
+        assert "a8c5e3f1d2b7" in {revision.revision for revision in script.iterate_revisions(version, "base")}
         # The previous release's statements on the index still work: none of them names the new tables.
         await conn.execute("INSERT INTO index_boards (ats, slug, ok, job_count, checked_at, origin) VALUES ('zz-old','a',true,0,NULL,'catalog') "
                            "ON CONFLICT (ats, slug) DO UPDATE SET ok=excluded.ok")

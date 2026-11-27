@@ -6,14 +6,14 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...netguard import UnsafeURL, assert_public_url
 from ...config import Settings
 from ..deps import Principal, any_user, assignment_scope, from_this_site, get_db, get_settings, managers, own_candidates
 from ..models import JobAssignment, JobPosting
-from ..schemas import (Day, AssignCreate, AssignmentDetail, AssignmentOut, BulkAssign, BulkAssignResult, Message, NoteIn, NoteOut, Page,
+from ..schemas import (Day, AssignCreate, AssignmentDetail, AssignmentOut, AssignmentSections, BulkAssign, BulkAssignResult, Message, NoteIn, NoteOut, Page,
                        StatusUpdate)
 from ..services import assignments as service
 from ..services.common import paginate, user_ref
@@ -74,6 +74,24 @@ async def list_assignments(principal: Principal = Depends(any_user), db: AsyncSe
     rows, total = await paginate(db, stmt.order_by(SORTS.get(sort, SORTS["recent"]), A.match_score.desc().nulls_last(), A.id), page, page_size)
     return Page[AssignmentOut](items=await service.assignments_out(db, [r[0] for r in rows]), total=total, page=max(1, page),
                                page_size=max(1, min(page_size, 200)))
+
+
+SECTIONS = {"to_apply": ("ASSIGNED", "VIEWED", "APPLYING"), "applied": ("APPLIED",), "in_progress": ("INTERVIEWING", "OFFER"),
+            "closed": ("REJECTED", "WITHDRAWN", "SKIPPED")}
+
+
+@router.get("/sections", response_model=AssignmentSections)
+async def assignment_sections(principal: Principal = Depends(any_user), db: AsyncSession = Depends(get_db),
+                              candidate_id: uuid.UUID | None = None, member_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None,
+                              q: str | None = Query(default=None, max_length=120)):
+    """The sizes of the sections of a job list ("To apply", "Applied", "In progress", "Closed") for the caller's
+    scope and the same `candidate_id` / `member_id` / `team_id` / `q` filters the list takes. Active assignments
+    only. The sections are the statuses in SECTIONS; a list of one section is GET /api/assignments with them."""
+    stmt = filtered(principal, candidate_id=candidate_id, member_id=member_id, team_id=team_id, status=None, applied=None, q=q, company=None,
+                    date_from=None, date_to=None, search_run_id=None, include_inactive=False).subquery()
+    by_status = dict((await db.execute(select(stmt.c.status, func.count()).group_by(stmt.c.status))).all())
+    counts = {name: sum(by_status.get(status, 0) for status in statuses) for name, statuses in SECTIONS.items()}
+    return AssignmentSections(**counts, total=sum(counts.values()))
 
 
 @router.get("/export.csv")
