@@ -2975,11 +2975,98 @@ def step_admins(browser):
     ctx.close()
 
 
+def step_title_suggestions(browser):
+    print("== Find Jobs: the Job titles box suggests titles (from the selected candidates, and while typing) and still takes any text")
+    ctx = new_context(browser)
+    page = ctx.new_page()
+    login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
+    jordan = candidate_named(page, "Jordan Rivera")
+    saved = api(page, f"/api/candidates/{jordan['id']}/profile")["desired_titles"]
+    page.goto(BASE + "/tl/search")
+    group = page.get_by_role("group", name=PICKER, exact=True)
+    group.get_by_role("checkbox").first.wait_for(timeout=15000)
+    field = page.get_by_label(re.compile("^Job titles"))
+    box = page.locator('[data-slot="job-titles"]')
+    check("the Job titles box is a combobox that is closed until there is something to offer",
+          field.get_attribute("role") == "combobox" and field.get_attribute("aria-expanded") == "false"
+          and field.get_attribute("placeholder") == "Empty: each candidate's saved titles")
+    check("with no candidate selected nothing is suggested", page.locator('[data-slot="title-chips"]').count() == 0)
+
+    # free text works exactly as before, with no candidate and no suggestion
+    field.fill(f"Made Up Title {STAMP}")
+    field.press("Enter")
+    field.fill("Second Title, Third Title")
+    field.press("Enter")
+    check("typed titles are added with Enter and with commas, whatever they are",
+          all(box.get_by_role("button", name=f"Remove {t}").count() == 1 for t in (f"Made Up Title {STAMP}", "Second Title", "Third Title")))
+    field.press("Backspace")
+    check("Backspace in the empty box removes the last title", box.get_by_role("button", name="Remove Third Title").count() == 0)
+
+    with page.expect_response(lambda r: r.url.endswith("/api/job-titles/from-resumes")) as answered:
+        group.get_by_role("checkbox", name=re.compile("Jordan Rivera")).check()
+    known = answered.value.json()
+    offered = [t["title"] for c in known["candidates"] for t in c["titles"]]
+    check("the titles for the selected candidate hold their saved titles first", offered[:len(saved)] == saved, f"{offered} / {saved}")
+    check("the demo stack has no model, and the answer says so", known["model"] == "none", known["model"])
+    check("nothing but titles is sent to the browser", set(known) == {"candidates", "model"}
+          and all(set(c) == {"candidate", "has_resume", "titles"} for c in known["candidates"]))
+    if not offered:
+        skip("title chips for a selected candidate", "the demo candidate has no saved or resume titles")
+    else:
+        chips = page.locator('[data-slot="title-chips"]')
+        chips.wait_for(timeout=15000)
+        heading = chips.locator("p").first.inner_text().strip()
+        resume_titles = any(t["source"] != "saved" for c in known["candidates"] for t in c["titles"])
+        check("the chips are headed by where they come from, and nothing claims an AI model",
+              heading == ("Suggested from the resume" if resume_titles else "Saved titles of the selected candidates")
+              and "AI model" not in chips.inner_text(), heading)
+        chip = chips.get_by_role("button", name=re.compile(rf"^Add {re.escape(offered[0])} \("))
+        chip.click()
+        check("clicking a chip adds the title", box.get_by_role("button", name=f"Remove {offered[0]}", exact=True).count() == 1)
+        pressed = chips.get_by_role("button", name=re.compile(rf"^Remove {re.escape(offered[0])} \("))
+        check("the chip then shows as added", pressed.get_attribute("aria-pressed") == "true")
+        pressed.click()
+        check("clicking it again takes the title out", box.get_by_role("button", name=f"Remove {offered[0]}", exact=True).count() == 0)
+
+        # while typing: the candidate's own title is proposed; arrow keys, Enter and Escape work the list
+        typed = offered[0][:3]
+        with page.expect_response(lambda r: "/api/job-titles/suggestions?" in r.url) as suggested:
+            field.press_sequentially(typed, delay=30)
+        items = suggested.value.json()["items"]
+        check("typing asks for suggestions once the typing pauses, and gets at most 8", 0 < len(items) <= 8, str(items))
+        check("a selected candidate's own title comes first and is marked", items[0] == {"title": offered[0], "source": "candidate"}, str(items[:2]))
+        options = page.get_by_role("listbox", name="Suggested job titles").get_by_role("option")
+        options.first.wait_for(timeout=10000)
+        check("the list opens under the box", field.get_attribute("aria-expanded") == "true" and options.count() == len(items))
+        field.press("Escape")
+        check("Escape closes the list and keeps what was typed", field.get_attribute("aria-expanded") == "false" and field.input_value() == typed)
+        field.press("ArrowDown")
+        active = field.get_attribute("aria-activedescendant")
+        check("the arrow keys open the list again and highlight an option",
+              bool(active) and page.locator(f'[id="{active}"]').get_attribute("aria-selected") == "true", str(active))
+        field.press("Enter")
+        check("Enter takes the highlighted title and empties the box",
+              box.get_by_role("button", name=f"Remove {offered[0]}", exact=True).count() == 1 and field.input_value() == "")
+        field.press_sequentially(typed, delay=30)
+        check("a title that is already chosen is not offered again",
+              page.get_by_role("listbox", name="Suggested job titles").get_by_role("option", name=offered[0], exact=True).count() == 0)
+        field.fill("")
+    no_overflow(page, "find jobs, title suggestions")
+    shot(page, "search_title_suggestions")
+
+    # isolation: a candidate of another team is refused, and its titles are not in the answer
+    other = api(page, "/api/job-titles/suggestions?q=en&candidate_ids=00000000-0000-4000-8000-000000000000")
+    with expecting("/api/job-titles"):
+        status = send(page, "POST", "/api/job-titles/from-resumes", {"candidate_ids": ["00000000-0000-4000-8000-000000000000"]})
+    check("a candidate that is not the Team Lead's is refused by both endpoints", other.get("__status") == 404 and status == 404, f"{other} / {status}")
+    ctx.close()
+
+
 STEPS = {"auth": step_auth, "member": step_member, "member_sections": step_member_sections, "my_candidates": step_my_candidates, "invite": step_invite, "search": step_search,
          "candidates": step_candidates, "search_form": step_search_form, "people": step_people,
          "tracking": step_tracking, "review": step_review, "admin": step_admin, "admin_more": step_admin_more, "misc": step_misc, "stubbed": step_stubbed, "running": step_running,
          # Last: these leave an invited Admin and a revoked invitation behind, which no earlier step should have to count.
-         "admins": step_admins}
+         "title_suggestions": step_title_suggestions, "admins": step_admins}
 
 with sync_playwright() as pw:
     # Nothing in this run may reach a real external site: every host except this machine fails to resolve.

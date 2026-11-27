@@ -3252,6 +3252,54 @@
     "title": "CandidateSyncOut",
     "type": "object"
    },
+   "CandidateTitle": {
+    "properties": {
+     "source": {
+      "enum": [
+       "saved",
+       "resume",
+       "model"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "source"
+    ],
+    "title": "CandidateTitle",
+    "type": "object"
+   },
+   "CandidateTitles": {
+    "properties": {
+     "candidate": {
+      "$ref": "#/components/schemas/CandidateRef"
+     },
+     "has_resume": {
+      "default": false,
+      "title": "Has Resume",
+      "type": "boolean"
+     },
+     "titles": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CandidateTitle"
+      },
+      "title": "Titles",
+      "type": "array"
+     }
+    },
+    "required": [
+     "candidate"
+    ],
+    "title": "CandidateTitles",
+    "type": "object"
+   },
    "CandidateUpdate": {
     "description": "Only the fields that are sent change. `assigned_member_id: null` takes the candidate away from its member;\n`email: null` (or \"\") removes the address.",
     "properties": {
@@ -7039,6 +7087,49 @@
     "title": "ResumeOut",
     "type": "object"
    },
+   "ResumeTitlesIn": {
+    "properties": {
+     "candidate_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Candidate Ids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "candidate_ids"
+    ],
+    "title": "ResumeTitlesIn",
+    "type": "object"
+   },
+   "ResumeTitlesOut": {
+    "properties": {
+     "candidates": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CandidateTitles"
+      },
+      "title": "Candidates",
+      "type": "array"
+     },
+     "model": {
+      "default": "none",
+      "enum": [
+       "answered",
+       "pending",
+       "none"
+      ],
+      "title": "Model",
+      "type": "string"
+     }
+    },
+    "title": "ResumeTitlesOut",
+    "type": "object"
+   },
    "SalesforceCandidate": {
     "description": "A candidate as found in Salesforce (a Person Account), with whether it is already in the portal.",
     "properties": {
@@ -8713,6 +8804,47 @@
      }
     },
     "title": "TeamUpdate",
+    "type": "object"
+   },
+   "TitleSuggestion": {
+    "properties": {
+     "source": {
+      "enum": [
+       "candidate",
+       "jobs"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "source"
+    ],
+    "title": "TitleSuggestion",
+    "type": "object"
+   },
+   "TitleSuggestionsOut": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/TitleSuggestion"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "vocabulary_ready": {
+      "default": false,
+      "title": "Vocabulary Ready",
+      "type": "boolean"
+     }
+    },
+    "title": "TitleSuggestionsOut",
     "type": "object"
    },
    "UiSettings": {
@@ -12816,6 +12948,110 @@
     "summary": "Revoke Invitation",
     "tags": [
      "invitations"
+    ]
+   }
+  },
+  "/api/job-titles/from-resumes": {
+   "post": {
+    "description": "Titles to offer for the selected candidates: saved in the profile, found in the resume, and (when a model\nanswers in time) related titles. Never resume text. A candidate outside the caller's scope refuses the request.",
+    "operationId": "titles_from_resumes_api_job_titles_from_resumes_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResumeTitlesIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResumeTitlesOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Titles From Resumes",
+    "tags": [
+     "job titles"
+    ]
+   }
+  },
+  "/api/job-titles/suggestions": {
+   "get": {
+    "description": "Titles matching what was typed so far: the selected candidates' own titles first, then titles that postings\nin the job index carry, the most frequent first. At most 8. Limited per person per minute.",
+    "operationId": "suggest_titles_api_job_titles_suggestions_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "default": "",
+       "maxLength": 80,
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "candidate_ids",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 2000,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Candidate Ids"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TitleSuggestionsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Suggest Titles",
+    "tags": [
+     "job titles"
     ]
    }
   },

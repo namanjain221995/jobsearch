@@ -25,8 +25,10 @@ from .limits import RequestGuardMiddleware
 from .queue import SearchQueue
 from ..providers import aws_web_search
 from ..providers.aws_web_search import AwsWebSearch
-from .routers import admin, assignments, auth, auto_apply, candidates, invitations, jobs, salesforce, searches, teams, users, web_search
+from .routers import (admin, assignments, auth, auto_apply, candidates, invitations, job_titles, jobs, salesforce, searches, teams, users,
+                      web_search)
 from .security import RateLimiter
+from .services import job_titles as job_titles_service
 from .services.emailer import Emailer
 from .services.salesforce import SalesforceClient
 
@@ -97,10 +99,14 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
             task.add_done_callback(background.discard)
 
         app.state.spawn = spawn
+        app.state.title_vocabulary = job_titles_service.VocabularyCache(app.state.sessions)     # job titles for Find Jobs, read lazily
+        app.state.title_tasks = {}                                           # model calls for title suggestions still running
         yield
+        background.update(app.state.title_tasks.values())
         for task in list(background):
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
+        await app.state.title_vocabulary.aclose()
         cache_module.install(None)
         await app.state.salesforce.aclose()
         await app.state.http.aclose()
@@ -160,7 +166,7 @@ def create_app(settings: Settings | None = None, *, queue=None, use_redis: bool 
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
-    for module in (auth, invitations, teams, users, candidates, jobs, searches, assignments, salesforce, admin, web_search, auto_apply):
+    for module in (auth, invitations, teams, users, candidates, jobs, searches, job_titles, assignments, salesforce, admin, web_search, auto_apply):
         app.include_router(module.router)
     return app
 

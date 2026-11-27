@@ -900,6 +900,40 @@ class AssignmentSections(Model):
     total: int = 0
 
 
+class TitleSuggestion(Model):
+    title: str
+    source: Literal["candidate", "jobs"]           # a selected candidate's own title, or a title postings in the job index carry
+
+
+class TitleSuggestionsOut(Model):
+    items: list[TitleSuggestion] = []
+    vocabulary_ready: bool = False                 # false until the job index's titles were read once (then only candidate titles)
+
+
+class ResumeTitlesIn(Model):
+    candidate_ids: list[uuid.UUID] = Field(min_length=1, max_length=50)
+
+
+class CandidateTitle(Model):
+    title: str
+    # saved = in the candidate's profile; resume = found in the resume text when it was uploaded;
+    # model = another name employers use for the same work, proposed by an AI model from the titles and skills
+    source: Literal["saved", "resume", "model"]
+
+
+class CandidateTitles(Model):
+    candidate: CandidateRef
+    has_resume: bool = False
+    titles: list[CandidateTitle] = []
+
+
+class ResumeTitlesOut(Model):
+    candidates: list[CandidateTitles] = []
+    # answered = model titles are included; pending = a model is still working, ask again in a few seconds;
+    # none = no model is configured or it did not answer: the titles are the saved and resume ones only
+    model: Literal["answered", "pending", "none"] = "none"
+
+
 class ActivityItem(Model):
     id: uuid.UUID
     event_type: str

@@ -914,6 +914,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/job-titles/from-resumes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Titles From Resumes
+         * @description Titles to offer for the selected candidates: saved in the profile, found in the resume, and (when a model
+         *     answers in time) related titles. Never resume text. A candidate outside the caller's scope refuses the request.
+         */
+        post: operations["titles_from_resumes_api_job_titles_from_resumes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/job-titles/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggest Titles
+         * @description Titles matching what was typed so far: the selected candidates' own titles first, then titles that postings
+         *     in the job index carry, the most frequent first. At most 8. Limited per person per minute.
+         */
+        get: operations["suggest_titles_api_job_titles_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -3172,6 +3214,30 @@ export interface components {
              */
             updated_at: string;
         };
+        /** CandidateTitle */
+        CandidateTitle: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "saved" | "resume" | "model";
+            /** Title */
+            title: string;
+        };
+        /** CandidateTitles */
+        CandidateTitles: {
+            candidate: components["schemas"]["CandidateRef"];
+            /**
+             * Has Resume
+             * @default false
+             */
+            has_resume: boolean;
+            /**
+             * Titles
+             * @default []
+             */
+            titles: components["schemas"]["CandidateTitle"][];
+        };
         /**
          * CandidateUpdate
          * @description Only the fields that are sent change. `assigned_member_id: null` takes the candidate away from its member;
@@ -4777,6 +4843,25 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ResumeTitlesIn */
+        ResumeTitlesIn: {
+            /** Candidate Ids */
+            candidate_ids: string[];
+        };
+        /** ResumeTitlesOut */
+        ResumeTitlesOut: {
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["CandidateTitles"][];
+            /**
+             * Model
+             * @default none
+             * @enum {string}
+             */
+            model: "answered" | "pending" | "none";
+        };
         /**
          * SalesforceCandidate
          * @description A candidate as found in Salesforce (a Person Account), with whether it is already in the portal.
@@ -5586,6 +5671,29 @@ export interface components {
             remove_team_lead: boolean;
             /** Team Lead Id */
             team_lead_id?: string | null;
+        };
+        /** TitleSuggestion */
+        TitleSuggestion: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "candidate" | "jobs";
+            /** Title */
+            title: string;
+        };
+        /** TitleSuggestionsOut */
+        TitleSuggestionsOut: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["TitleSuggestion"][];
+            /**
+             * Vocabulary Ready
+             * @default false
+             */
+            vocabulary_ready: boolean;
         };
         /** UiSettings */
         UiSettings: {
@@ -7841,6 +7949,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvitationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    titles_from_resumes_api_job_titles_from_resumes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeTitlesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTitlesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_titles_api_job_titles_suggestions_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                candidate_ids?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleSuggestionsOut"];
                 };
             };
             /** @description Validation Error */
