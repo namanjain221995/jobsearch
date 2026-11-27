@@ -46,6 +46,18 @@ interface Origins {
   rank_seconds?: number | null;
   /** Model answers of earlier searches for the same candidate and posting text that were used again, per kind. */
   rank_reused?: Record<string, number>;
+  /** Posting age: the limit in days (0 = any time; absent on searches from before the limit existed) and what it did. */
+  posted_within_days?: number;
+  include_undated?: boolean;
+  too_old?: number;
+  undated_dropped?: number;
+  dated_delivered?: number;
+  undated_delivered?: number;
+  /** Web leads that can only be checked by opening the page: handed to the lead check, opened, left unchecked. */
+  page_leads?: number;
+  page_leads_checked?: number;
+  page_leads_unchecked?: number;
+  pages_site_refused?: number;
 }
 
 /* Each label follows a count: "8 outside the United States, 2 work authorization did not match". */
@@ -55,7 +67,12 @@ const REASON_LABELS: Record<string, string> = {
   work_mode: "work arrangement did not match",
   eligibility: "work authorization did not match",
   ai_audit: "set aside by the AI check",
+  too_old: "posted longer ago than the search allows",
+  undated: "no posting date stated",
 };
+
+/** "Last 7 days" for a posting-age limit in days. */
+const withinText = (days: number) => (days === 1 ? "Last 24 hours" : `Last ${days} days`);
 
 function seconds(value: number | null | undefined): string {
   if (typeof value !== "number") return "—";
@@ -295,6 +312,57 @@ function TargetOrigins({ target }: { target: SearchTarget }) {
               <span className="tabular-nums">{seconds(data.rank_seconds)}</span>
               {reusedText(data.rank_reused) &&
                 `. ${reusedText(data.rank_reused)} from earlier searches of this candidate were used again; the posting text had not changed.`}
+            </dd>
+          </>
+        )}
+        {typeof data.posted_within_days === "number" && (
+          <>
+            <dt className="text-muted-foreground">Posted within</dt>
+            <dd data-slot="posting-age">
+              {data.posted_within_days > 0 ? (
+                <>
+                  {withinText(data.posted_within_days)}.{" "}
+                  <span className="tabular-nums">{count(data.too_old ?? 0)}</span> matching{" "}
+                  {(data.too_old ?? 0) === 1 ? "job was" : "jobs were"} left out because {(data.too_old ?? 0) === 1 ? "it was" : "they were"} posted
+                  longer ago.
+                </>
+              ) : (
+                "Any time. No job was left out for its age."
+              )}{" "}
+              {data.include_undated === false ? (
+                <>
+                  Jobs with no posting date were left out as well (<span className="tabular-nums">{count(data.undated_dropped ?? 0)}</span>).
+                </>
+              ) : !running ? (
+                <>
+                  Of the jobs returned, <span className="tabular-nums">{count(data.dated_delivered ?? 0)}</span> state their posting date
+                  and <span className="tabular-nums">{count(data.undated_delivered ?? 0)}</span> do not.
+                </>
+              ) : null}
+            </dd>
+          </>
+        )}
+        {typeof data.page_leads === "number" && data.page_leads > 0 && (
+          <>
+            <dt className="text-muted-foreground">Web results checked</dt>
+            <dd data-slot="lead-check">
+              <span className="tabular-nums">{count(data.page_leads_checked ?? 0)}</span> of{" "}
+              <span className="tabular-nums">{count(data.page_leads)}</span> posting pages named by the web searches were opened and
+              checked.
+              {(data.page_leads_unchecked ?? 0) > 0 && (
+                <>
+                  {" "}
+                  <span className="tabular-nums">{count(data.page_leads_unchecked)}</span> were not opened because the limit of page
+                  checks was reached.
+                </>
+              )}
+              {(data.pages_site_refused ?? 0) > 0 && (
+                <>
+                  {" "}
+                  <span className="tabular-nums">{count(data.pages_site_refused)}</span> were not opened because their site had
+                  refused its first pages.
+                </>
+              )}
             </dd>
           </>
         )}

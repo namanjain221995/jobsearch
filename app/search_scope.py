@@ -32,7 +32,7 @@ OTHER = "other"                       # statistics row of sources that are not a
 OTHER_LABEL = "Other sources"
 STARTUP_QUERY_RUN = 3                 # startup focus: three queries on startup platforms, then one on another platform
 OTHER_BOARD_SHARE = 4                 # startup focus: other platforms may use a quarter of the new-board budget
-REASONS = ("not_relevant", "non_us", "work_mode", "eligibility", "ai_audit")
+REASONS = ("not_relevant", "non_us", "work_mode", "eligibility", "ai_audit", "too_old", "undated")
 
 
 def reader_platform(src: str) -> str:
@@ -273,7 +273,8 @@ def platform_stats(scope: Scope, parts: list[dict], unique: Counter, duplicates:
     - considered: postings of the platform with a matching title that were screened (from the index and from web leads);
     - verified:   postings that passed the screening (live, in the United States, eligible), copies included;
     - unique:     verified postings left after deduplication ("unique jobs found"); verified = unique + duplicates;
-    - rejected / reasons: screened out, by reason (not_relevant, non_us, work_mode, eligibility, ai_audit);
+    - rejected / reasons: screened out, by reason (not_relevant, non_us, work_mode, eligibility, ai_audit, too_old:
+      posted longer ago than the search's limit, undated: no posting date and the search leaves those out);
     - duplicates: copies of a posting already kept;
     - matched:    postings in the final result list;
     - leads:      addresses on the platform named by a search engine or an AI provider.

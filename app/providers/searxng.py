@@ -31,6 +31,7 @@ from . import ats_pages, ats_startup
 
 CACHE_PREFIX = "searx:"
 MAX_RESULTS_KEPT = 40
+TIME_RANGES = ("day", "week", "month", "year")      # SearXNG's `time_range` values
 BOARD_SOURCES = ("greenhouse", "lever", "ashby", "workable", "workday", "recruitee", "pinpoint", "rippling")
 _SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 _WD_TENANT = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
@@ -136,6 +137,8 @@ class SearxAnswer:
     error: str = ""
     unresponsive: list[str] = field(default_factory=list)
     pages: int = 0            # result pages actually requested from the instance
+    ranged: bool = False      # the query was asked with a time range
+    widened: bool = False     # ... it brought nothing usable and was asked again without one (these are that answer's results)
 
 
 class SearxClient:
@@ -195,17 +198,19 @@ class SearxClient:
             except Exception:
                 pass
 
-    async def _page(self, query: str, pageno: int) -> tuple[list[str], list[str]]:
+    async def _page(self, query: str, pageno: int, time_range: str = "") -> tuple[list[str], list[str]]:
         async with self._gate:                                # one request at a time, spaced by min_interval
             wait = self._next - self._clock()
             if wait > 0:
                 await self._sleep(wait)
             self._next = self._clock() + self.min_interval
             self.requests += 1
+            params = {"q": query, "format": "json", "pageno": pageno, "safesearch": 0,
+                      "categories": "general"}                                  # web engines only: no image/news engines
+            if time_range in TIME_RANGES:
+                params["time_range"] = time_range                               # results the engines date within that span
             r = await self.client.get(self.base_url + "/search", timeout=self.timeout, follow_redirects=False,
-                                      params={"q": query, "format": "json", "pageno": pageno, "safesearch": 0,
-                                              "categories": "general"},          # web engines only: no image/news engines
-                                      headers={"Accept": "application/json"})
+                                      params=params, headers={"Accept": "application/json"})
         if r.status_code == 429:
             self._next = max(self._next, self._clock() + 30.0)       # the instance asks for a pause: give it one
             raise httpx.HTTPStatusError("429", request=r.request, response=r)
@@ -218,19 +223,39 @@ class SearxClient:
         down = [str(e[0]) if isinstance(e, (list, tuple)) and e else str(e) for e in data.get("unresponsive_engines") or []]
         return urls, down
 
-    async def search(self, query: str, pages: int = 1, useful=None) -> SearxAnswer:
+    async def search(self, query: str, pages: int = 1, useful=None, time_range: str = "") -> SearxAnswer:
         """Result addresses for one query. Never raises: a slow, empty or unreachable instance is an answer
-        with `error` set (or no addresses). Page n+1 is read only while page n brought something `useful`."""
+        with `error` set (or no addresses). Page n+1 is read only while page n brought something `useful`.
+
+        `time_range` ("day", "week", "month", "year"): ask for results the engines date within that span, for a
+        search with a posting-age limit. Public engines date few pages, so a restricted query can come back with
+        nothing although fresh postings exist: when it brought nothing `useful`, the same query is asked once more
+        without the restriction and that answer is returned (`widened`). A restriction never hides a result."""
         if not self.enabled:
             return SearxAnswer(error="not configured")
-        cached = await self._cached(query)
+        time_range = time_range if time_range in TIME_RANGES else ""
+        if time_range:
+            ranged = await self._search(f"{query}\x1ftime_range={time_range}", query, pages, useful, time_range)
+            found = any(useful(u) for u in ranged.urls) if useful is not None else bool(ranged.urls)
+            if ranged.error or found:
+                ranged.ranged = True
+                return ranged
+            answer = await self._search(query, query, pages, useful, "")
+            answer.ranged = answer.widened = True
+            answer.pages += ranged.pages
+            answer.cached = answer.cached and ranged.cached
+            return answer
+        return await self._search(query, query, pages, useful, "")
+
+    async def _search(self, cache_key: str, query: str, pages: int, useful, time_range: str) -> SearxAnswer:
+        cached = await self._cached(cache_key)
         if cached is not None:
             return SearxAnswer(urls=list(cached), cached=True)
         answer = SearxAnswer()
         seen: dict[str, None] = {}
         for pageno in range(1, max(1, pages) + 1):
             try:
-                urls, down = await self._page(query, pageno)
+                urls, down = await self._page(query, pageno, time_range)
             except httpx.TimeoutException:
                 answer.error = "timed out"
                 break
@@ -249,5 +274,5 @@ class SearxClient:
                 break
         answer.urls = list(seen)[:MAX_RESULTS_KEPT]
         if answer.pages and not answer.error:
-            await self._remember(query, answer.urls)             # an empty answer is cached too: do not ask again for hours
+            await self._remember(cache_key, answer.urls)         # an empty answer is cached too: do not ask again for hours
         return answer

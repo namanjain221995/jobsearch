@@ -4900,6 +4900,8 @@ export interface components {
             /**
              * @default {
              *       "ats_platforms": [],
+             *       "include_undated": true,
+             *       "posted_within_days": 7,
              *       "startup_focus": false
              *     }
              */
@@ -4943,8 +4945,19 @@ export interface components {
             exclude_citizenship_required?: boolean | null;
             /** Excluded Companies */
             excluded_companies?: string[] | null;
+            /**
+             * Include Undated
+             * @default true
+             */
+            include_undated: boolean;
             /** Job Titles */
             job_titles?: string[] | null;
+            /**
+             * Posted Within Days
+             * @default 7
+             * @enum {integer}
+             */
+            posted_within_days: 0 | 1 | 3 | 7 | 14 | 30;
             /** Preferred States */
             preferred_states?: string[] | null;
             /** Remote Only */

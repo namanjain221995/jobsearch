@@ -11,7 +11,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from . import ats_platforms
+from . import ats_platforms, freshness
 from .config import Settings
 from .job_normalizer import US_STATES, authorization_snippets, parse_ats
 from .providers.aws_web_search import employer_posting_address
@@ -119,18 +119,23 @@ EXTRACT_SYSTEM = (
     "title, company, location - only for 'one_open_job_posting': the job title as the page's own heading states it "
     "(never a line picked from a list of jobs), the hiring company name and the job location, each copied exactly as "
     "written in the page text (verbatim, character for character). Use an empty string for anything the page does not "
-    "show. Never guess, never translate, never correct the spelling and never complete a value from memory."
+    "show. Never guess, never translate, never correct the spelling and never complete a value from memory. "
+    "posted_quote - the page's own words that say when THIS job was posted, copied verbatim together with the word in "
+    "front of the date (for example 'Posted 3 days ago', 'Date posted: November 20, 2026', 'Posted on 11/20/2026'); an "
+    "empty string when the page does not say it. Never work out a date, never take the date of another job in a list, "
+    "and never use a closing date, an update date or a start date."
 )
 EXTRACT_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["pages"],
     "properties": {"pages": {"type": "array", "items": {
         "type": "object", "additionalProperties": False,
-        "required": ["id", "closed_quote", "page_kind", "is_open_job_posting", "title", "company", "location"],
+        "required": ["id", "closed_quote", "page_kind", "is_open_job_posting", "title", "company", "location", "posted_quote"],
         "properties": {"id": {"type": "string"}, "closed_quote": {"type": "string"},
                        "page_kind": {"type": "string", "enum": ["one_open_job_posting", "closed_or_expired_posting",
                                                                 "job_list_or_search", "other"]},
                        "is_open_job_posting": {"type": "boolean"},
-                       "title": {"type": "string"}, "company": {"type": "string"}, "location": {"type": "string"}}}}},
+                       "title": {"type": "string"}, "company": {"type": "string"}, "location": {"type": "string"},
+                       "posted_quote": {"type": "string"}}}}},
 }
 
 EXPAND_SYSTEM = (
@@ -203,6 +208,12 @@ EMPLOYER_KINDS = (
     "manufacturers, automotive, aerospace, energy companies and utilities",
     "defense and government contractors, consulting and IT services firms",
     "telecom, media, entertainment, airline, railroad and logistics companies",
+    # Added 2026-11-27 with the larger number of open-web calls a round makes (18 instead of 9): more kinds of employer
+    # first, the same kinds one step further down after that.
+    "biotechnology, life-science tools, healthcare technology and digital health companies",
+    "semiconductor, computer hardware, robotics and electronics companies",
+    "e-commerce, online marketplaces, travel, gaming and consumer internet companies",
+    "professional services, accounting, legal, real estate, construction and engineering firms",
     "universities, research laboratories, large non-profits, and state and city governments",
 )
 OPEN_WEB_DEPTHS = (
@@ -249,8 +260,19 @@ FOLLOW_UP_MIN_SECONDS = 45.0          # a follow-up call starts only while this 
 def recency_words(today=None) -> str:
     """The current month and year as search words ("posted November 2026"): a posting page that shows when it was
     posted carries them while it is new."""
-    from datetime import date
-    return "posted " + (today or date.today()).strftime("%B %Y")
+    return "posted " + (today or freshness.today()).strftime("%B %Y")
+
+
+def fresh_only(days: int) -> str:
+    """What every web-search call is told about a search's posting-age limit ("" without one). The engine reads the
+    posting date from the employer's board or page itself and drops what is older, so the call is asked to prefer
+    recent postings, not to guess dates: a result that shows no date is kept."""
+    phrase = freshness.recency_phrase(days)
+    if not phrase:
+        return ""
+    return (f"Only postings published in {phrase} are wanted: the engine reads each posting's date itself and drops older "
+            "ones. Put results that show a recent posting date first and leave out a posting when the search result itself "
+            "shows that it is older; keep a result that shows no date.")
 POSTING_PAGES = ("Wanted are DIRECT posting pages: one opening per address, as a rule with a requisition or job number in the "
                  "address (.../job/R-123456/..., .../jobs/123456-data-engineer). A career home page, a list or search page, a "
                  "category or location page and a talent-community page are not leads.")
@@ -258,6 +280,7 @@ POSTING_PAGES = ("Wanted are DIRECT posting pages: one opening per address, as a
 # stops waiting for the whole round (the engine's first round may start up to 8 s late, see _first_discovery).
 DEADLINE_MARGIN_SECONDS = 15.0
 _NOT_PLAIN = re.compile(r"[^A-Za-z0-9 .,&/+#()'-]")
+_RATE_LIMIT = re.compile(r"(?i)\b429\b|rate.?limit|too many requests")
 _STATE_NAMES = {str(name).lower() for name in US_STATES.values()}
 
 
@@ -325,6 +348,7 @@ class AIOrchestrator:
         self._followed: set[str] = set()          # career sites a follow-up call of this search already searched again
         self._lead_age: dict[str, int] = {}       # lead address -> days since the page was last updated, where the search tool says
         self._wanted: tuple = ((), (), ())        # (requested titles, variants, the candidate's places) of the calls being handed out
+        self._recent: list[str] = freshness.month_words(0)   # month words of the open-web searches ("posted November 2026"), sized to the posting-age limit
         self.verified_sites: set[str] = set()     # hosts on which a page was verified as an open posting (earlier searches, earlier rounds)
         self.relevant_sites: dict[str, None] = {}  # ... of which: a posting with one of the wanted titles (insertion order)
         self._round_context: tuple = ("", [])     # (candidate text, known employers) of the calls being handed out
@@ -402,8 +426,11 @@ class AIOrchestrator:
         self.status[name]["ok_calls"] += 1
 
     def _fail(self, name: str, exc: Exception) -> None:
-        self.status[name]["failed_calls"] += 1
-        self.status[name]["last_error"] = str(exc)[:200]
+        st = self.status[name]
+        st["failed_calls"] += 1
+        st["last_error"] = str(exc)[:200]
+        if _RATE_LIMIT.search(str(exc)):              # counted apart: more calls that are refused are worse than fewer that succeed
+            st["rate_limited"] = st.get("rate_limited", 0) + 1
 
     async def _json(self, order: list, system: str, user: str, schema: dict, name: str) -> tuple[dict | None, str]:
         """Try providers in order until one answers. Returns (data, provider name)."""
@@ -544,6 +571,7 @@ class AIOrchestrator:
             auth = "Leave out postings restricted to US citizens or requiring a security clearance."
         parts = [f"Candidate: wants {', '.join(requested)}.",
                  f"Titles for the same kind of work that also fit: {', '.join(variants[:10])}." if variants else "",
+                 fresh_only(int(getattr(req, "posted_within_days", 0) or 0)),
                  f"Level: {level}.",
                  "" if req.work_mode == "All" else f"Work arrangement wanted: {req.work_mode}.",
                  (f"Preferred states: {states}" + (" (remote roles open to US residents fit too)." if req.work_mode == "All" else "."))
@@ -595,8 +623,10 @@ class AIOrchestrator:
         # indexes keep posting pages long after they close (see OPEN_WEB_MAX_AGE_DAYS); a page that shows its posting date
         # matches these words only while it is new. The searches for the other titles stay plain, so a site that shows
         # no date is still searched.
-        recent = f" {recency_words()}" if self.settings.open_web_recency_words else ""
-        lines = "\n".join(f'{i}. site:<career site of employer {i}> "{title}"' + (recent if title == sl.titles[0] else "")
+        # With a posting-age limit that reaches back into the month before, those searches name the two months in turn.
+        words = self._recent if self.settings.open_web_recency_words else []
+        lines = "\n".join(f'{i}. site:<career site of employer {i}> "{title}"'
+                          + (f" {words[((i - 1) // 2) % len(words)]}" if words and title == sl.titles[0] else "")
                           for i, title in enumerate(self._slot_titles(sl, count), 1))
         covered = f"The engine already reads the job boards of these employers in full; choose other employers: {names}.\n" if names else ""
         if "google.com" in aggregator_hosts(self.settings.aggregator_hosts):
@@ -718,6 +748,7 @@ class AIOrchestrator:
         candidate = self._candidate_text(profile, req, wanted, variants)
         self._round_context = (candidate, known)
         self._wanted = (tuple(wanted), tuple(variants), tuple(home))
+        self._recent = freshness.month_words(int(getattr(req, "posted_within_days", 0) or 0))
         providers = [p for p in (self.openai, self.claude) if p is not None and p.name not in self._down]
         pair = lambda value: (int(value), 0) if isinstance(value, (int, float)) else (int(value[0]), int(value[1]))
         open_allowed = open_web_on(self.settings) and not self._filtered
@@ -768,7 +799,7 @@ class AIOrchestrator:
         # First the sites on which a posting with a wanted title was verified (remembered from earlier searches, or by an
         # earlier round): a search there was 2.6 times as productive as a search for an employer nobody had checked.
         sites = [s for s in dict.fromkeys([*self.relevant_sites, *found]) if s not in self._followed and self._career_site(s)]
-        words = [p for p in home if p] or [recency_words()]
+        words = [p for p in home if p] or list(self._recent)
         candidate, known = self._round_context
         size = self._open_searches(searches)
         calls = []

@@ -33,6 +33,8 @@ def normalize(board: str, raw: dict, verified_at: str) -> Job | None:
         salary = f"{sr.get('currency', 'USD')} {int(sr['min']):,} - {int(sr['max']):,}" + (f" / {sr['interval']}" if sr.get("interval") else "")
     else:
         salary = extract_salary(description)
+    # `createdAt` is the only date the public API carries: when the posting was created. A posting drafted long
+    # before it was published looks older than it is; it never looks newer.
     posted = ""
     if raw.get("createdAt"):
         try:

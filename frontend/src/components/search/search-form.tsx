@@ -20,6 +20,7 @@ import { Tag } from "@/components/shared/status-badge";
 import { TagInput } from "@/components/shared/tag-input";
 import { useMe } from "@/components/shell/me-context";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -42,6 +43,18 @@ import {
 } from "@/lib/queries";
 import type { Preset, SearchCreate, SearchOptions } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+/** "Posted within": the posting-age limits the server accepts (days; 0 = any time). 7 days is the default. */
+const POSTED_WITHIN = [
+  { value: "1", label: "Last 24 hours" },
+  { value: "3", label: "Last 3 days" },
+  { value: "7", label: "Last 7 days" },
+  { value: "14", label: "Last 14 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "0", label: "Any time" },
+] as const;
+const POSTED_WITHIN_DEFAULT = "7";
+type PostedWithin = NonNullable<SearchCreate["filters"]["posted_within_days"]>;
 
 /** Value of a select that means "do not override: use what is saved in each candidate's profile". */
 const SAVED = "__saved__";
@@ -72,6 +85,8 @@ function buildSchema(limits: SearchOptions["limits"]) {
     excluded_companies: z.array(z.string()).max(100, "Keep it to 100 companies."),
     ats_platforms: z.array(z.string()),
     startup_focus: z.boolean(),
+    posted_within_days: z.enum(["0", "1", "3", "7", "14", "30"]),
+    include_undated: z.boolean(),
   }).superRefine((values, context) => {
     // Kept here so the message sits on the field; the totals check lives beside the candidate list.
     if (values.target_count !== "" && Number(values.target_count) > limits.max_results_per_search_run) {
@@ -101,6 +116,8 @@ const defaultsFor = (limits: SearchOptions["limits"], deepSearch: boolean): Valu
   excluded_companies: [],
   ats_platforms: [],
   startup_focus: false,
+  posted_within_days: POSTED_WITHIN_DEFAULT,
+  include_undated: true,
 });
 
 type Filters = SearchCreate["filters"];
@@ -118,6 +135,8 @@ function toRequest(values: Values, candidateIds: string[], teamId: string): Sear
     excluded_companies: values.excluded_companies.length ? values.excluded_companies : null,
     ats_platforms: values.ats_platforms,
     startup_focus: values.startup_focus,
+    posted_within_days: Number(values.posted_within_days) as PostedWithin,
+    include_undated: values.include_undated,
   };
   return {
     candidate_ids: candidateIds,
@@ -155,6 +174,9 @@ function fromPreset(preset: Preset, current: Values, platformIds: ReadonlySet<st
     // Only platforms the server lists now, in its order (as the list itself keeps them): a name it no longer has is dropped.
     ats_platforms: [...platformIds].filter((id) => list(filters.ats_platforms).includes(id)),
     startup_focus: filters.startup_focus === true,
+    // A preset saved before the posting-age limit existed has neither value: it gets the defaults (7 days, undated jobs shown).
+    posted_within_days: POSTED_WITHIN.find((option) => Number(option.value) === filters.posted_within_days)?.value ?? POSTED_WITHIN_DEFAULT,
+    include_undated: filters.include_undated !== false,
   };
 }
 
@@ -306,6 +328,8 @@ function Form({ options }: { options: SearchOptions }) {
   const teams = useTeams(false, { enabled: isAdmin });
   const deepId = useId();
   const startupId = useId();
+  const postedId = useId();
+  const undatedId = useId();
   const teamSelectId = useId();
 
   const [selected, setSelected] = useState<ReadonlyMap<string, PickedCandidate>>(() => new Map());
@@ -662,6 +686,54 @@ function Form({ options }: { options: SearchOptions }) {
                   error={errors.min_match_score?.message}
                   {...form.register("min_match_score")}
                 />
+              </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor={postedId}>Posted within</Label>
+                  <Controller
+                    control={form.control}
+                    name="posted_within_days"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger id={postedId} aria-describedby={`${postedId}-hint`} className="w-full sm:max-w-60">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {POSTED_WITHIN.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <p id={`${postedId}-hint`} className="text-2sm text-muted-foreground">
+                    A job whose posting date is older than this is never returned. A shorter span finds fewer jobs.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Controller
+                    control={form.control}
+                    name="include_undated"
+                    render={({ field }) => (
+                      <Checkbox
+                        id={undatedId}
+                        className="mt-0.5"
+                        checked={field.value}
+                        onCheckedChange={(state) => field.onChange(state === true)}
+                        ref={field.ref}
+                      />
+                    )}
+                  />
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor={undatedId}>Also show jobs with no posting date</Label>
+                    <p className="text-2sm text-muted-foreground">
+                      Some employers do not say when a job was posted. Those jobs are marked &quot;Posting date not
+                      stated&quot; and are listed after dated jobs that match equally well.
+                    </p>
+                  </div>
+                </div>
               </div>
               <div className="flex items-start gap-3">
                 <Controller

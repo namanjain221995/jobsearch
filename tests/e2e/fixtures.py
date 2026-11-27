@@ -1,9 +1,10 @@
 """Synthetic employer boards for the E2E / demo stack. Nothing here is a real posting."""
 import asyncio
+from datetime import timedelta
 
 import httpx
 
-from tests.conftest import JSONLD
+from tests.conftest import JSONLD, POSTED
 from tests.conftest import handler as base_handler
 
 _ROLES = [
@@ -41,7 +42,8 @@ def _board(slug: str) -> dict:
         jobs.append({"id": 9000 + len(jobs) + 100 * list(_COMPANIES).index(slug), "title": title,
                      "absolute_url": f"https://job-boards.greenhouse.io/{slug}/jobs/{9000 + i + 100 * list(_COMPANIES).index(slug)}",
                      "location": {"name": location}, "content": _content(company, title, years, extra), "company_name": company,
-                     "first_published": f"2026-11-{1 + (i * 2) % 15:02d}T10:00:00-05:00", "offices": [],
+                     # two to six days ago, whenever the demo stack is seeded: inside the default posting-age limit of 7 days
+                     "first_published": f"{(POSTED - timedelta(days=(i * 2) % 5)).isoformat()}T10:00:00-05:00", "offices": [],
                      "metadata": [{"name": "Location Type", "value": kind}]})
     return {"jobs": jobs}
 

@@ -6,6 +6,7 @@ only when that tenant's robots.txt allows the path, at low concurrency, and alwa
 A board key is "tenant|wdN|site", for example "nvidia|wd5|NVIDIAExternalCareerSite"."""
 from datetime import date
 
+from ..freshness import stated_posting
 from ..job_normalizer import detect_work_mode, parse_ats, pretty_slug
 from ..schemas import Job
 from .base import BoardNotFound, Ctx, SourceError, iso_date, now_iso
@@ -80,11 +81,14 @@ def _list_job(key: str, raw: dict, us_only: bool, stamp: str) -> Job | None:
     if not ats_id:
         return None
     location = str(raw.get("locationsText") or "")
+    # The list says "Posted Today" / "Posted 3 Days Ago" (the publish day) or "Posted 30+ Days Ago" (only that the
+    # posting is at least that old). The detail's `startDate` replaces both with the exact day.
+    posted_at, posted_before = stated_posting(str(raw.get("postedOn") or "")[:80])
     return Job(
         title=title, company=company_name(key), location=location or "Not listed",
         work_mode=detect_work_mode(str(raw.get("remoteType") or ""), location),
         url=url, apply_url="", source="Workday", sources=["Workday"], ats="workday", ats_id=ats_id, board=key,
-        country_hint="United States" if us_only else "", verified_at=stamp,
+        country_hint="United States" if us_only else "", posted_at=posted_at, posted_before=posted_before, verified_at=stamp,
         verification="Listed in the employer's live Workday career site",
         needs_detail=True, detail_ref=path,
     )
@@ -136,7 +140,11 @@ def _apply_detail(job: Job, info: dict) -> Job | None:
     job.location = location or job.location
     job.country_hint = str(country.get("descriptor") or job.country_hint) if isinstance(country, dict) else job.country_hint
     job.raw_html = str(info.get("jobDescription") or "")
-    job.posted_at = iso_date(info.get("startDate"))
+    started = iso_date(info.get("startDate"))            # the day the posting went live on the career site
+    if started:
+        job.posted_at, job.posted_before = started, ""
+    elif info.get("postedOn"):
+        job.posted_at, job.posted_before = stated_posting(str(info.get("postedOn"))[:80])
     job.work_mode = detect_work_mode(str(info.get("remoteType") or ""), location) if (info.get("remoteType") or location) else job.work_mode
     if info.get("externalUrl"):
         job.url = str(info["externalUrl"])

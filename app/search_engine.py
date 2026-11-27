@@ -27,7 +27,7 @@ from typing import Callable
 
 import httpx
 
-from . import board_catalog, job_verifier
+from . import board_catalog, freshness, job_verifier
 from .ai_orchestrator import AIOrchestrator
 from .browser_pool import BrowserPool
 from .config import Settings
@@ -93,9 +93,13 @@ OPEN_WEB_QUERY_FORMS = ('"{title}" job opening {place} -linkedin -indeed -glassd
 PROBES_PER_SITE = 2                        # page leads of one site that are checked before the site has shown what it serves
 PROBE_SECONDS = 8.0                         # how long those first checks are waited for before the other leads start
 _SITE_REFUSES = re.compile(r"Page returned HTTP (401|403|429)|Disallowed by robots\.txt|Source does not permit")
+_NO_ANSWER = ("Page could not be fetched", "URL rejected", "The site's robots.txt could not be read")      # says nothing about the site
+SITE_REFUSED = "Not requested: the site refused its first pages"
 MIN_EXTRACTION_SECONDS = 4.0                # the AI page check is not started with less of the lead check's time box left
 KNOWN_EMPLOYERS_WAIT_SECONDS = 8.0          # how long the first AI web search waits to learn which employers the index already has matches for
 REJECT_KEYS = ("rejected_not_relevant", "rejected_non_us", "rejected_work_mode", "rejected_eligibility")
+TOO_OLD = "too_old"                         # counter of postings screened out by the posting-age limit (freshness.py)
+WORKDAY_LEADS_PER_ROUND = 30                # single Workday postings named by a lead that one round checks (paced: one request every 1.5 s)
 
 STAGES = [
     ("analyze", "Analyzing resume"), ("titles", "Identifying relevant job titles"),
@@ -113,7 +117,10 @@ def new_stats(requested: int) -> dict:
             "browser_pages": 0, "crawled_links": 0, "ai_extracted": 0, "detail_fetches": 0,
             # wider searches
             "round": 1, "rounds": [], "stop_reason": "", "title_variants": 0, "searx_queries": 0, "searx_cached": 0,
-            "searx_results": 0, "searx_failed": 0, "searx_leads": 0, "tsweb_searches": 0, "tsweb_results": 0, "tsweb_failed": 0,
+            "searx_results": 0, "searx_failed": 0, "searx_leads": 0,
+            # SearXNG queries asked with a time range (posting-age limit), and how many of those brought nothing usable
+            # and were asked again without it
+            "searx_ranged": 0, "searx_range_empty": 0, "tsweb_searches": 0, "tsweb_results": 0, "tsweb_failed": 0,
             "tsweb_leads": 0, "new_boards": 0, "new_board_postings": 0,
             # search-engine queries of this search by normalised query and host (search_plan.QueryLedger): how many were
             # asked, by which engine, how many an engine left out because another had asked them, and second chances
@@ -129,6 +136,16 @@ def new_stats(requested: int) -> dict:
             # afterwards and how many of them were remembered, browser / AI page checks the time box cut
             "lead_check_seconds": 0.0, "pages_late": 0, "pages_late_verified": 0, "pages_late_remembered": 0, "page_checks_cut": 0,
             "pages_site_refused": 0,                          # page leads not requested because their site had refused its first pages
+            # page leads (addresses that can only be checked by opening the page): how many the rounds were handed,
+            # how many were requested, how many the page budget left unchecked; pages without structured data for
+            # which no AI page check was left; single Workday postings a round could not check
+            "page_leads": 0, "page_leads_checked": 0, "page_leads_unchecked": 0, "page_checks_no_slot": 0,
+            "workday_leads_unchecked": 0,
+            # posting age (freshness.py): the limit of this search, postings screened out as older than it, postings
+            # without a known date that were left out (include_undated off), dated / undated jobs in the result
+            # list, and per source how many screened postings were within the limit, too old, or not dated
+            "posted_within_days": 0, "include_undated": True, "too_old": 0, "undated_dropped": 0,
+            "dated_delivered": 0, "undated_delivered": 0, "age_by_source": {},
             # paid sources
             "serp_calls": 0, "serp_cached": 0, "serp_jobs": 0, "serp_listed": 0, "serp_skipped": "",
             "tiny_searches": 0, "tiny_fetches": 0, "tiny_usd": 0.0, "tiny_skipped": "",
@@ -141,6 +158,34 @@ def new_stats(requested: int) -> dict:
             # ATS platform filter, startup focus and where the jobs came from (search_scope.py). Counts only.
             "platform_filter": [], "startup_focus": False, "filtered_out": 0, "platforms": {}, "providers": {},
             "coverage_warnings": [], "seconds_to_first_verified": None, "total_seconds": None}
+
+
+class AgeNotes:
+    """What the posting-age rule saw while one set of postings was screened: per source, how many were within the
+    limit, too old, or not dated (counts only), and what identifies the postings that were too old
+    (freshness.AgeWitness: a copy of the same vacancy without a date must not be delivered in their place)."""
+
+    def __init__(self) -> None:
+        self.by_source: dict[str, dict[str, int]] = {}
+        self.witness = freshness.AgeWitness()
+
+    def note(self, job: Job, kind: str) -> None:
+        row = self.by_source.setdefault(job.source or "Other", {freshness.FRESH: 0, freshness.TOO_OLD: 0, freshness.UNDATED: 0})
+        row[kind] += 1
+        if kind == freshness.TOO_OLD:
+            self.witness.add(job)
+
+    def merged(self, other: "AgeNotes | None") -> "AgeNotes":
+        out = AgeNotes()
+        for part in (self, other):
+            if part is None:
+                continue
+            for source, row in part.by_source.items():
+                mine = out.by_source.setdefault(source, {freshness.FRESH: 0, freshness.TOO_OLD: 0, freshness.UNDATED: 0})
+                for kind, n in row.items():
+                    mine[kind] += n
+            out.witness.update(part.witness)
+        return out
 
 
 class SearchState:
@@ -555,12 +600,16 @@ class SearchEngine:
         return sum(info["postings"] for src, info in index["by_source"].items() if scope.allows_source(src))
 
     # ------------------------------------------------------------ candidates
-    def _screen(self, jobs: list[Job], req: SearchRequest, by: dict | None = None) -> tuple[list[Job], dict, list[Job]]:
-        """US location, work mode and authorization filters. CPU only; runs in a worker thread.
-        `by` collects the same rejections per platform ({platform id: {reason: n}})."""
-        counts = dict.fromkeys(REJECT_KEYS, 0)
+    def _screen(self, jobs: list[Job], req: SearchRequest, by: dict | None = None,
+                age: "AgeNotes | None" = None) -> tuple[list[Job], dict, list[Job]]:
+        """US location, work mode and authorization filters, then the posting-age limit (freshness.py): a posting
+        whose known date is older than the limit is screened out here, before any model ranks, judges or explains
+        it. CPU only; runs in a worker thread.
+        `by` collects the same rejections per platform ({platform id: {reason: n}}); `age` what the age rule saw."""
+        counts = dict.fromkeys((*REJECT_KEYS, TOO_OLD), 0)
         kept: list[Job] = []
         touched: list[Job] = []
+        limit = req.posted_within_days
         for job in jobs:
             if job.enriched < ENRICH_VERSION:
                 enrich_job(job)
@@ -579,17 +628,58 @@ class SearchEngine:
                 counts["rejected_eligibility"] += 1
                 bump(by, job, "eligibility")
                 continue
+            kind = freshness.age_class(job, limit)
+            if age is not None:
+                age.note(job, kind)
+            if kind == freshness.TOO_OLD:
+                counts[TOO_OLD] += 1
+                bump(by, job, TOO_OLD)
+                continue
             kept.append(job)
         return kept, counts, touched
 
-    async def _fetch_details(self, pending: list[Job], counts: dict, state: SearchState | None, by: dict | None = None) -> list[Job]:
-        """Fetch descriptions for list-only records (best title matches first, bounded)."""
+    @staticmethod
+    def _deliverable(jobs: list[Job], req: SearchRequest, age: "AgeNotes | None" = None) -> tuple[list[Job], dict, int, int]:
+        """The jobs of a deduplicated list that the posting-age rule lets a search deliver, and what it took out:
+        (jobs, per-platform reasons, too old, without a date).
+
+        Too old here: a posting without a date of its own, or a job-board copy, whose other record in this search (the
+        employer's own board, with its publish date) was screened out as too old (freshness.AgeWitness). Without a
+        date: left out only when the search was started without "also show jobs with no posting date". This runs
+        after the duplicate removal on purpose: a copy without a date first takes the date of its dated twin."""
+        kept: list[Job] = []
+        by: dict = {}
+        old = undated = 0
+        witness = age.witness if age is not None else None
+        for job in jobs:
+            if req.posted_within_days and witness is not None and witness.says_old(job):
+                old += 1
+                bump(by, job, TOO_OLD)
+            elif not req.include_undated and freshness.undated(job):
+                undated += 1
+                bump(by, job, "undated")
+            else:
+                kept.append(job)
+        return kept, by, old, undated
+
+    async def _fetch_details(self, pending: list[Job], counts: dict, state: SearchState | None, by: dict | None = None,
+                             req: SearchRequest | None = None, age: "AgeNotes | None" = None) -> list[Job]:
+        """Fetch descriptions for list-only records (best title matches first, bounded). A record whose list entry
+        already says that it is older than the search's posting-age limit is left out before any request: the
+        paced detail budget goes to postings that can be delivered."""
         todo: list[Job] = []
+        limit = req.posted_within_days if req is not None else 0
         for job in sorted(pending, key=lambda j: -j.title_relevance):
             is_us, reason = us_location_status(job.location, job.country_hint)
             if not is_us and reason != "US eligibility not confirmed":
                 counts["rejected_non_us"] += 1          # clearly outside the US: no request needed
                 bump(by, job, "non_us")
+                continue
+            if limit and freshness.age_class(job, limit) == freshness.TOO_OLD:
+                counts[TOO_OLD] = counts.get(TOO_OLD, 0) + 1
+                bump(by, job, TOO_OLD)
+                if age is not None:
+                    age.note(job, freshness.TOO_OLD)
                 continue
             todo.append(job)
         budget = max(0, state.plan.detail_fetches if state and state.plan else self.settings.max_detail_fetches)
@@ -675,20 +765,22 @@ class SearchEngine:
                 if label not in job.sources:
                     job.sources.append(label)
         local = counts if counts is not None else {}
-        for key in REJECT_KEYS:
+        for key in (*REJECT_KEYS, TOO_OLD):
             local[key] = 0
         by: dict = {}                              # per platform: postings considered and why some were screened out
+        age = AgeNotes()                           # what the posting-age rule saw in this pass over the index
         for job in jobs:
             bump(by, job, "considered")
         ready = [j for j in jobs if not j.needs_detail]
         pending = [j for j in jobs if j.needs_detail]
         if details and pending:
-            ready.extend(await self._fetch_details(pending, local, state, by))
-        kept, screen_counts, touched = await asyncio.to_thread(self._screen, ready, req, by)
+            ready.extend(await self._fetch_details(pending, local, state, by, req, age))
+        kept, screen_counts, touched = await asyncio.to_thread(self._screen, ready, req, by, age)
         for key, value in screen_counts.items():
             local[key] += value
         local["relevant"] = matched
         local["platforms"] = by
+        local["age"] = age
         if touched:
             await self.index.update_postings(touched)
         return kept
@@ -810,10 +902,32 @@ class SearchEngine:
             """Seconds of the time box that are left (None: no time box, every check is waited for)."""
             return max(0.0, box_start + box - time.monotonic()) if box else None
 
+        answers: dict[str, list[int]] = {}           # site -> [pages it served, pages it refused], as the answers come in
+        site_gates: dict[str, asyncio.Semaphore] = {}    # site -> its checks under way (never more than PROBES_PER_SITE)
+
         async def plain(cand: Candidate) -> job_verifier.Verdict:
-            """One plain request, never the browser: the cheap check every page lead gets first."""
-            async with sem:
-                return await self.verifier.verify(cand, None, defer_claim=can_extract)
+            """One plain request, never the browser: the cheap check every page lead gets first.
+
+            A site that has refused PROBES_PER_SITE pages (HTTP 401 / 403 / 429, robots.txt) and served none is not asked
+            again in this round, however many of its pages the web searches named: the answer is known, and asking on
+            would only load a site that said no. This is decided when a check's turn comes, from the answers so far,
+            and a site has at most PROBES_PER_SITE checks under way, so a site that refuses gets exactly that many
+            requests. (Until 2026-11-27 it was decided once, eight seconds into the round; with twice as many leads
+            most sites had not answered by then, and one measured round sent 173 requests that came back 403.)"""
+            site = site_of(cand.url)
+            seen = answers.setdefault(site, [0, 0])
+            async with site_gates.setdefault(site, asyncio.Semaphore(PROBES_PER_SITE)):
+                if not seen[0] and seen[1] >= PROBES_PER_SITE:
+                    return job_verifier.Verdict(reason=SITE_REFUSED)
+                async with sem:
+                    stats["page_leads_checked"] += cand.url in page_leads
+                    verdict = await self.verifier.verify(cand, None, defer_claim=can_extract)
+                reason = verdict.reason or ""
+                if verdict.job is None and _SITE_REFUSES.match(reason):
+                    seen[1] += 1
+                elif not reason.startswith(_NO_ANSWER):
+                    seen[0] += 1
+            return verdict
 
         async def rendered(cand: Candidate) -> job_verifier.Verdict:
             """The page again with the browser (one page of the browser budget), for a page a plain request could not
@@ -847,6 +961,10 @@ class SearchEngine:
 
         def settle(cand: Candidate, verdict: job_verifier.Verdict, follow_listing: bool, may_render: bool) -> None:
             """What one checked page means for this search."""
+            if verdict.reason == SITE_REFUSED:
+                stats["pages_site_refused"] += 1
+                stats["rejected_unverified"] += 1
+                return
             seen = sites.setdefault(site_of(cand.url), [0, 0])
             seen[0] += verdict.job is not None
             seen[1] += verdict.job is None and bool(_SITE_REFUSES.match(verdict.reason or ""))
@@ -870,8 +988,10 @@ class SearchEngine:
                 extract_slots[0] -= 1
                 to_extract.append((verdict.page, cand, verdict.claimed))
             elif verdict.extractable and verdict.claimed is not None:      # no AI slot left: the claim-based check decides
+                stats["page_checks_no_slot"] += 1
                 verified.append(verdict.claimed)
             else:
+                stats["page_checks_no_slot"] += bool(verdict.extractable)   # a page only a model could have read, and none was left
                 stats["rejected_unverified"] += 1          # also a list or home page that offered no matching job links
 
         async def run_stage(checks: list[tuple[Candidate, asyncio.Task]], follow_listing: bool, may_render: bool,
@@ -913,7 +1033,9 @@ class SearchEngine:
         # AI_PAGE_EXTRACTION_PAID_CALLS full calls; the check runs in several passes, so pages are counted, not calls)
         paid_pages = [paid_calls * max(1, self.settings.max_ai_page_extractions)]
         extract_gate = asyncio.Semaphore(max(1, getattr(self.settings, "ai_page_extraction_concurrency", 4)))
+        stats["page_leads"] += len(first)
         if len(first) > budget:
+            stats["page_leads_unchecked"] += len(first) - budget
             state.warn(f"Verification budget reached: {len(first) - budget} web lead(s) were not checked.")
 
         async def check_pages():
@@ -949,13 +1071,28 @@ class SearchEngine:
                 stats["pages_late"] += len(late)
                 self._finish_late([task for _, task in late], stats)
 
-        async def check_workday_leads():
-            checks = [asyncio.create_task(check_workday(b, l)) for b, l in workday_leads[:10]]
-            if checks:                                   # paced source: bounded wait
-                _, late = await asyncio.wait(checks, timeout=state.detail_wait if left() is None else min(state.detail_wait, left()))
+        # Single Workday postings named by a lead: the source is paced (one request every 1.5 s, shared with the reading
+        # of the Workday boards), so they are started now and run beside everything else of this lead check. Until
+        # 2026-11-27 ten of them got 20 seconds and the rest was dropped unseen.
+        workday_checks = [asyncio.create_task(check_workday(b, l)) for b, l in workday_leads[:WORKDAY_LEADS_PER_ROUND]]
+        if len(workday_leads) > len(workday_checks):
+            stats["workday_leads_unchecked"] += len(workday_leads) - len(workday_checks)
+            stats["rejected_unverified"] += len(workday_leads) - len(workday_checks)
+
+        async def finish_workday_leads():
+            """The Workday checks have had the whole lead check; what is still running gets the rest of the paced wait
+            (counted from the start of the lead check, never beyond the time box) and is then stopped."""
+            running = [task for task in workday_checks if not task.done()]
+            if running:
+                wait = max(0.0, state.detail_wait - (time.monotonic() - box_start))
+                wait = wait if left() is None else min(wait, left())
+                _, late = await asyncio.wait(running, timeout=wait) if wait > 0 else (set(), set(running))
                 for task in late:
                     task.cancel()
+                    stats["workday_leads_unchecked"] += 1
                     stats["rejected_unverified"] += 1
+                if late:
+                    await asyncio.gather(*late, return_exceptions=True)
 
         async def extract_pages(items: list[tuple[job_verifier.Page, Candidate, Job | None]]) -> None:
             """The AI page check of pages without structured data, within the time that is left. A page the model gave
@@ -1056,12 +1193,18 @@ class SearchEngine:
             if readers:
                 await asyncio.gather(*readers)
 
-        await asyncio.gather(check_boards(), check_pages(), check_workday_leads())
-        # Second stage, only while time is left: the browser for the pages a plain request could not show, and beside it
-        # the AI page check, first of the pages that came complete and then of what the browser shows, batch by batch.
-        waiting = list(to_extract)
-        to_extract.clear()
-        await asyncio.gather(render_pages(), extract_pages(waiting))
+        try:
+            await asyncio.gather(check_boards(), check_pages())
+            # Second stage, only while time is left: the browser for the pages a plain request could not show, and beside
+            # it the AI page check, first of the pages that came complete and then of what the browser shows, batch by batch.
+            waiting = list(to_extract)
+            to_extract.clear()
+            await asyncio.gather(render_pages(), extract_pages(waiting))
+            await finish_workday_leads()
+        except BaseException:
+            for task in workday_checks:
+                task.cancel()
+            raise
         stats["browser_pages"] += browser_budget.used
         stats["lead_check_seconds"] = round(stats["lead_check_seconds"] + time.monotonic() - box_start, 1)
         if hasattr(ai, "note_verified"):
@@ -1184,7 +1327,8 @@ class SearchEngine:
     def _order(job: Job):
         # AI-assessed jobs rank ahead of keyword-only ones: a keyword score was never checked against the posting by a model.
         # Jobs scored by the company rerank model sit between the two (a model read them, without a written judgement).
-        return (SCORER_ORDER.get(job.score_source, 2), -job.score, job.company, job.title)
+        # At an equal score a posting whose date is not stated comes after the dated ones (a tie-break, never a score change).
+        return (SCORER_ORDER.get(job.score_source, 2), -job.score, freshness.undated(job), job.company, job.title)
 
     def _select(self, ranked: list[Job], target: int) -> list[Job]:
         """Top `target` jobs, spread across employers: a soft cap per employer and at most two postings with
@@ -1216,6 +1360,7 @@ class SearchEngine:
         state.scope = scope = Scope.of(req.ats_platforms, req.startup_focus, self.specs)
         stats["platform_filter"], stats["startup_focus"] = [p for p in req.ats_platforms if p in scope.chosen], scope.focus
         stats["coverage_warnings"] = scope.coverage_warnings()       # shown while the search runs; warned once at the end
+        stats["posted_within_days"], stats["include_undated"] = req.posted_within_days, bool(req.include_undated)
         if hasattr(ai, "configure"):
             ai.configure(plan)                    # AI budgets scale with the number of results requested
         if hasattr(ai, "set_scope"):              # AI web search: only hosts this search can use (platform filter, enabled readers)
@@ -1245,8 +1390,9 @@ class SearchEngine:
         profile_task = asyncio.create_task(ai.extract_profile(resume_text, req, base_profile)) if ai.available else None
         known_names = sorted({k.split("|")[0] for ks in keys.values() for k in ks})
         state.known_employers = asyncio.get_running_loop().create_future()     # set by the pipeline once the index was screened
-        discover_task = asyncio.create_task(self._first_discovery(state, ai, base_profile, req, related0, known_names)) if use_web else None
         expand_task = asyncio.create_task(self._expand_titles(state, ai, titles, base_profile))
+        discover_task = asyncio.create_task(
+            self._first_discovery(state, ai, base_profile, req, related0, known_names, expand_task)) if use_web else None
         # Platform filter: only the readers of the chosen platforms. Startup focus: their units first (they are read
         # first and are the last to fall outside the budget of boards).
         specs = {name: spec for name, spec in self.specs.items() if scope.allows_source(name)}
@@ -1325,15 +1471,28 @@ class SearchEngine:
         return sorted(counts, key=lambda name: -counts[name])[:limit]
 
     async def _first_discovery(self, state: SearchState, ai, profile: Profile, req: SearchRequest, related: list[str],
-                               known_names: list[str]) -> list[Candidate]:
+                               known_names: list[str], expand_task: asyncio.Task | None = None) -> list[Candidate]:
         """Round 1 of the AI web search. It waits a moment for the employers whose matching postings the index already
         holds (the pipeline reports them as soon as it screened the index: no network, long before a model call
-        returns), so even the first calls know whom not to bring again. Without them it is told the known boards."""
-        try:
-            relevant = await asyncio.wait_for(asyncio.shield(state.known_employers), timeout=KNOWN_EMPLOYERS_WAIT_SECONDS)
-        except asyncio.TimeoutError:
-            relevant = []
-        return await ai.discover(profile, req, related, relevant or known_names)
+        returns), so even the first calls know whom not to bring again. Without them it is told the known boards.
+
+        In the same moment it waits for the title variants of this search (`expand_task`: remembered for a week, else
+        one model call of a few seconds). A round makes 20 calls on the ATS hosts since 2026-11-27, and the requested
+        titles with the few built-in related titles fill only about half of them; with the variants the other calls
+        search further titles instead of the same title in one state after another. Variants that are not there in
+        time are used from round 2 on, as before."""
+        async def settled(awaitable, default):
+            try:
+                return await asyncio.wait_for(asyncio.shield(awaitable), timeout=KNOWN_EMPLOYERS_WAIT_SECONDS)
+            except asyncio.CancelledError:
+                raise
+            except Exception:                      # not ready in time, or the expansion failed: the search goes on without
+                return default
+
+        relevant, variants = await asyncio.gather(
+            settled(state.known_employers, []), settled(expand_task, []) if expand_task is not None else asyncio.sleep(0, []))
+        more = clean_variants(variants or [], [*req.titles, *related], self.settings.title_expansion_max)
+        return await ai.discover(profile, req, [*related, *more], relevant or known_names)
 
     @staticmethod
     def _discovery_notes(state: SearchState, ai) -> None:
@@ -1454,10 +1613,17 @@ class SearchEngine:
         ledger = self._ledger(state)
         if not self.searx_on or getattr(state, "searx_down", False):
             return
+        span = self._time_range(state)
         for position, query in enumerate(queries):
+            # Posting-age limit: every other query asks for results of that span only (the client asks again without it
+            # when that brings nothing usable); the queries between them stay unrestricted, so a posting the public
+            # engines carry no date for is still found.
             answer = await self.searx.search(query, self.settings.searxng_pages_per_query,
-                                             useful=lambda u: extract(u, hosts) is not None or bool(scope.page_lead(u)))
+                                             useful=lambda u: extract(u, hosts) is not None or bool(scope.page_lead(u)),
+                                             time_range=span if position % 2 == 0 else "")
             stats["searx_cached" if answer.cached else "searx_queries"] += 1
+            stats["searx_ranged"] += answer.ranged
+            stats["searx_range_empty"] += answer.widened
             if answer.error:
                 stats["searx_failed"] += 1
                 ledger.note(query, "failed")
@@ -1477,6 +1643,12 @@ class SearchEngine:
             usable = any(extract(u, hosts) is not None or scope.page_lead(u) for u in answer.urls)
             ledger.note(query, "ok" if usable else "empty")            # nothing usable: another engine may try it once
             state.emit(state.stage or "search", "Asking the search engine for employer job boards")
+
+    def _time_range(self, state: SearchState) -> str:
+        """SearXNG's time range for this search's posting-age limit ("" = none: no limit, or SEARXNG_TIME_RANGE off)."""
+        if not getattr(self.settings, "searxng_time_range", True):
+            return ""
+        return freshness.time_range(int(state.stats.get("posted_within_days") or 0))
 
     def _hosts(self, state: SearchState) -> list[str]:
         """Hosts of this search's `site:` queries and of its AI web search (see Scope.hosts: only hosts whose results
@@ -1579,8 +1751,11 @@ class SearchEngine:
                 continue
             sent += 1
             if engine == SEARX:
-                answer = await self.searx.search(query, 1, useful=lambda u: self._own_site_posting(u, scope) or extract(u, hosts) is not None)
+                answer = await self.searx.search(query, 1, useful=lambda u: self._own_site_posting(u, scope) or extract(u, hosts) is not None,
+                                                 time_range=self._time_range(state) if stats["open_engine_queries"] % 2 == 0 else "")
                 stats["searx_cached" if answer.cached else "searx_queries"] += 1
+                stats["searx_ranged"] += answer.ranged
+                stats["searx_range_empty"] += answer.widened
                 urls, note = list(answer.urls), answer.error or ""
                 state.searx_failures = getattr(state, "searx_failures", 0) + 1 if note else 0
                 if note:
@@ -1870,7 +2045,9 @@ class SearchEngine:
 
         # 1. Preliminary results from what the index already holds (no network).
         state.emit("titles", "Identifying relevant job titles")
-        early = await self._collect(req, related0, {}, max_age=self.settings.index_stale_ok_seconds, details=False, scope=scope)
+        early_counts: dict = {}
+        early = await self._collect(req, related0, {}, max_age=self.settings.index_stale_ok_seconds, details=False, counts=early_counts,
+                                    scope=scope)
         indexed = list(early) if hasattr(ai, "rerank_start") else []     # what the index holds, for the reranker's early pass
         known_ready = getattr(state, "known_employers", None)
         if known_ready is not None and not known_ready.done():
@@ -1878,6 +2055,7 @@ class SearchEngine:
         if early:
             early.sort(key=lambda j: -j.title_relevance)
             early, _ = await asyncio.to_thread(deduplicate, early[:preview_size])
+            early = self._deliverable(early, req, early_counts.get("age"))[0]      # previews follow the posting-age rule too
             self._score(early, base_profile, req, related0)
             early.sort(key=self._order)
             state.publish(self._select(early, target), partial=True)
@@ -1954,6 +2132,7 @@ class SearchEngine:
             first_verified()
             head = sorted(kept, key=lambda j: -j.title_relevance)[:preview_size]
             preview, _ = await asyncio.to_thread(deduplicate, [j.model_copy(deep=True) for j in head])
+            preview = self._deliverable(preview, req, counts.get("age"))[0]
             self._score(preview, profile, req, related)
             preview.sort(key=self._order)
             state.publish(self._select(preview, target), partial=True)
@@ -1985,8 +2164,9 @@ class SearchEngine:
         expected: dict[str, set[str]] = {}
         lead_jobs: list[Job] = []
         seen_leads: set[str] = set()
-        lead_counts = dict.fromkeys(REJECT_KEYS, 0)
+        lead_counts = dict.fromkeys((*REJECT_KEYS, TOO_OLD), 0)
         lead_kept: list[Job] = []
+        lead_age = AgeNotes()                           # what the posting-age rule saw among the postings read from web leads
         lead_by: dict = {}                              # per platform: postings read from web leads, and why some were screened out
         platform_leads: dict[str, int] = {}             # per platform: addresses named by a search engine or an AI provider
         provider_leads: dict[str, int] = {}             # per provider: the same addresses
@@ -2026,8 +2206,9 @@ class SearchEngine:
             lead_jobs.extend(jobs)
             lead_jobs.extend(listed_new)                    # Google Jobs listings without an employer link (marked as such)
             listed_new = []
-            lead_counts = dict.fromkeys(REJECT_KEYS, 0)
+            lead_counts = dict.fromkeys((*REJECT_KEYS, TOO_OLD), 0)
             lead_by = {}
+            lead_age = AgeNotes()
             if lead_jobs:
                 relevant = []
                 for job in lead_jobs:
@@ -2041,7 +2222,7 @@ class SearchEngine:
                         bump(lead_by, job, "not_relevant")
                     else:
                         relevant.append(job)
-                lead_kept, screen_counts, _ = await asyncio.to_thread(self._screen, relevant, req, lead_by)
+                lead_kept, screen_counts, _ = await asyncio.to_thread(self._screen, relevant, req, lead_by, lead_age)
                 for key, value in screen_counts.items():
                     lead_counts[key] += value
             if fresh:
@@ -2049,8 +2230,17 @@ class SearchEngine:
                 kept = await self._collect(req, related, expected, counts=counts, state=state, scope=scope)   # lead boards are in the index now
                 await self._source_report(state, failed, pending)
             unique, removed = await asyncio.to_thread(deduplicate, [*kept, *lead_kept])
-            # What counts towards the target: verified jobs whose keyword score reaches the minimum match score. A job
-            # that only shares a title word is not progress (a loose title variant can match hundreds of those).
+            copies_by = count_platforms([*kept, *lead_kept]) - count_platforms(unique)
+            # The posting-age rule once more, now that copies of one vacancy are merged: a copy without a date whose
+            # dated record was too old, and (when the search leaves them out) postings without any known date.
+            age = counts.get("age").merged(lead_age) if counts.get("age") is not None else lead_age
+            unique, age_by, old_copies, no_date = self._deliverable(unique, req, age)
+            stats[TOO_OLD] = counts.get(TOO_OLD, 0) + lead_counts[TOO_OLD] + old_copies
+            stats["undated_dropped"] = no_date
+            stats["age_by_source"] = age.by_source
+            # What counts towards the target: verified jobs that can be delivered (the age rule above has been applied)
+            # and whose keyword score reaches the minimum match score. A job that only shares a title word is not
+            # progress (a loose title variant can match hundreds of those).
             self._score(unique, profile, req, related)
             bar = self.settings.default_min_match_score
             matches = sum(1 for j in unique if j.score >= bar)
@@ -2059,8 +2249,8 @@ class SearchEngine:
             if unique:
                 first_verified()
             unique_by = count_platforms(unique)
-            duplicates_by = count_platforms([*kept, *lead_kept]) - unique_by
-            stats["platforms"] = platform_stats(scope, [counts.get("platforms") or {}, lead_by], unique_by, duplicates_by, {}, platform_leads)
+            duplicates_by = copies_by
+            stats["platforms"] = platform_stats(scope, [counts.get("platforms") or {}, lead_by, age_by], unique_by, duplicates_by, {}, platform_leads)
             stats["providers"] = self._provider_stats(state, provider_leads, unique, [])
             stats["rounds"].append({"round": round_no, "matches": matches, "verified": len(unique), "gained": gained, "leads": len(fresh),
                                     "searx_queries": round_queries, "new_boards": stats["new_boards"] - boards_before,
@@ -2158,7 +2348,10 @@ class SearchEngine:
         audited = before_rank - count_platforms(unique)      # dropped by the AI audit (not relevant, or not eligible)
         for name, st in ai.status.items():
             if st["configured"] and st["failed_calls"]:
-                state.warn(f"{name} degraded: {st['failed_calls']} call(s) failed ({st['last_error']}).")
+                limited = st.get("rate_limited", 0)
+                state.warn(f"{name} degraded: {st['failed_calls']} call(s) failed ({st['last_error']})."
+                           + (f" {limited} of them were refused as rate-limited (HTTP 429): the provider's limit is below what a "
+                              f"round asks for; lower {name.upper()}_SEARCH_CONCURRENCY or the calls per round." if limited else ""))
         state.mark("ranked")
         stats["rank_seconds"] = round(state.timings["ranked"] - state.timings.get("leads_verified", state.timings["ranked"]), 1)
 
@@ -2173,8 +2366,13 @@ class SearchEngine:
         final.sort(key=order)
         stats["final_matches"] = len(final)
         unique_by = count_platforms(unique)
-        stats["platforms"] = platform_stats(scope, [counts.get("platforms") or {}, lead_by], unique_by,
+        stats["platforms"] = platform_stats(scope, [counts.get("platforms") or {}, lead_by, age_by], unique_by,
                                             duplicates_by + (before_second - unique_by), count_platforms(final), platform_leads, audited)
+        for job in final:
+            if job.posted_at and freshness.undated(job):
+                job.posted_at = ""                   # a date in the future, or a placeholder like 1970-01-01, is not shown as a posting date
+        stats["undated_delivered"] = sum(1 for job in final if not job.posted_at)
+        stats["dated_delivered"] = len(final) - stats["undated_delivered"]
         stats["providers"] = self._provider_stats(state, provider_leads, unique, final)
         # Coverage: every chosen platform without a board reader, and whether anything was found for it.
         stats["coverage_warnings"] = scope.coverage_warnings(stats["platforms"])
@@ -2408,7 +2606,10 @@ class SearchEngine:
             return f"Found {found} verified matching jobs{extra}."
         reasons = [f"{stats['total_discovered']} postings were examined across {stats['boards_checked']} source reads"
                    + (f" and {stats['ai_leads']} AI web-search leads" if stats["ai_leads"] else "")]
+        limit = stats.get("posted_within_days") or 0
         for key, text in (("rejected_not_relevant", "did not match the requested roles"),
+                          (TOO_OLD, "were posted longer ago than the limit of this search (" + ("24 hours" if limit == 1 else f"{limit} days") + ")"),
+                          ("undated_dropped", "state no posting date (this search leaves those out)"),
                           ("rejected_non_us", "were outside the United States or lacked confirmed US eligibility"),
                           ("rejected_eligibility", "conflicted with the work-authorization filters"),
                           ("rejected_work_mode", "did not match the work arrangement"),

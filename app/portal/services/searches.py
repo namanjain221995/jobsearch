@@ -39,6 +39,7 @@ def effective_filters(profile: CandidateProfile | None, data: SearchCreate) -> d
         "excluded_companies": pick(f.excluded_companies, profile.excluded_companies if profile else None, []),
         "skills": (profile.skills if profile else []) or [],
         "ats_platforms": list(f.ats_platforms), "startup_focus": bool(f.startup_focus),
+        "posted_within_days": int(f.posted_within_days), "include_undated": bool(f.include_undated),
     }
 
 
@@ -97,6 +98,8 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
 
     team_ids = {c.team_id for c, _ in targets}
     # Stored as before when the platform filter and the startup focus are not used (they are settings, not overrides).
+    # The posting-age limit and the undated switch are always stored: a search without them is one from before they
+    # existed (it ran without an age rule), and the search page says so by showing no limit for it.
     stored_filters = {k: v for k, v in data.filters.model_dump(exclude_none=True).items()
                       if k not in ("ats_platforms", "startup_focus") or v}
     run = SearchRun(
@@ -111,7 +114,8 @@ async def create_search(db: AsyncSession, settings: Settings, portal: SettingsOu
                             assignment_mode=data.mode, status="queued", stats={}))
     audit(db, principal.user, "search.created", "search", run.id, run.team_id,
           {"candidates": len(targets), "target_count": data.target_count, "mode": data.mode, "deep_search": data.deep_search,
-           "ats_platforms": list(data.filters.ats_platforms), "startup_focus": data.filters.startup_focus}, ip)
+           "ats_platforms": list(data.filters.ats_platforms), "startup_focus": data.filters.startup_focus,
+           "posted_within_days": data.filters.posted_within_days, "include_undated": data.filters.include_undated}, ip)
     return run, skipped
 
 

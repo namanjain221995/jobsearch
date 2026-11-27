@@ -3,6 +3,7 @@ import {
   Banknote,
   BadgeCheck,
   Building2,
+  CalendarDays,
   CircleHelp,
   CircleSlash,
   Laptop,
@@ -11,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { PostedAge } from "@/components/jobs/posted-age";
 import { Tag } from "@/components/shared/status-badge";
 import { humanize } from "@/lib/format";
 import type { JobSummary } from "@/lib/types";
@@ -53,7 +55,10 @@ function Fact({ icon: Icon, children, muted }: { icon: LucideIcon; children: Rea
   );
 }
 
-/** Location, work arrangement and pay, each with its own icon. Unstated facts are left out of this short line. */
+/**
+ * Location, work arrangement, pay and the posting's age, each with its own icon. Unstated facts are left out of this
+ * short line, except the age: a job whose posting gives no date says so ("Posting date not stated").
+ */
 export function JobFactLine({ job, className, company = false }: { job: JobSummary; className?: string; company?: boolean }) {
   const location = jobLocation(job);
   const salary = jobSalary(job);
@@ -64,6 +69,9 @@ export function JobFactLine({ job, className, company = false }: { job: JobSumma
       {location !== NOT_STATED && <Fact icon={MapPin}>{location}</Fact>}
       {workMode !== NOT_STATED && <Fact icon={Laptop}>{workMode}</Fact>}
       {salary !== NOT_STATED && <Fact icon={Banknote}>{salary}</Fact>}
+      <Fact icon={CalendarDays} muted={!job.posted_at}>
+        <PostedAge value={job.posted_at} />
+      </Fact>
     </div>
   );
 }

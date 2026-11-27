@@ -8,7 +8,7 @@ from app.job_normalizer import parse_ats
 from app.providers import adzuna, amazon, remote_boards, workable, workday
 from app.providers.base import Ctx, RobotsRules, SourceError, iso_date
 from app.providers.registry import SPECS, plan_units
-from tests.conftest import CALLS, handler
+from tests.conftest import CALLS, POSTED_ISO, handler
 
 
 def run(coro):
@@ -60,7 +60,7 @@ def test_workday_detail_fills_description_and_detects_closed_postings():
         jobs = await workday.fetch(ctx, "wdco|wd5|Careers", "ai engineer")
         return [await workday.detail(ctx, j) for j in jobs]
     open_job, multi, closed, cleared = run(with_ctx(go))
-    assert open_job.needs_detail is False and "PyTorch" in open_job.raw_html and open_job.posted_at == "2026-11-03"
+    assert open_job.needs_detail is False and "PyTorch" in open_job.raw_html and open_job.posted_at == POSTED_ISO
     assert multi.location == "US, WA, Seattle; US, NY, New York"
     assert closed is None                                           # 404 from the live site = no longer open
     assert "TS/SCI" in cleared.raw_html
@@ -91,7 +91,7 @@ def test_workable_search_follows_page_tokens():
 def test_amazon_remote_boards_and_adzuna_normalization():
     az = run(with_ctx(lambda ctx: amazon.fetch(ctx, "*", "machine learning engineer")))[0]
     assert az.company == "Amazon" and az.url == "https://www.amazon.jobs/en/jobs/900/machine-learning-engineer"
-    assert az.apply_url.endswith("/jobs/900/apply") and az.posted_at == "2026-11-06" and az.country_hint == "United States"
+    assert az.apply_url.endswith("/jobs/900/apply") and az.posted_at == POSTED_ISO and az.country_hint == "United States"
     rok = run(with_ctx(lambda ctx: remote_boards.fetch_remoteok(ctx, "*", "")))
     assert [j.company for j in rok] == ["Acme AI", "Globex", "Initech"] and all(j.aggregator and j.source == "Remote OK" for j in rok)
     assert rok[0].salary == "USD 150,000 - 190,000" and rok[1].salary == "Not listed"

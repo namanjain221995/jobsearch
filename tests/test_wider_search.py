@@ -408,19 +408,19 @@ def test_budgets_scale_with_the_request_within_hard_ceilings():
     small, mid, big = plan_for(s, 50), plan_for(s, 300), plan_for(s, 1000)
     # The AI web search: what ONE round makes (OpenAI and Claude on ATS hosts, OpenAI and Claude on employers' own sites),
     # at most twice as much for a large request; every further round makes it again (tests/test_open_web_budgets.py).
-    assert small.base == (6, 6, 3, 6) and mid.base == big.base == (12, 12, 6, 12)
-    assert (small.web_searches, mid.web_searches, small.open_searches, small.followup_calls, mid.followup_calls) == (5, 10, 10, 3, 6)
+    assert small.base == (10, 10, 8, 10) and mid.base == big.base == (20, 20, 16, 20)
+    assert (small.web_searches, mid.web_searches, small.open_searches, small.followup_calls, mid.followup_calls) == (5, 10, 10, 6, 12)
     assert (small.ai_ranked, mid.ai_ranked, big.ai_ranked) == (100, 120, 400)
     # The totals of a whole search are safety ceilings, far above what a normal search uses.
     assert (small.openai_calls, small.claude_calls, small.openai_open_calls, small.claude_open_calls) == (96, 96, 48, 96)
     assert small.ai_calls >= 96 + 96 + 48 + 96 + small.ai_reserve and big.ai_calls <= s.max_ai_calls_per_search_max == 1000
     assert (small.searx_queries, mid.searx_queries, big.searx_queries) == (12, 72, 90) and big.new_boards == 400
-    assert (small.page_verifications, mid.page_verifications) == (400, 2400)
+    assert (small.page_verifications, mid.page_verifications) == (1200, 4800)
     quiet = plan_for(s, 1000, deep=False)
     assert (quiet.openai_calls, quiet.claude_calls, quiet.openai_open_calls, quiet.claude_open_calls, quiet.followup_calls) == (0, 0, 0, 0, 0)
     flat = plan_for(Settings(_env_file=None, ai_budget_scaling=False), 1000)          # no scaling: one round's calls, and no more
-    assert (flat.openai_calls, flat.web_searches, flat.ai_calls, flat.ai_ranked, flat.searx_queries) == (6, 5, 30, 120, 12)
-    assert flat.ai_round("OpenAI", 1) == (6, 3) and flat.ai_round("OpenAI", 2) == (0, 0)
+    assert (flat.openai_calls, flat.web_searches, flat.ai_calls, flat.ai_ranked, flat.searx_queries) == (10, 5, 30, 120, 12)
+    assert flat.ai_round("OpenAI", 1) == (10, 8) and flat.ai_round("OpenAI", 2) == (0, 0)
     assert sum(mid.per_round(mid.searx_queries, r) for r in range(1, mid.rounds + 1)) == 72 and mid.per_round(72, 9) == 0
 
 

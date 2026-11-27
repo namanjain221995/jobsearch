@@ -53,24 +53,26 @@ def test_a_round_makes_its_calls_again_until_a_safety_ceiling():
     s = Settings(_env_file=None)
     plan = plan_for(s, 25)
     # One round of a normal search: OpenAI and Claude on the ATS hosts, and on top OpenAI and Claude on employers' own sites.
-    assert plan.base == (6, 6, 3, 6) and plan.ai_round("OpenAI", 1) == (6, 3) and plan.ai_round("Claude", 1) == (6, 6)
-    assert (plan.web_searches, plan.open_searches, plan.followup_calls, plan.open_engine_queries, plan.page_verifications) == (5, 10, 3, 12, 400)
+    # (Raised on 2026-11-27 from 6 + 6, 3 + 6 and 3 follow-up calls: the owner wants more AI web search, whatever it costs.)
+    assert plan.base == (10, 10, 8, 10) and plan.ai_round("OpenAI", 1) == (10, 8) and plan.ai_round("Claude", 1) == (10, 10)
+    assert (plan.web_searches, plan.open_searches, plan.followup_calls, plan.open_engine_queries, plan.page_verifications) == (5, 10, 6, 12, 1200)
     # Every further round makes them again; the totals are safety ceilings of one search, far above a normal one.
-    assert plan.ai_round("Claude", 5) == plan.ai_round("Claude", 16) == (6, 6) and plan.ai_round("Claude", 17) == (0, 0)
-    capped = plan_for(Settings(_env_file=None, claude_search_calls_max=9, claude_open_web_calls_max=6), 25)
-    assert [capped.ai_round("Claude", r) for r in (1, 2, 3)] == [(6, 6), (3, 0), (0, 0)]         # each kind stops at its own ceiling
+    assert plan.ai_round("Claude", 5) == plan.ai_round("Claude", 9) == (10, 10)
+    assert plan.ai_round("Claude", 10) == (6, 6) and plan.ai_round("Claude", 11) == (0, 0)
+    capped = plan_for(Settings(_env_file=None, claude_search_calls_max=15, claude_open_web_calls_max=10), 25)
+    assert [capped.ai_round("Claude", r) for r in (1, 2, 3)] == [(10, 10), (5, 0), (0, 0)]       # each kind stops at its own ceiling
     # A larger request makes up to twice a round's calls, and more rounds; never more a round (they would only queue).
-    assert ROUND_GROWTH == 2.0 and plan_for(s, 60).base == (8, 8, 4, 8) and plan_for(s, 175).base == plan_for(s, 1000).base == (12, 12, 6, 12)
-    assert plan_for(s, 175).followup_calls == 6
+    assert ROUND_GROWTH == 2.0 and plan_for(s, 60).base == (12, 12, 10, 12) and plan_for(s, 175).base == plan_for(s, 1000).base == (20, 20, 16, 20)
+    assert plan_for(s, 175).followup_calls == 12
     # ... and the lead check of such a round gets up to twice the time (LEAD_VERIFICATION_SECONDS; 0 = no time box).
-    assert (plan.lead_seconds, plan_for(s, 60).lead_seconds, plan_for(s, 175).lead_seconds) == (120.0, 144.0, 240.0)
+    assert (plan.lead_seconds, plan_for(s, 60).lead_seconds, plan_for(s, 175).lead_seconds) == (240.0, 288.0, 480.0)
     assert plan_for(Settings(_env_file=None, lead_verification_seconds=0), 175).lead_seconds == 0.0
     # The old share setting is the switch it also was: 0 = nothing looks at the open web.
     off = plan_for(Settings(_env_file=None, ai_open_web_share=0), 25)
-    assert off.base == (6, 6, 0, 0) and (off.openai_open_calls, off.claude_open_calls, off.followup_calls, off.open_engine_queries, off.aws_open_share) == (0, 0, 0, 0, 0.0)
+    assert off.base == (10, 10, 0, 0) and (off.openai_open_calls, off.claude_open_calls, off.followup_calls, off.open_engine_queries, off.aws_open_share) == (0, 0, 0, 0, 0.0)
     # A single pass (SEARCH_MAX_ROUNDS=1) makes one round's calls.
     single = plan_for(Settings(_env_file=None, search_max_rounds=1), 25)
-    assert single.rounds == 1 and (single.openai_calls, single.claude_open_calls) == (6, 6) and single.ai_round("OpenAI", 2) == (0, 0)
+    assert single.rounds == 1 and (single.openai_calls, single.claude_open_calls) == (10, 10) and single.ai_round("OpenAI", 2) == (0, 0)
     # The web search leaves the calls the judging of the result list needs.
     assert plan.ai_reserve == 22 and plan.ai_calls - plan.ai_reserve >= 96 + 96 + 2 * 48 + 96
     # A plan built by hand (no round values) spreads its totals evenly over the rounds, as before.
@@ -208,7 +210,7 @@ def test_the_lead_check_has_a_time_box_and_what_finishes_later_is_remembered(pag
         await closing.aclose()
         assert waiting and all(task.done() for task in waiting)
     run(go())
-    assert Settings(_env_file=None).lead_verification_seconds == 120.0    # correct jobs before speed: the default is generous
+    assert Settings(_env_file=None).lead_verification_seconds == 240.0    # correct jobs before speed: the default is generous
 
 
 def test_browser_and_ai_page_checks_run_only_while_time_is_left_and_time_never_accepts_a_page(monkeypatch):

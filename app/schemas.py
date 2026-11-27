@@ -27,6 +27,18 @@ class SearchRequest(BaseModel):
     locations: list[str] = Field(default_factory=list, max_length=30)   # preferred states: only steer discovery queries, never filter here
     ats_platforms: list[str] = Field(default_factory=list, max_length=40)   # platform ids of app/ats_platforms.py; empty = all platforms and sources
     startup_focus: bool = False   # startup platforms first and with the larger share of the budgets; a tie-break in ranking, never a score change
+    # Posting age (app/freshness.py): a posting whose known posting date is older than this many days is never
+    # delivered. 0 = any time; allowed: 0, 1, 3, 7, 14, 30.
+    posted_within_days: int = 7
+    include_undated: bool = True  # deliver postings whose posting date is not stated (after dated ones of the same score)
+
+    @field_validator("posted_within_days")
+    @classmethod
+    def _posted_within(cls, v: int) -> int:
+        from .freshness import POSTED_WITHIN_CHOICES
+        if v not in POSTED_WITHIN_CHOICES:
+            raise ValueError("posted_within_days must be one of " + ", ".join(str(n) for n in POSTED_WITHIN_CHOICES))
+        return v
 
     @field_validator("ats_platforms")
     @classmethod
@@ -106,7 +118,9 @@ class Job(BaseModel):
     ats_id: str = ""
     board: str = ""
     country_hint: str = ""                    # structured country from the source when present
-    posted_at: str = ""                       # ISO date, "" when unknown
+    posted_at: str = ""                       # the day the posting was published (ISO date), "" when unknown; never a "last updated" date
+    posted_before: str = ""                   # ISO date, only without posted_at: the source says the posting is at least this old
+                                              # ("Posted 30+ Days Ago", a "last updated" date). Server side only.
     verified_at: str = ""
     verification: str = ""                    # how the listing was verified
     verification_level: str = "verified"      # "verified": read from the employer's board API or page; "listed": a licensed job
@@ -128,7 +142,7 @@ class Job(BaseModel):
 
     def public(self) -> dict:
         d = self.model_dump(exclude={"description", "description_rich", "raw_html", "country_hint", "title_relevance", "required_years",
-                                     "enriched", "skills",
+                                     "enriched", "skills", "posted_before",
                                      "needs_detail", "detail_ref", "row_id"})
         d["description_excerpt"] = self.description[:400]
         return d

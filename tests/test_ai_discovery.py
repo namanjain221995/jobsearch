@@ -546,7 +546,7 @@ def test_both_providers_make_open_web_calls_and_one_takes_over_the_others():
     run(ai.discover(Profile(), make_request(), ["ML Engineer"], []))
     assert kinds(ai.openai) == ["ats", "open"] and kinds(ai.claude) == ["ats", "open", "open"] and len(ai.openai.plans) == 1
     assert ai._opened == {"OpenAI": 1, "Claude": 2} and ai._made == {"OpenAI": 2, "Claude": 3}
-    assert Settings(_env_file=None).openai_open_web_calls == 3 and Settings(_env_file=None).claude_open_web_calls == 6
+    assert Settings(_env_file=None).openai_open_web_calls == 8 and Settings(_env_file=None).claude_open_web_calls == 10
     # A provider is switched off: the other one makes its calls of both kinds too.
     alone = orchestrator(target=50, openai=SiteLister("OpenAI"), claude=Recorder("Claude", fail=99, fatal=True), claude_search_concurrency=1, **budgets)
     run(alone.discover(Profile(), make_request(), [], []))
@@ -767,7 +767,7 @@ def test_per_provider_concurrency_and_call_budget_are_respected():
     assert tight.calls == 1 and len(tight.openai.calls) + len(tight.claude.calls) == 1 and tight.plan.ai_reserve == 3
     assert tight.discovery_left(2) is False
     s = Settings(_env_file=None)
-    assert (s.ai_discovery_call_timeout_seconds, s.ai_discovery_breaker_failures, s.openai_search_concurrency, s.claude_search_concurrency) == (100.0, 2, 12, 12)
+    assert (s.ai_discovery_call_timeout_seconds, s.ai_discovery_breaker_failures, s.openai_search_concurrency, s.claude_search_concurrency) == (100.0, 2, 24, 24)
     # The web search runs on the cheapest current model of each provider whose yield of verified postings matched the
     # large one (measured 2026-11-21); an empty value means the provider's main model.
     assert (s.openai_search_model, s.anthropic_search_model, s.ai_open_web_share) == ("gpt-6-luna", "claude-haiku-5-5", 0.5)
@@ -778,7 +778,7 @@ def test_per_provider_concurrency_and_call_budget_are_respected():
     # open-web call of OpenAI, whose career sites are named first) and the follow-up calls fit many times.
     plan = plan_for(s, 25)
     one_round = sum(plan.base) + plan.base[2] + plan.followup_calls
-    assert plan.base == (6, 6, 3, 6) and plan.followup_calls == 3 and one_round == 27 and plan.ai_calls - plan.ai_reserve >= 8 * one_round
+    assert plan.base == (10, 10, 8, 10) and plan.followup_calls == 6 and one_round == 52 and plan.ai_calls - plan.ai_reserve >= 8 * one_round
     with_model = AIOrchestrator.from_settings(Settings(_env_file=None, openai_api_key="sk-x", anthropic_api_key="sk-y", openai_search_model="gpt-s",
                                                        anthropic_search_model="claude-s"))
     assert (with_model.openai.search_model, with_model.claude.search_model) == ("gpt-s", "claude-s")

@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..freshness import stated_posting
 from ..job_normalizer import detect_work_mode, parse_ats
 from ..job_verifier import host_blocked
 from ..schemas import Candidate, Job
@@ -162,7 +163,7 @@ def _trim(item: dict) -> dict:
     return {"title": str(item.get("title") or "")[:200], "company_name": str(item.get("company_name") or "")[:120],
             "location": str(item.get("location") or "")[:160], "via": str(item.get("via") or "")[:80],
             "description": str(item.get("description") or "")[:8000], "job_highlights": highlights, "apply_options": options,
-            "detected_extensions": {k: ext[k] for k in ("salary", "schedule_type", "work_from_home") if k in ext}}
+            "detected_extensions": {k: ext[k] for k in ("salary", "schedule_type", "work_from_home", "posted_at") if k in ext}}
 
 
 def serp_item(item: dict, hosts: tuple[str, ...], include_listed: bool) -> tuple[Candidate | None, Job | None]:
@@ -189,10 +190,13 @@ def serp_item(item: dict, hosts: tuple[str, ...], include_listed: bool) -> tuple
     ext = item.get("detected_extensions") or {}
     mode = "Remote" if ext.get("work_from_home") else detect_work_mode(location, description[:600])
     label = f"{GOOGLE_JOBS} (via {via})"
+    # Google Jobs states the age in words ("3 days ago", "30+ days ago"); nothing else about the date is known.
+    posted_at, posted_before = stated_posting("posted " + str(ext.get("posted_at") or "")[:40]) if ext.get("posted_at") else ("", "")
     return None, Job(
         title=title, company=company, location=location or "Not listed", work_mode=mode,
         salary=str(ext.get("salary") or "Not listed")[:160], description=description[:20000], url=links[0], apply_url=links[0],
-        source=GOOGLE_JOBS, sources=[label], aggregator=True, verified_at=now_iso(), verification_level="listed",
+        source=GOOGLE_JOBS, sources=[label], aggregator=True, posted_at=posted_at, posted_before=posted_before,
+        verified_at=now_iso(), verification_level="listed",
         verification=f"Listed on Google Jobs via {via} (SerpApi API); not checked on the employer's site",
     )
 

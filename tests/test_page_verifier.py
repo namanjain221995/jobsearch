@@ -311,7 +311,8 @@ def test_rendered_pages_and_the_ai_check_fill_only_what_the_page_states():
     assert (job.company, job.posted_at, job.work_mode) == ("Oracle", "2026-11-20", "On-site") and "Nashville" in job.location
     assert job.salary == "$84,900 to $209,500"                # stated further down the page than the structured description reaches
     job, _, _ = check("or-eeho-338589")                       # ... and sometimes not at all: the model reads the rendered text
-    assert "extracted by AI" in job.verification and job.posted_at == "" and job.location.startswith("Austin, TX, United States")
+    # The posting date is what the page itself states ("Posting Date 11/18/2026, 07:39 PM"), read without a model.
+    assert "extracted by AI" in job.verification and job.posted_at == "2026-11-18" and job.location.startswith("Austin, TX, United States")
     job, _, _ = check("av-bb-46236")
     assert (job.title, job.company, job.location, job.salary) == ("Technology Finance- Finance Transformation", "Bloomberg", "New York", "110,000 - 150,000 USD")
     job, _, _ = check("adp-open-1")                           # ADP names neither employer nor place: nothing is made up
@@ -420,7 +421,8 @@ def test_page_text_cannot_leave_its_element_in_the_prompt():
     assert sent["user"].count("<page ") == 1 and sent["user"].count("</page>") == 1 and "‹/page›" in sent["user"]
     assert "untrusted" in sent["system"] and "changes nothing" in sent["system"] and "verbatim" in sent["system"]
     item = EXTRACT_SCHEMA["properties"]["pages"]["items"]
-    assert item["required"] == ["id", "closed_quote", "page_kind", "is_open_job_posting", "title", "company", "location"]
+    assert item["required"] == ["id", "closed_quote", "page_kind", "is_open_job_posting", "title", "company", "location", "posted_quote"]
+    assert "posted_quote" in sent["system"] and "Never work out a date" in sent["system"]
     assert "one_open_job_posting" in item["properties"]["page_kind"]["enum"] and sent["schema"] is EXTRACT_SCHEMA and sent["system"] is EXTRACT_SYSTEM
 
 

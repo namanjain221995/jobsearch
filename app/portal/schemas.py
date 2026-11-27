@@ -658,6 +658,11 @@ class SearchFilters(Model):
     # before they existed have no such keys and mean the defaults.
     ats_platforms: list[str] = Field(default=[], max_length=40)   # platform ids of GET /api/searches/options; empty = all platforms and sources
     startup_focus: bool = False                    # startup platforms first and with the larger share of the budgets; tie-break in ranking only
+    # Posting age (app/freshness.py), also settings of the search itself. A job whose known posting date is older than
+    # `posted_within_days` is never delivered: 0 = any time, else 1, 3, 7, 14 or 30. Searches and presets stored before
+    # 2026-11-27 have no such keys: they load and run with the defaults (7 days, undated jobs included).
+    posted_within_days: Literal[0, 1, 3, 7, 14, 30] = 7
+    include_undated: bool = True                   # also deliver jobs whose posting date is not stated (after dated jobs of the same score)
 
     @field_validator("ats_platforms")
     @classmethod
@@ -696,6 +701,9 @@ class SearchTargetOut(Model):
     #               unique, rejected, reasons: {not_relevant, non_us, work_mode, eligibility, ai_audit}, duplicates, matched, leads}}
     #   providers: {name: {kind: search_engine | ai, queries, results, leads, new_boards, new_board_postings, verified, matched}}
     #   seconds_to_first_verified, total_seconds: number | null;  coverage_warnings: [sentence]
+    #   posting age: posted_within_days (0 = any time), include_undated, too_old (postings screened out as older than the
+    #   limit), undated_dropped, dated_delivered, undated_delivered, age_by_source: {source: {fresh, too_old, undated}}
+    #   lead check: page_leads, page_leads_checked, page_leads_unchecked, workday_leads_unchecked
     discovery: dict = {}
 
 

@@ -297,8 +297,21 @@ function filterValue(value: unknown): string {
 /** The settings a search ran with. An override the launcher left empty used each candidate's saved value. */
 export function RunSettings({ run }: { run: SearchRun }) {
   // Where to search is a setting of the run, not an override of a candidate's profile: shown on its own lines.
-  const { ats_platforms: platformIds, startup_focus: startupFocus, ...rest } = run.filters as Record<string, unknown>;
+  // So is the posting-age limit. A search from before the limit existed stored none; what it ran with is in its
+  // candidates' statistics (a search that was still waiting when the limit arrived ran with the default).
+  const {
+    ats_platforms: platformIds,
+    startup_focus: startupFocus,
+    posted_within_days: postedWithin,
+    include_undated: includeUndated,
+    ...rest
+  } = run.filters as Record<string, unknown>;
   const overrides = Object.entries(rest).filter(([, value]) => value !== null && value !== undefined);
+  const ranWith = run.targets
+    .map((target) => target.discovery as { posted_within_days?: unknown; include_undated?: unknown })
+    .find((stats) => typeof stats.posted_within_days === "number");
+  const within = typeof postedWithin === "number" ? postedWithin : (ranWith?.posted_within_days as number | undefined);
+  const undated = typeof includeUndated === "boolean" ? includeUndated : ranWith?.include_undated !== false;
   const chosen = Array.isArray(platformIds) ? platformIds.filter((id): id is string => typeof id === "string") : [];
   // The run stores platform ids; the names come with each candidate's statistics once that search has started.
   const names = new Map<string, string>();
@@ -320,6 +333,14 @@ export function RunSettings({ run }: { run: SearchRun }) {
       <dd className="break-words">{chosen.length === 0 ? "All platforms" : chosen.map((id) => names.get(id) ?? humanize(id)).join(", ")}</dd>
       <dt className="text-muted-foreground">{FILTER_LABELS.startup_focus}</dt>
       <dd>{startupFocus === true ? "On" : "Off"}</dd>
+      <dt className="text-muted-foreground">Posted within</dt>
+      <dd>
+        {typeof within !== "number"
+          ? "No limit: this search ran before the posting-age limit existed"
+          : `${within === 0 ? "Any time" : within === 1 ? "Last 24 hours" : `Last ${within} days`}; jobs with no posting date ${
+              undated ? "included" : "left out"
+            }`}
+      </dd>
       {run.attempts > 1 && (
         <>
           <dt className="text-muted-foreground">Attempts</dt>

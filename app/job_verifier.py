@@ -33,7 +33,7 @@ from urllib.parse import parse_qsl, urljoin, urlsplit
 
 import httpx
 
-from . import ats_platforms
+from . import ats_platforms, freshness
 from .job_normalizer import (_STATE_ABBR, _STATE_NAME, analyze_authorization, classify_location, detect_work_mode,
                              extract_experience, extract_salary, html_to_text, parse_ats)
 from .job_ranker import best_title_relevance
@@ -823,6 +823,11 @@ def _job_from_posting(posting: dict, by_id: dict, cand: Candidate, page: Page) -
                 return None, f"Posting date {posted_at} is more than five years old (not an open requisition)"
         except ValueError:
             posted_at = ""
+    # The publish date: the structured data's `datePosted` (a date in the future is not one); without it, a date the
+    # page states in words ("Posted 3 days ago", "Date posted: November 20, 2026"). Never a guess.
+    posted_at, posted_before = freshness.clean_date(posted_at, now), ""
+    if not posted_at:
+        posted_at, posted_before = freshness.stated_on_page(page.text, now)
     markup = _text_of(posting.get("description"))
     description = html_to_text(markup)
     # Some sites give only a summary in the structured data (1,068 characters for a posting of 12,000 on an Oracle
@@ -849,7 +854,7 @@ def _job_from_posting(posting: dict, by_id: dict, cand: Candidate, page: Page) -
         salary=salary, experience_required=label, required_years=years, description=description,
         raw_html=markup if "<" in markup else "",       # enrich_job turns it into the text with paragraphs and bullets kept
         url=page.url, apply_url=apply_link(page), source=source, sources=[source],
-        country_hint=hint, posted_at=posted_at, verified_at=now_iso(),
+        country_hint=hint, posted_at=posted_at, posted_before=posted_before, verified_at=now_iso(),
         verification=f"{_how(page)}; schema.org JobPosting {kind} present and not expired",
         **analyze_authorization(description),
     ), ""
@@ -885,14 +890,22 @@ def _job_from_content(cand: Candidate, page: Page) -> tuple[Job | None, str]:
                         "title in the page heading, employer and apply action present, no closed marker"), ""
 
 
-def _content_job(title: str, company: str, location: str, cand: Candidate, page: Page, evidence: str) -> Job:
+def _content_job(title: str, company: str, location: str, cand: Candidate, page: Page, evidence: str,
+                 posted_quote: str = "") -> Job:
+    """A job read from the page's content (no structured data). Its posting date is only what the page states in
+    words: `posted_quote` (the words an AI page check copied from the page; the caller made sure they are on it) when
+    they read as one date, else the start of the page's text. Nothing stated: no date."""
     years, label = extract_experience(page.text)
     source = _source(cand)
+    posted_at, posted_before = freshness.stated_posting(posted_quote[:200], _now()) if posted_quote else ("", "")
+    if not (posted_at or posted_before):
+        posted_at, posted_before = freshness.stated_on_page(page.text, _now())
     return Job(
         title=title, company=company, location=location or "Not listed",
         work_mode=_work_mode(location, page.text[:12000]), salary=_salary(page.text),
         experience_required=label, required_years=years, description=page.text[:12000], url=page.url, apply_url=apply_link(page),
-        source=source, sources=[source], verified_at=now_iso(), verification=f"{_how(page)}; {evidence}",
+        source=source, sources=[source], posted_at=posted_at, posted_before=posted_before, verified_at=now_iso(),
+        verification=f"{_how(page)}; {evidence}",
         **analyze_authorization(page.text),
     )
 
@@ -1187,5 +1200,9 @@ def job_from_extraction(page: Page, cand: Candidate, data: dict) -> tuple[Job | 
         location = ""
     if not _APPLY.search(page.text):
         return None, "No application action found on page"
+    # When the posting was published: only words the page itself states (the model copies them, it never works out
+    # a date), read by the same rules as any stated date. Words that are not on the page are not used.
+    quote = str(data.get("posted_quote") or "").strip()[:200]
     return _content_job(title, company, location, cand, page,
-                        "job details extracted by AI and matched word for word against the page text"), ""
+                        "job details extracted by AI and matched word for word against the page text",
+                        posted_quote=quote if quote and on_page(quote) else ""), ""

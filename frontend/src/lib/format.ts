@@ -36,6 +36,26 @@ export function formatTime(value: string | Date | null | undefined, fallback = "
   return date ? date.toLocaleTimeString(undefined, TIME) : fallback;
 }
 
+/** What a job card says when the posting gives no date. Nothing is ever guessed. */
+export const POSTING_DATE_NOT_STATED = "Posting date not stated";
+
+/**
+ * The age of a posting from its posting day ("YYYY-MM-DD"): "Posted today", "Posted 3 days ago", and the day itself
+ * once it is more than 60 days back. `detailed` puts the day first: "Nov 20, 2026 (7 days ago)". Without a posting
+ * day: "Posting date not stated". `now` comes from useNow(); the days are counted in the viewer's calendar.
+ */
+export function formatPosted(value: string | null | undefined, now: number | null, detailed = false): string {
+  const day = value ? parseDay(value.slice(0, 10)) : null;
+  if (!day) return detailed ? "Not stated" : POSTING_DATE_NOT_STATED;
+  const date = day.toLocaleDateString(undefined, DATE);
+  if (now === null) return detailed ? date : `Posted ${date}`;
+  const today = new Date(now);
+  const days = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - day.getTime()) / 86_400_000);
+  const ago = days <= 0 ? "today" : days === 1 ? "yesterday" : `${days.toLocaleString()} days ago`;
+  if (detailed) return days < 0 ? date : `${date} (${ago})`;
+  return days < 0 || days > 60 ? `Posted ${date}` : `Posted ${ago}`;
+}
+
 /** Short axis label for a chart day ("Nov 3"). */
 export function formatDayShort(value: string): string {
   const date = parseDay(value);

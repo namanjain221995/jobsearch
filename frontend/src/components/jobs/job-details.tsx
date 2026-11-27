@@ -20,6 +20,7 @@ import {
   VerificationTag,
 } from "@/components/jobs/job-meta";
 import { MatchPanel } from "@/components/jobs/match-panel";
+import { PostedAge } from "@/components/jobs/posted-age";
 import { StatusDialog } from "@/components/jobs/status-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Panel } from "@/components/shared/page-header";
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/api";
-import { formatDate, formatDateTime, humanize, plural } from "@/lib/format";
+import { formatDateTime, humanize, plural } from "@/lib/format";
 import { invalidateWork, useWithdrawAssignment } from "@/lib/queries";
 import { STATUS_META, STATUS_ORDER } from "@/lib/status";
 import type { AssignmentDetail, AssignmentStatus, JobAssignee, JobDetail } from "@/lib/types";
@@ -66,7 +67,7 @@ export function JobOverview({ job }: { job: JobDetail }) {
     { label: "Seniority", value: stated(job.seniority) },
     { label: "Salary", value: jobSalary(job) },
     { label: "Experience asked for", value: stated(job.experience_text) },
-    { label: "Posted", value: job.posted_at ? formatDate(job.posted_at) : NOT_STATED },
+    { label: "Posted", value: <PostedAge value={job.posted_at} detailed /> },
     { label: "Citizenship requirement", value: stated(job.citizenship_requirement) },
     { label: "Visa sponsorship", value: stated(job.sponsorship_status) },
     { label: "Security clearance", value: job.clearance_required ? "Required" : NOT_STATED },

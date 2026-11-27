@@ -19,6 +19,10 @@ def normalize(board: str, raw: dict, verified_at: str) -> Job | None:
     full_location = location or "; ".join(o for o in offices if o)
     loc_type = " ".join(str(m.get("value") or "") for m in raw.get("metadata") or []
                         if "location type" in str(m.get("name") or "").lower() or "workplace" in str(m.get("name") or "").lower())
+    # `first_published` is the day the posting went live. `updated_at` is NOT a posting date (measured 2026-11-27 on
+    # four boards: the median posting was updated 21 to 86 days after it was published): without `first_published`
+    # it only says that the posting is at least that old (Job.posted_before), never that it is new.
+    published = str(raw.get("first_published") or "")[:10]
     job = Job(
         title=title,
         company=(raw.get("company_name") or pretty_slug(board)).strip(),
@@ -33,7 +37,8 @@ def normalize(board: str, raw: dict, verified_at: str) -> Job | None:
         ats_id=str(raw["id"]),
         board=board,
         country_hint="",
-        posted_at=(raw.get("first_published") or raw.get("updated_at") or "")[:10],
+        posted_at=published,
+        posted_before="" if published else str(raw.get("updated_at") or "")[:10],
         verified_at=verified_at,
         verification="Listed in the employer's live Greenhouse job board API",
     )

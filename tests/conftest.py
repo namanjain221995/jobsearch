@@ -2,6 +2,7 @@
 import collections
 import json
 import os
+from datetime import datetime, timedelta, timezone
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["OPENAI_API_KEY"] = ""
@@ -28,6 +29,12 @@ Software Engineer, Sample LLC (2022-2023): backend services in Python and Postgr
 Education: B.S. Computer Science
 """
 
+# Every synthetic posting below was "published two days ago", whenever the tests run: a search started through the
+# portal uses the default posting-age limit (7 days, app/freshness.py) and still finds them. Tests of the limit itself
+# build their own dates (tests/test_freshness.py).
+POSTED = (datetime.now(timezone.utc) - timedelta(days=2)).date()
+POSTED_ISO = POSTED.isoformat()
+POSTED_EPOCH = int(datetime(POSTED.year, POSTED.month, POSTED.day, 12, tzinfo=timezone.utc).timestamp())
 DESC = "<p>Build ML systems with Python and PyTorch on AWS. 3+ years of experience required. Kubernetes a plus.</p>"
 CALLS: collections.Counter = collections.Counter()      # request counts per URL (without query string)
 
@@ -35,7 +42,7 @@ CALLS: collections.Counter = collections.Counter()      # request counts per URL
 def gh_job(job_id, title, location, content=DESC, board="acme"):
     return {"id": job_id, "title": title, "absolute_url": f"https://job-boards.greenhouse.io/{board}/jobs/{job_id}",
             "location": {"name": location}, "content": content, "company_name": "Acme AI",
-            "first_published": "2026-11-01T10:00:00-04:00", "offices": [], "metadata": []}
+            "first_published": f"{POSTED_ISO}T10:00:00-04:00", "offices": [], "metadata": []}
 
 
 GREENHOUSE_ACME = {"jobs": [
@@ -55,13 +62,13 @@ LEVER_BETA = [
      "hostedUrl": "https://jobs.lever.co/beta/11111111-1111-4111-8111-111111111111",
      "applyUrl": "https://jobs.lever.co/beta/11111111-1111-4111-8111-111111111111/apply",
      "categories": {"location": "Seattle, WA", "allLocations": ["Seattle, WA"]}, "country": "US",
-     "workplaceType": "hybrid", "createdAt": 1793000000000,
+     "workplaceType": "hybrid", "createdAt": POSTED_EPOCH * 1000,
      "descriptionPlain": "Train models with Python and TensorFlow. 2+ years of experience. We are unable to sponsor visas."},
     {"id": "22222222-2222-4222-8222-222222222222", "text": "AI Engineer",
      "hostedUrl": "https://jobs.lever.co/beta/22222222-2222-4222-8222-222222222222",
      "applyUrl": "https://jobs.lever.co/beta/22222222-2222-4222-8222-222222222222/apply",
      "categories": {"location": "Berlin", "allLocations": ["Berlin"]}, "country": "DE",
-     "workplaceType": "on-site", "createdAt": 1793000000000, "descriptionPlain": "Python and PyTorch."},
+     "workplaceType": "on-site", "createdAt": POSTED_EPOCH * 1000, "descriptionPlain": "Python and PyTorch."},
 ]
 
 # ---------------------------------------------------------------- Workday (tenant "wdco")
@@ -78,7 +85,7 @@ WD_INDIA = {"title": "AI Engineer", "externalPath": "/job/India/AI-Engineer_R200
 
 
 def wd_detail(title, location, description, extra=None):
-    info = {"title": title, "location": location, "jobDescription": description, "startDate": "2026-11-03",
+    info = {"title": title, "location": location, "jobDescription": description, "startDate": POSTED_ISO,
             "country": {"descriptor": "United States of America", "id": "x"}, "canApply": True, "posted": True,
             "externalUrl": "https://wdco.wd5.myworkdayjobs.com/Careers" + (extra or {}).pop("path", "/job/x")}
     info.update(extra or {})
@@ -97,46 +104,46 @@ WD_DETAILS = {
 WORKABLE_PAGE1 = {"totalSize": 3, "nextPageToken": "tok2", "jobs": [
     {"id": "wk-1", "title": "AI Engineer", "state": "published", "description": DESC, "requirementsSection": "", "benefitsSection": "",
      "url": "https://jobs.workable.com/view/abc/ai-engineer-at-gizmo", "locations": ["Denver, Colorado, United States"],
-     "location": {"city": "Denver", "subregion": "Colorado", "countryName": "United States"}, "created": "2026-11-10T00:00:00Z",
+     "location": {"city": "Denver", "subregion": "Colorado", "countryName": "United States"}, "created": f"{POSTED_ISO}T00:00:00Z",
      "company": {"title": "Gizmo Labs"}, "workplace": "hybrid"},
     {"id": "wk-2", "title": "AI Engineer", "state": "published", "description": DESC, "url": "https://jobs.workable.com/view/def/ai-engineer-at-euro",
-     "locations": ["Paris, France"], "location": {"city": "Paris", "countryName": "France"}, "created": "2026-11-10T00:00:00Z",
+     "locations": ["Paris, France"], "location": {"city": "Paris", "countryName": "France"}, "created": f"{POSTED_ISO}T00:00:00Z",
      "company": {"title": "Euro Co"}, "workplace": "on_site"}]}
 WORKABLE_PAGE2 = {"totalSize": 3, "jobs": [
     {"id": "wk-3", "title": "Machine Learning Engineer", "state": "published", "description": DESC,
      "url": "https://jobs.workable.com/view/ghi/ml-engineer-at-widget", "locations": ["Remote, United States"],
-     "location": {"countryName": "United States"}, "created": "2026-11-09T00:00:00Z", "company": {"title": "Widget Works"}, "workplace": "remote"}]}
+     "location": {"countryName": "United States"}, "created": f"{POSTED_ISO}T00:00:00Z", "company": {"title": "Widget Works"}, "workplace": "remote"}]}
 AMAZON = {"hits": 1, "jobs": [
     {"title": "Machine Learning Engineer", "job_path": "/en/jobs/900/machine-learning-engineer", "id_icims": "900", "description": "Build ML with Python.",
      "basic_qualifications": "3+ years of experience with PyTorch", "preferred_qualifications": "AWS", "normalized_location": "Seattle, Washington, USA",
-     "country_code": "USA", "posted_date": "November  6, 2026", "url_next_step": "https://account.amazon.jobs/jobs/900/apply", "company_name": "Amazon.com Services LLC"}]}
+     "country_code": "USA", "posted_date": f"{POSTED.strftime('%B')} {POSTED.day:2d}, {POSTED.year}", "url_next_step": "https://account.amazon.jobs/jobs/900/apply", "company_name": "Amazon.com Services LLC"}]}
 REMOTEOK = [
     {"legal": "API Terms of Service: link back and mention Remote OK."},
     {"id": "77", "position": "AI Engineer", "company": "Acme AI", "location": "United States", "description": "Reformatted copy. " + DESC,
-     "url": "https://remoteok.com/remote-jobs/77", "apply_url": "https://remoteok.com/remote-jobs/77", "date": "2026-11-02T00:00:00+00:00",
+     "url": "https://remoteok.com/remote-jobs/77", "apply_url": "https://remoteok.com/remote-jobs/77", "date": f"{POSTED_ISO}T00:00:00+00:00",
      "salary_min": 150000, "salary_max": 190000},
     {"id": "78", "position": "Machine Learning Engineer", "company": "Globex", "location": "Worldwide", "description": DESC,
-     "url": "https://remoteok.com/remote-jobs/78", "date": "2026-11-02T00:00:00+00:00", "salary_min": 0, "salary_max": 0},
+     "url": "https://remoteok.com/remote-jobs/78", "date": f"{POSTED_ISO}T00:00:00+00:00", "salary_min": 0, "salary_max": 0},
     {"id": "79", "position": "ML Engineer", "company": "Initech", "location": "USA only", "description": DESC,
-     "url": "https://remoteok.com/remote-jobs/79", "date": "2026-11-04T00:00:00+00:00"},
+     "url": "https://remoteok.com/remote-jobs/79", "date": f"{POSTED_ISO}T00:00:00+00:00"},
 ]
 JOBICY = {"jobs": [
     {"id": 501, "url": "https://jobicy.com/jobs/501-ai-engineer", "jobTitle": "AI Engineer", "companyName": "Hooli", "jobGeo": "USA",
-     "jobDescription": DESC, "pubDate": "2026-11-12T10:00:00+00:00", "salaryMin": 140000, "salaryMax": 180000, "salaryCurrency": "USD", "salaryPeriod": "yearly"}]}
+     "jobDescription": DESC, "pubDate": f"{POSTED_ISO}T10:00:00+00:00", "salaryMin": 140000, "salaryMax": 180000, "salaryCurrency": "USD", "salaryPeriod": "yearly"}]}
 HIMALAYAS = {"jobs": [
     {"title": "AI Engineer", "companyName": "Pied Piper", "description": DESC, "locationRestrictions": ["United States", "Canada"],
-     "pubDate": 1794441600, "expiryDate": 1894441600, "applicationLink": "https://himalayas.app/companies/pied-piper/jobs/ai-engineer?utm_source=api",
+     "pubDate": POSTED_EPOCH, "expiryDate": 1894441600, "applicationLink": "https://himalayas.app/companies/pied-piper/jobs/ai-engineer?utm_source=api",
      "guid": "https://himalayas.app/companies/pied-piper/jobs/ai-engineer", "minSalary": 0, "maxSalary": 0},
     {"title": "AI Engineer", "companyName": "Old Co", "description": DESC, "locationRestrictions": ["United States"], "pubDate": 1700000000,
      "expiryDate": 1700000100, "applicationLink": "https://himalayas.app/x", "guid": "https://himalayas.app/companies/old-co/jobs/ai-engineer"}]}
 ADZUNA = {"results": [
     {"id": "az1", "title": "<strong>AI</strong> <strong>Engineer</strong>", "description": "Snippet about Python and PyTorch...", "redirect_url": "https://www.adzuna.com/land/ad/az1",
      "company": {"display_name": "Umbrella Corp"}, "location": {"display_name": "Chicago, Illinois", "area": ["US", "Illinois", "Chicago"]},
-     "created": "2026-11-11T08:00:00Z", "salary_min": 120000, "salary_max": 120000, "salary_is_predicted": "1"}]}
+     "created": f"{POSTED_ISO}T08:00:00Z", "salary_min": 120000, "salary_max": 120000, "salary_is_predicted": "1"}]}
 
 # ---------------------------------------------------------------- web pages
 JSONLD = ('<script type="application/ld+json">{"@type":"JobPosting","title":"%s","hiringOrganization":{"name":"%s"},'
-          '"datePosted":"2026-11-05","jobLocation":{"address":{"addressLocality":"Denver","addressRegion":"CO","addressCountry":"US"}},'
+          '"datePosted":"' + POSTED_ISO + '","jobLocation":{"address":{"addressLocality":"Denver","addressRegion":"CO","addressCountry":"US"}},'
           '"description":"Python and PyTorch. 3+ years of experience."}</script>')
 PAGES = {
     "https://careers.example.com/jobs/ml-1": (200, "<html><head><title>ML Engineer</title>" + JSONLD % ("Machine Learning Engineer", "Example Careers Inc") + "</head><body>Apply now</body></html>"),
@@ -284,7 +291,10 @@ def make_engine(settings):
 def make_request(**overrides) -> SearchRequest:
     base = dict(resume_id="resume-test-0001", job_titles="AI Engineer", years_experience=3,
                 authorization="Green Card / US Permanent Resident", sponsorship_needed="No",
-                exclude_citizenship_required=True, result_count=50, work_mode="All")
+                exclude_citizenship_required=True, result_count=50, work_mode="All",
+                # The fixtures carry fixed posting dates: the posting-age limit (default 7 days) is off here and is
+                # tested on its own with dates relative to today (tests/test_freshness.py).
+                posted_within_days=0)
     base.update(overrides)
     return SearchRequest(**base)
 

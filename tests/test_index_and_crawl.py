@@ -4,7 +4,7 @@ import time
 
 from app.database import Database
 from app.schemas import Candidate
-from tests.conftest import CALLS, FakeBrowser, make_request, run_search
+from tests.conftest import CALLS, POSTED_ISO, FakeBrowser, make_request, run_search
 
 GH = "https://boards-api.greenhouse.io/v1/boards/acme/jobs"
 ALL = ("greenhouse", "lever", "ashby", "workday", "workable", "amazon", "remoteok", "jobicy", "himalayas")
@@ -65,7 +65,7 @@ def test_workday_details_are_fetched_lazily_and_filters_apply(make_engine):
     assert titles == [("AI Engineer", "US, TX, Austin"), ("Machine Learning Engineer", "US, WA, Seattle; US, NY, New York")]
     assert state.stats["rejected_eligibility"] == 1          # the TS/SCI role is excluded for a non-citizen with the filter on
     assert state.stats["detail_fetches"] == 3
-    assert all(j.verification.startswith("Listed in the employer's live Workday") and j.posted_at == "2026-11-03" for j in state.results)
+    assert all(j.verification.startswith("Listed in the employer's live Workday") and j.posted_at == POSTED_ISO for j in state.results)
     assert engine.db.live_akeys(["workday:wdco:R102"]) == set()                 # closed posting removed from the index
     detail_calls = sum(n for url, n in CALLS.items() if "/Careers/job/" in url)
     run(run_search(engine, make_request(job_titles="AI Engineer, Machine Learning Engineer")))

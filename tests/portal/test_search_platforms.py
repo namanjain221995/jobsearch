@@ -68,7 +68,8 @@ async def test_filtered_search_is_stored_run_and_reported(world):
                                                    "filters": {"ats_platforms": ["Lever"], "startup_focus": True}})
     assert started.status_code == 202, started.text
     run = await wait_done(world, tl, started.json()["search"]["id"])
-    assert run["status"] == "completed" and run["filters"] == {"ats_platforms": ["lever"], "startup_focus": True}
+    assert run["status"] == "completed"
+    assert run["filters"] == {"ats_platforms": ["lever"], "startup_focus": True, "posted_within_days": 7, "include_undated": True}
     target = run["targets"][0]
     assert target["filters"]["ats_platforms"] == ["lever"] and target["filters"]["startup_focus"] is True
     assert CALLS[LEVER] == 1 and CALLS[GH] == 0                          # only the chosen platform was read
@@ -97,7 +98,8 @@ async def test_search_without_the_options_is_stored_as_before_and_old_targets_st
     started = await tl.post("/api/searches", json={"candidate_ids": [a1], "target_count": 5, "deep_search": False,
                                                    "filters": {"job_titles": ["AI Engineer"]}})
     run_id = started.json()["search"]["id"]
-    assert started.json()["search"]["filters"] == {"job_titles": ["AI Engineer"]}        # no new keys when the options are not used
+    # No platform keys when those options are not used; the posting-age limit is always stored (tests/portal/test_search_freshness.py).
+    assert started.json()["search"]["filters"] == {"job_titles": ["AI Engineer"], "posted_within_days": 7, "include_undated": True}
     async with world.sessions() as db:                                   # a target written before the options existed
         target = (await db.execute(select(SearchTarget).where(SearchTarget.search_run_id == run_id))).scalar_one()
         old = {k: v for k, v in target.candidate_specific_filters.items() if k not in ("ats_platforms", "startup_focus")}

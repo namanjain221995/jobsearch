@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..ats_platforms import PLATFORMS
 from ..config import Settings
+from ..freshness import within_days
 from ..job_normalizer import US_STATES, norm_company
 from ..schemas import Job as EngineJob
 from ..schemas import SearchRequest
@@ -71,7 +72,11 @@ DISCOVERY_KEYS = ("title_variants", "searx_queries", "searx_cached", "searx_resu
                   # ranking stage: its duration, and how many model answers of earlier searches were used again
                   "rank_seconds", "rerank_sent", "reranked", "ai_ranked_reused", "rank_reused", "pages_remembered",
                   # discovery: search-engine queries asked once per search (counts per engine), leads on hosts that are never read
-                  "query_ledger", "leads_not_readable")
+                  "query_ledger", "leads_not_readable",
+                  # posting age (app/freshness.py) and how many web leads the lead check was handed, opened and left unchecked
+                  "posted_within_days", "include_undated", "too_old", "undated_dropped", "dated_delivered", "undated_delivered",
+                  "age_by_source", "page_leads", "page_leads_checked", "page_leads_unchecked", "workday_leads_unchecked",
+                  "pages_site_refused", "pages_late", "page_checks_cut", "page_checks_no_slot")
 
 
 def discovery_of(state: SearchState) -> dict:
@@ -220,7 +225,10 @@ async def execute_search(run_id: uuid.UUID, deps: RunnerDeps) -> None:
                     exclude_citizenship_required=bool(filters.get("exclude_citizenship_required")),
                     result_count=want, work_mode=filters.get("work_mode") or "All", deep_search=deep,
                     locations=[str(s)[:60] for s in (filters.get("preferred_states") or [])][:30],
-                    ats_platforms=platforms, startup_focus=bool(filters.get("startup_focus")))
+                    ats_platforms=platforms, startup_focus=bool(filters.get("startup_focus")),
+                    # A search stored before the posting-age limit existed has no value: it runs with the default (7 days).
+                    posted_within_days=within_days(filters.get("posted_within_days")),
+                    include_undated=filters.get("include_undated") is not False)
                 state = SearchState(f"{run_id}:{mid}", want)
                 states[mid] = state
                 await deps.engine.run(state, request, resumes.get(target.candidate_id) or synthetic_resume(filters, candidate))
