@@ -26,6 +26,27 @@ export function formatDate(value: string | Date | null | undefined, fallback = "
   return date ? date.toLocaleDateString(undefined, DATE) : fallback;
 }
 
+export const POSTING_DATE_NOT_STATED = "Posting date not stated";
+
+/**
+ * How old a posting is, from the day the employer gave it ("YYYY-MM-DD"): "Posted 3 days ago".
+ * A posting without a date says so; nothing is guessed. A day ahead of today (an employer's
+ * mistake, or a time zone) is shown as the date it states.
+ */
+export function postedAge(postedAt: string | null | undefined, today: Date = new Date()): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(postedAt ?? "");
+  if (!match) return POSTING_DATE_NOT_STATED;
+  const posted = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const days = Math.round((now - posted) / 86_400_000);
+  if (days < 0) return `Posted ${formatDate(match[0])}`;
+  if (days === 0) return "Posted today";
+  if (days === 1) return "Posted yesterday";
+  if (days < 60) return `Posted ${days} days ago`;
+  if (days < 730) return `Posted ${Math.floor(days / 30)} months ago`;
+  return `Posted ${Math.floor(days / 365)} years ago`;
+}
+
 export function formatDateTime(value: string | Date | null | undefined, fallback = "—"): string {
   const date = toDate(value);
   return date ? date.toLocaleString(undefined, DATE_TIME) : fallback;

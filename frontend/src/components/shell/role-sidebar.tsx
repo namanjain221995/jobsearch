@@ -23,17 +23,21 @@ import {
 } from "@/components/ui/sidebar";
 import { roleLabel } from "@/lib/format";
 import { activeNavItem, NAVIGATION, type NavItem } from "@/lib/nav";
-import { useMemberDashboard, useTeam } from "@/lib/queries";
+import { useAssignmentSections } from "@/lib/assignment-sections";
+import { useTeam } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
-/** Live counts beside a few entries: jobs waiting in the team queue, jobs of a member's candidates that have not been applied to yet. */
+/**
+ * Live counts beside a few entries: jobs waiting in the team queue, and for a member the size of the
+ * "To apply" section of their job list (the same count the tab on that screen shows, so the two move together).
+ */
 function useNavBadges(): Record<NonNullable<NavItem["badge"]>, number | undefined> {
   const me = useMe();
   const team = useTeam(me.role === "TEAM_LEAD" ? me.team?.id : undefined, { refetchInterval: 25_000 });
-  const dashboard = useMemberDashboard(me.role === "MEMBER" ? me.id : undefined);
+  const sections = useAssignmentSections({}, me.role === "MEMBER");
   return {
     "team-queue": team.data?.queue_pending,
-    "my-open-jobs": dashboard.data?.stats.not_applied,
+    "my-open-jobs": sections.data?.to_apply,
   };
 }
 

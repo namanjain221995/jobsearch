@@ -28,7 +28,8 @@ ROUTES = {
   # /member/profile no longer exists as a page of its own: it must land on the account settings.
   "member": ("maya@example.com", ["/member/dashboard", "/member/candidates", "/member/candidates?sort=name", "/member/candidates/{candidate}", "/member/candidates/{candidate}?tab=details",
                                   "/member/candidates/{candidate}?tab=profile", "/member/candidates/{candidate}?tab=resume", "/member/candidates/{candidate}?tab=activity",
-                                  "/member/jobs", "/member/jobs?candidate={candidate}", "/member/jobs/{assignment}", "/member/applications", "/member/activity", "/member/settings",
+                                  "/member/jobs", "/member/jobs?section=applied", "/member/jobs?section=in_progress", "/member/jobs?section=closed", "/member/jobs?section=all",
+                                  "/member/jobs?candidate={candidate}", "/member/jobs/{assignment}", "/member/applications", "/member/activity", "/member/settings",
                                   "/member/profile"]),
 }
 # Where a route must end up when it is only a redirect.

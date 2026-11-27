@@ -139,6 +139,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assignments/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assignment Sections
+         * @description The sizes of the sections of a job list ("To apply", "Applied", "In progress", "Closed") for the caller's
+         *     scope and the same `candidate_id` / `member_id` / `team_id` / `q` filters the list takes. Active assignments
+         *     only. The sections are the statuses in SECTIONS; a list of one section is GET /api/assignments with them.
+         */
+        get: operations["assignment_sections_api_assignments_sections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assignments/{assignment_id}": {
         parameters: {
             query?: never;
@@ -2008,6 +2030,40 @@ export interface components {
             team?: components["schemas"]["TeamRef"] | null;
             /** Viewed At */
             viewed_at?: string | null;
+        };
+        /**
+         * AssignmentSections
+         * @description How many active assignments are in each section of a job list, within the caller's scope and the filters
+         *     sent. Every assignment is in exactly one section, by its status, so the four add up to `total`:
+         *     to_apply = ASSIGNED, VIEWED, APPLYING; applied = APPLIED; in_progress = INTERVIEWING, OFFER;
+         *     closed = REJECTED, WITHDRAWN, SKIPPED.
+         */
+        AssignmentSections: {
+            /**
+             * Applied
+             * @default 0
+             */
+            applied: number;
+            /**
+             * Closed
+             * @default 0
+             */
+            closed: number;
+            /**
+             * In Progress
+             * @default 0
+             */
+            in_progress: number;
+            /**
+             * To Apply
+             * @default 0
+             */
+            to_apply: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
         };
         /**
          * AssignmentStats
@@ -6076,6 +6132,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assignment_sections_api_assignments_sections_get: {
+        parameters: {
+            query?: {
+                candidate_id?: string | null;
+                member_id?: string | null;
+                team_id?: string | null;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentSections"];
                 };
             };
             /** @description Validation Error */

@@ -875,6 +875,7 @@ def test_sound_every_state_changing_route_is_behind_session_and_csrf_or_the_orig
     assert {key: level for key, level in protection.items() if key[1].startswith("/api/integrations")} == {
         ("GET", "/api/integrations"): "session", ("GET", "/api/integrations/ats"): "session"}
     assert {protection[key] for key in protection if key[1].startswith("/api/candidates")} == {"session"}
+    assert protection[("GET", "/api/assignments/sections")] == "session"
     assert not any(path.startswith(("/api/resumes", "/api/members")) or path.endswith("/profile") and path.startswith("/api/users")
                    for _, path in protection)                                              # the routes the candidate ones replaced are gone
     assert {key for key, level in protection.items() if level == "public"} == {("GET", "/api/health"), ("GET", "/api/invitations/validate"), ("GET", "/api/auth/password-policy")}

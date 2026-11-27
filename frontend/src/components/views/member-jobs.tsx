@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { SearchX, SendHorizontal } from "lucide-react";
+import { ListChecks, SearchX, SendHorizontal, Table2 } from "lucide-react";
 
 import { JobFactLine, MatchScore } from "@/components/jobs/job-meta";
 import { Watermarked } from "@/components/jobs/watermark";
@@ -20,6 +20,7 @@ import { SearchInput } from "@/components/shared/search-input";
 import { EmptyState } from "@/components/shared/states";
 import { ApplicationStatusBadge, StageRail } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
+import { useAssignmentSections } from "@/lib/assignment-sections";
 import { formatDate } from "@/lib/format";
 import { memberCandidateHref, memberJobHref } from "@/lib/member-candidates";
 import { useAssignments } from "@/lib/queries";
@@ -27,18 +28,30 @@ import { STATUS_META, STATUS_ORDER } from "@/lib/status";
 import type { Assignment, AssignmentListParams } from "@/lib/types";
 import { toPositiveInt, useUrlState } from "@/lib/url-state";
 
-const APPLICATION_DEFAULTS = { candidate: "", q: "", status: "", applied: "true", sort: "applied", page: "1", page_size: "25" };
+const APPLICATION_DEFAULTS = { candidate: "", q: "", status: "", sort: "applied", page: "1", page_size: "25" };
 
 const APPLICATION_STATUSES = STATUS_ORDER.filter((status) => !["ASSIGNED", "VIEWED", "APPLYING", "SKIPPED"].includes(status));
 
-/** Every job assigned to any of the member's candidates, as cards that name the candidate. */
+/**
+ * Every job assigned to any of the member's candidates, as cards that name the candidate, sorted into
+ * sections: what is still to apply for comes first; applied jobs and the later stages have their own.
+ * "Applications" (the other screen) is the same applied jobs as a table for following them up.
+ */
 export function MemberJobsView() {
   const listState = useUrlState(MEMBER_JOB_DEFAULTS);
   return (
     <Watermarked>
       <PageHeader
-        title="All Jobs"
-        description="Every job assigned to your candidates. Open one to read the posting, apply on the candidate's behalf on the employer's site, then mark it as applied."
+        title="Jobs"
+        description="The jobs assigned to your candidates. To apply holds what is still to do: open a job, apply on the employer's site for the candidate, then mark it as applied and it moves to Applied."
+        actions={
+          <Button asChild variant="outline">
+            <Link href="/member/applications">
+              <Table2 data-icon="inline-start" />
+              Applications as a table
+            </Link>
+          </Button>
+        }
       />
       <MemberAssignmentList
         listState={listState}
@@ -97,13 +110,23 @@ export function MemberApplicationsView() {
   const candidates = useCandidateOptions();
   const params: AssignmentListParams = { ...memberJobParams(state), applied: true, page_size: toPositiveInt(state.page_size, 25) };
   const list = useAssignments(params);
+  const sections = useAssignmentSections({});
+  const waiting = sections.data?.to_apply;
   const filtered = Boolean(state.q || state.status || state.candidate);
 
   return (
     <Watermarked>
       <PageHeader
         title="Applications"
-        description="Jobs you have applied to for your candidates, and where each application stands now."
+        description="Every job you have applied to for your candidates, as a table, with where each application stands now. Jobs you have not applied to yet are under Jobs."
+        actions={
+          <Button asChild variant="outline">
+            <Link href="/member/jobs">
+              <ListChecks data-icon="inline-start" />
+              {waiting === undefined ? "Jobs to apply for" : `Jobs to apply for (${waiting.toLocaleString()})`}
+            </Link>
+          </Button>
+        }
       />
       <FilterBar canClear={filtered} onClear={() => setState({ q: "", status: "", candidate: "" })}>
         <SearchInput label="Search applications" placeholder="Search title or company" value={state.q} onChange={(q) => setState({ q })} />
@@ -143,7 +166,7 @@ export function MemberApplicationsView() {
               description="When you apply for a job on a candidate's behalf and mark it as applied, it is listed here."
               action={
                 <Button asChild variant="outline" size="sm">
-                  <Link href="/member/jobs?applied=false">See jobs to apply for</Link>
+                  <Link href="/member/jobs">See jobs to apply for</Link>
                 </Button>
               }
             />

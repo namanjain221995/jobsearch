@@ -166,6 +166,8 @@ An assignment is a job given to a candidate; the member responsible for that can
 | Completion rate | Applied ÷ (assigned − skipped − withdrawn before applying) |
 | Link opens | Times "Open Job" was used; never counted as applied |
 
+A member's job list is shown in sections, by status: **To apply** (`ASSIGNED`, `VIEWED`, `APPLYING`; the same count as "Not applied"), **Applied** (`APPLIED`), **In progress** (`INTERVIEWING`, `OFFER`) and **Closed** (`REJECTED`, `WITHDRAWN`, `SKIPPED`). Every job is in exactly one section; `GET /api/assignments/sections` gives their sizes for the caller's scope and the list's `candidate_id` / `q` filters. "Mark as applied" on a card moves the job at once and can be undone from the confirmation; the correction is kept in the job's history.
+
 A member's numbers are the totals over the candidates assigned to that member at the moment; team and organization numbers also include candidates nobody is responsible for. Team and organization dashboards break the numbers down per candidate and per responsible member. A date range selects assignments by the day they were assigned (UTC). Charts show, per day or week, jobs assigned, applications confirmed and links opened.
 
 ## AI auto-apply (Admin only, off by default)

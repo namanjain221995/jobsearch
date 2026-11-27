@@ -245,8 +245,8 @@ def step_auth(browser):
     page.get_by_role("banner").get_by_role("link", name="Sign in").click()
     page.wait_for_url(lambda u: u.rstrip("/").endswith("/login"), timeout=10000)
     check("signed out: the landing page's Sign in leads to /login", page.url.rstrip("/").endswith("/login"), page.url)
-    page.goto(BASE + "/member/jobs?applied=false")
-    check("signed out: protected page goes to /login?next=...", "/login?next=%2Fmember%2Fjobs%3Fapplied%3Dfalse" in page.url, page.url)
+    page.goto(BASE + "/member/jobs?section=applied")
+    check("signed out: protected page goes to /login?next=...", "/login?next=%2Fmember%2Fjobs%3Fsection%3Dapplied" in page.url, page.url)
 
     # wrong password: the API's own message is shown
     page.get_by_label("E-mail").fill("maya@example.com")
@@ -264,7 +264,7 @@ def step_auth(browser):
     page.get_by_label("Password", exact=True).fill(PASSWORD)
     page.get_by_role("button", name="Sign in").click()
     page.wait_for_url(lambda u: "/login" not in u, timeout=20000)
-    check("after sign-in the member returns to the page they asked for", "/member/jobs?applied=false" in page.url, page.url)
+    check("after sign-in the member returns to the page they asked for", "/member/jobs?section=applied" in page.url, page.url)
     page.wait_for_load_state("networkidle")
 
     page.goto(BASE + "/admin/dashboard")
@@ -324,7 +324,7 @@ def step_member(browser):
     shot(page, "member_dashboard")
 
     # job list
-    page.goto(BASE + "/member/jobs?applied=false")
+    page.goto(BASE + "/member/jobs")                  # the section "To apply" is the one shown first
     page.wait_for_load_state("networkidle")
     cards = page.locator('[data-slot="job-card"]').filter(visible=True)
     cards.first.wait_for(timeout=15000)
@@ -339,7 +339,7 @@ def step_member(browser):
     check("job list has search, status filter and sort", page.get_by_role("searchbox", name="Search jobs").is_visible()
           and page.get_by_role("combobox", name="Status").is_visible() and page.get_by_role("combobox", name="Sort").is_visible())
     check("job list is paged", page.get_by_role("navigation", name="Pages of jobs").is_visible())
-    check("the page is called All Jobs", page.get_by_role("heading", level=1, name="All Jobs").is_visible())
+    check("the page is called Jobs", page.get_by_role("heading", level=1, name="Jobs", exact=True).is_visible())
     check("every card names the candidate the job is for", all("For" in c.inner_text() and ("Jordan Rivera" in c.inner_text() or "Elena Petrova" in c.inner_text()) for c in cards.all()))
 
     # candidate filter: the member's candidates, sent to the API as candidate_id
@@ -359,7 +359,7 @@ def step_member(browser):
     check("a candidate without jobs gives the 'no jobs match' state, with a way to clear", page.get_by_role("button", name="Clear filters").last.is_visible())
     page.get_by_role("button", name="Clear filters").last.click()
     cards.first.wait_for(timeout=15000)
-    page.goto(BASE + "/member/jobs?applied=false")
+    page.goto(BASE + "/member/jobs")                  # the section "To apply" is the one shown first
     cards.first.wait_for(timeout=15000)
 
     job = openable_job(browser, "Jordan Rivera")
@@ -461,10 +461,11 @@ def step_member(browser):
 
     # navigation drawer on small screens / sidebar on wide ones
     open_nav(page)
-    for label in ("My Candidates", "All Jobs", "Applications", "Activity", "Settings"):
+    for label in ("My Candidates", "Jobs", "Applications", "Activity", "Settings"):
         check(f"member navigation has: {label}", nav_link(page, label).count() == 1)
-    check("member navigation has no 'My Jobs' and no 'Profile' any more", nav_link(page, "My Jobs").count() == 0 and nav_link(page, "Profile").count() == 0)
-    nav_link(page, "All Jobs").click()
+    check("member navigation has no 'My Jobs', no 'All Jobs' and no 'Profile' any more",
+          nav_link(page, "My Jobs").count() == 0 and nav_link(page, "All Jobs").count() == 0 and nav_link(page, "Profile").count() == 0)
+    nav_link(page, "Jobs").click()
     page.wait_for_url(re.compile(r"/member/jobs$"), timeout=15000)
     check("navigation works from the " + ("drawer" if MOBILE else "sidebar"), True)
 
@@ -1498,7 +1499,7 @@ def step_tracking(browser):
     login(page, "noah@example.com", expect_home="/member/dashboard")
     interviews_before = kpi(page, "Interviews")
     total_before = kpi(page, "Total Assigned")
-    page.goto(BASE + "/member/jobs?applied=false")
+    page.goto(BASE + "/member/jobs")                  # the section "To apply" is the one shown first
     cards = page.locator('[data-slot="job-card"]').filter(visible=True)
     cards.first.wait_for(timeout=15000)
     title = cards.first.get_by_role("link").first.inner_text().strip()      # the card's first link is the job, the second the candidate
@@ -2767,6 +2768,106 @@ def step_admin_more(browser):
     ctx.close()
 
 
+def step_member_sections(browser):
+    print("== member: job sections (To apply, Applied, In progress, Closed, All), posting age, mark as applied on a card, Undo")
+    ctx = new_context(browser)
+    page = ctx.new_page()
+    login(page, "maya@example.com", expect_home="/member/dashboard")
+    for label, href in (("Not Applied", "/member/jobs"), ("Total Assigned", "/member/jobs?section=all"), ("Applied", "/member/applications")):
+        cell = page.locator(f'[data-slot="kpi"][data-label="{label}"]').filter(visible=True).first
+        found = cell.evaluate("e => (e.closest('a') || e.querySelector('a'))?.getAttribute('href') ?? null")
+        check(f"the dashboard's {label} figure leads to {href}", found == href, str(found))
+    page.goto(BASE + "/member/jobs")
+    page.wait_for_load_state("networkidle")
+    cards = page.locator('[data-slot="job-card"]').filter(visible=True)
+    cards.first.wait_for(timeout=15000)
+    counts = api(page, "/api/assignments/sections")
+    tabs = page.get_by_role("tablist", name="Job sections")
+
+    def tab(section):
+        return tabs.locator(f'[data-section="{section}"]')
+
+    def shown(section):
+        return tab(section).locator('[data-slot="section-count"] [aria-hidden="true"]')
+
+    order = [t.get_attribute("data-section") for t in tabs.get_by_role("tab").all()]
+    check("the job list has the sections To apply, Applied, In progress, Closed and All, in that order",
+          order == ["to_apply", "applied", "in_progress", "closed", "all"], str(order))
+    check("To apply is the section shown first", tab("to_apply").get_attribute("aria-selected") == "true")
+    figures = {s: int(shown(s).inner_text().replace(",", "")) for s in order}
+    check("every section shows the API's count, and the four sections add up to All",
+          all(figures[s] == counts[s] for s in ("to_apply", "applied", "in_progress", "closed")) and figures["all"] == counts["total"]
+          and sum(figures[s] for s in ("to_apply", "applied", "in_progress", "closed")) == figures["all"], f"{figures} / {counts}")
+    board = api(page, f"/api/users/{api(page, '/api/auth/me')['id']}/dashboard")["stats"]
+    check("To apply is the dashboard's Not Applied figure", figures["to_apply"] == board["not_applied"], f"{figures['to_apply']} / {board['not_applied']}")
+    check("every job under To apply can be marked as applied from its card", all(c.locator('[data-slot="mark-applied"]').count() == 1 for c in cards.all()))
+    ages = [c.locator('[data-slot="posted-age"]').inner_text().strip() for c in cards.all()]
+    check("every card says how old the posting is, or that the posting states no date",
+          len(ages) > 0 and all(a.startswith("Posted ") or a == "Posting date not stated" for a in ages), str(ages[:4]))
+    no_overflow(page, "member jobs, sections")
+    shot(page, "member_job_sections")
+
+    # mark as applied on a card: it leaves To apply at once, the counts move, and Undo brings it back
+    first = cards.first
+    link = first.get_by_role("heading", level=3).get_by_role("link")
+    title, href = link.inner_text().strip(), link.get_attribute("href")
+    before, applied_before = figures["to_apply"], figures["applied"]
+    with page.expect_response(lambda r: r.request.method == "PATCH" and "/api/assignments/" in r.url and r.url.endswith("/status")) as answered:
+        first.locator('[data-slot="mark-applied"]').click()
+    check("Mark as applied on a card is accepted by the API", answered.value.ok, str(answered.value.status))
+    toast(page, "Marked as applied")
+    expect(shown("to_apply")).to_have_text(f"{before - 1:,}", timeout=10000)
+    expect(shown("applied")).to_have_text(f"{applied_before + 1:,}", timeout=10000)
+    check("the counts on the tabs moved: one fewer to apply, one more applied", True)
+    page.wait_for_load_state("networkidle")
+    check("the card has left To apply", page.locator(f'[data-slot="job-card"] a[href="{href}"]').count() == 0, title)
+    after = api(page, "/api/assignments/sections")
+    check("the API's sections say the same", (after["to_apply"], after["applied"]) == (before - 1, applied_before + 1), str(after))
+    page.locator("[data-sonner-toast]").filter(has_text="Marked as applied").get_by_role("button", name="Undo").click()
+    toast(page, "Moved back to To apply")
+    expect(shown("to_apply")).to_have_text(f"{before:,}", timeout=10000)
+    expect(shown("applied")).to_have_text(f"{applied_before:,}", timeout=10000)
+    page.wait_for_load_state("networkidle")
+    check("Undo puts the job back under To apply, with the counts as they were",
+          page.locator(f'[data-slot="job-card"] a[href="{href}"]').filter(visible=True).count() == 1
+          and api(page, "/api/assignments/sections") == counts, title)
+
+    # the other sections, by keyboard and by pointer; search and the candidate filter work inside a section
+    tab("to_apply").focus()
+    page.keyboard.press("ArrowRight")
+    expect(tab("applied")).to_be_focused(timeout=5000)        # the focus moves a moment after the key
+    page.keyboard.press("Enter")
+    page.wait_for_url(re.compile(r"section=applied"), timeout=10000)
+    check("the sections are reached with the arrow keys and Enter, and the section is kept in the address",
+          tab("applied").get_attribute("aria-selected") == "true", page.url[-40:])
+    page.wait_for_load_state("networkidle")
+    check("no card under Applied offers Mark as applied", page.locator('[data-slot="job-card"] [data-slot="mark-applied"]').filter(visible=True).count() == 0)
+    check("Applied holds only jobs with the status Applied",
+          all(c.locator('[data-slot="status-badge"]').first.get_attribute("data-status") == "APPLIED" for c in cards.all()))
+    tab("all").click()
+    page.wait_for_url(re.compile(r"section=all"), timeout=10000)
+    cards.first.wait_for(timeout=15000)
+    check("All keeps the search box, the candidate filter, the status filter and the sort order",
+          page.get_by_role("searchbox", name="Search jobs").is_visible() and page.get_by_role("combobox", name="Candidate").is_visible()
+          and page.get_by_role("combobox", name="Status").is_visible() and page.get_by_role("combobox", name="Sort").is_visible())
+    page.get_by_role("searchbox", name="Search jobs").fill("zzz-no-such-job")
+    page.get_by_text("No jobs match these filters").wait_for(timeout=15000)
+    expect(shown("all")).to_have_text("0", timeout=10000)
+    check("the counts on the tabs follow the search text", True)
+    page.get_by_role("button", name="Clear filters").last.click()
+    cards.first.wait_for(timeout=15000)
+
+    # Applications is the table of everything applied to; the two screens name each other
+    page.goto(BASE + "/member/jobs")
+    page.get_by_role("link", name="Applications as a table").click()
+    page.wait_for_url(re.compile(r"/member/applications$"), timeout=15000)
+    back = page.get_by_role("link", name=re.compile(r"^Jobs to apply for \(\d"))
+    back.wait_for(timeout=15000)
+    check("Applications names how many jobs are still to apply for and leads back to them",
+          back.inner_text().strip() == f"Jobs to apply for ({counts['to_apply']:,})" and back.get_attribute("href") == "/member/jobs", back.inner_text())
+    ctx.close()
+
+
 def step_admins(browser):
     print("== admin: Settings, tab Admins: accounts, invite an Admin, resend, revoke; a Team Lead sees none of it")
     ctx = new_context(browser)
@@ -2874,7 +2975,7 @@ def step_admins(browser):
     ctx.close()
 
 
-STEPS = {"auth": step_auth, "member": step_member, "my_candidates": step_my_candidates, "invite": step_invite, "search": step_search,
+STEPS = {"auth": step_auth, "member": step_member, "member_sections": step_member_sections, "my_candidates": step_my_candidates, "invite": step_invite, "search": step_search,
          "candidates": step_candidates, "search_form": step_search_form, "people": step_people,
          "tracking": step_tracking, "review": step_review, "admin": step_admin, "admin_more": step_admin_more, "misc": step_misc, "stubbed": step_stubbed, "running": step_running,
          # Last: these leave an invited Admin and a revoked invitation behind, which no earlier step should have to count.

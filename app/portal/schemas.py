@@ -888,6 +888,18 @@ class AssignmentDetail(AssignmentOut):
     job_urls: dict | None = None                   # managers only: {"canonical_url": ..., "apply_url": ...}
 
 
+class AssignmentSections(Model):
+    """How many active assignments are in each section of a job list, within the caller's scope and the filters
+    sent. Every assignment is in exactly one section, by its status, so the four add up to `total`:
+    to_apply = ASSIGNED, VIEWED, APPLYING; applied = APPLIED; in_progress = INTERVIEWING, OFFER;
+    closed = REJECTED, WITHDRAWN, SKIPPED."""
+    to_apply: int = 0
+    applied: int = 0
+    in_progress: int = 0
+    closed: int = 0
+    total: int = 0
+
+
 class ActivityItem(Model):
     id: uuid.UUID
     event_type: str
