@@ -71,7 +71,10 @@ async def save(db: AsyncSession, settings: Settings, actor: User, patch: Setting
 TEST_DATA_TABLES = ("application_events", "assignment_notes", "audit_logs", "auto_apply_screenshots", "auto_apply_runs",
                     "candidate_consents", "candidate_profiles", "resumes", "search_results", "search_targets", "search_presets",
                     "team_job_queue", "job_assignments", "search_runs", "job_postings", "legacy_records", "notifications",
-                    "password_resets", "invitations", "team_lead_assignments", "candidates")
+                    "password_resets", "team_lead_assignments", "candidates")
+# `invitations` is not in the list: the invitations of Team Leads and members go with their accounts and teams (both
+# foreign keys cascade), and the invitations of Admins stay with the Admin accounts, so an Admin who was invited
+# during test mode and has not chosen a password yet can still use the link, and it can still be resent or revoked.
 
 
 async def set_test_mode(db: AsyncSession, settings: Settings, on: bool, actor: User | None = None) -> None:

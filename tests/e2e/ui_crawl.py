@@ -19,7 +19,7 @@ ROUTES = {
                                    "/admin/candidates/{bare}?tab=profile",
                                    "/admin/candidates?source=salesforce", "/admin/candidates/{salesforce}", "/admin/candidates/{salesforce}?tab=profile",
                                    "/admin/jobs", "/admin/jobs/{job}", "/admin/search", "/admin/search?candidate={candidate}", "/admin/searches", "/admin/searches/{search}", "/admin/assignments",
-                                   "/admin/invitations", "/admin/activity", "/admin/settings", "/admin/settings?tab=integrations", "/admin/settings?tab=ats", "/admin/settings?tab=account"]),
+                                   "/admin/invitations", "/admin/activity", "/admin/settings", "/admin/settings?tab=integrations", "/admin/settings?tab=ats", "/admin/settings?tab=admins", "/admin/settings?tab=account"]),
   "tl": ("lead.alpha@example.com", ["/tl/dashboard", "/tl/candidates", "/tl/candidates?member=unassigned&resume=no", "/tl/candidates/{candidate}", *["/tl/candidates/{candidate}" + t for t in CANDIDATE_TABS],
                                     "/tl/candidates/{bare}?tab=profile", "/tl/candidates?source=salesforce", "/tl/candidates/{salesforce}",
                                     "/tl/candidates/{salesforce}?tab=profile", "/tl/members", "/tl/members/{member}", "/tl/members/{member}?tab=candidates", "/tl/members/{member}?tab=jobs",

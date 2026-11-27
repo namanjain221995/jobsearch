@@ -3397,7 +3397,7 @@ export interface components {
              * @default MEMBER
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /**
              * Team Description
              * @default
@@ -3445,7 +3445,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /**
              * Status
              * @enum {string}
@@ -3486,7 +3486,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /**
              * Status
              * @enum {string}
@@ -3511,7 +3511,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "TEAM_LEAD" | "MEMBER";
+            role: "ADMIN" | "TEAM_LEAD" | "MEMBER";
             /** Team Name */
             team_name?: string | null;
         };
@@ -7574,6 +7574,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                role?: string | null;
                 team_id?: string | null;
                 page?: number;
                 page_size?: number;

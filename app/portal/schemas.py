@@ -172,7 +172,7 @@ PersonName = Annotated[str, BeforeValidator(_person_name)]
 class InvitationCreate(Model):
     name: PersonName
     email: EmailStr
-    role: Literal["TEAM_LEAD", "MEMBER"] = "MEMBER"
+    role: Role = "MEMBER"                  # ADMIN: only an Admin may ask for it, and it never comes with a team
     team_id: uuid.UUID | None = None       # required for MEMBER invited by Admin; a Team Lead's own team is used (another team is refused)
     team_name: str | None = Field(default=None, max_length=120)      # Admin creating a Team Lead together with a new team
     team_description: str = Field(default="", max_length=2000)
@@ -182,7 +182,7 @@ class InvitationOut(Model):
     id: uuid.UUID
     email: str
     name: str
-    role: Literal["TEAM_LEAD", "MEMBER"]
+    role: Role
     team: TeamRef | None = None
     status: Literal["pending", "accepted", "expired", "revoked"]
     delivery: Literal["email", "manual"]
@@ -200,7 +200,7 @@ class InvitationCreated(InvitationOut):
 class InvitationPreview(Model):
     email: str
     name: str
-    role: Literal["TEAM_LEAD", "MEMBER"]
+    role: Role
     team_name: str | None = None
     expires_at: datetime
     password_min_length: int

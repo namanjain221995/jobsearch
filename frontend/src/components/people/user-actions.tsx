@@ -236,7 +236,7 @@ function RenameDialog({ user, onClose }: { user: User; onClose: () => void }) {
 }
 
 /**
- * What a manager can do to an account (a Team Lead or a member; candidates have no account): rename, deactivate or reactivate, create
+ * What a manager can do to an account (an Admin, a Team Lead or a member; candidates have no account): rename, deactivate or reactivate, create
  * a password reset link, and (Admin, members only) move to another team.
  * The API decides what is actually allowed; this only offers what can work.
  */
@@ -354,7 +354,9 @@ export function UserActions({ user, variant = "menu" }: { user: User; variant?: 
                   ? `Their ${plural(user.candidate_count, "candidate")} ${user.candidate_count === 1 ? "becomes" : "become"} unassigned: the candidates keep their jobs and history, and wait for you to choose another member.`
                   : "They are responsible for no candidates at the moment."
               }`
-            : "They are signed out everywhere and cannot sign in until you reactivate them. Their team and its history stay as they are."
+            : user.role === "ADMIN"
+              ? "They are signed out everywhere and cannot sign in until an Admin reactivates them. Invitations they sent that were not accepted yet stop working."
+              : "They are signed out everywhere and cannot sign in until you reactivate them. Their team and its history stay as they are."
         }
         confirmLabel="Deactivate account"
         destructive

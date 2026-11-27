@@ -3852,6 +3852,7 @@
      "role": {
       "default": "MEMBER",
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -3961,6 +3962,7 @@
      },
      "role": {
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -4060,6 +4062,7 @@
      },
      "role": {
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -4121,6 +4124,7 @@
      },
      "role": {
       "enum": [
+       "ADMIN",
        "TEAM_LEAD",
        "MEMBER"
       ],
@@ -12386,6 +12390,23 @@
         }
        ],
        "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "role",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "pattern": "^(ADMIN|TEAM_LEAD|MEMBER)$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Role"
       }
      },
      {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Ban, MailPlus, RefreshCw, SearchX } from "lucide-react";
+import { Ban, MailPlus, RefreshCw, SearchX, ShieldPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { InvitationDialog, InvitationResult, type InvitationPreset } from "@/components/people/invitation-dialog";
@@ -27,7 +27,14 @@ import { useInvitations, useResendInvitation, useRevokeInvitation, useTeams } fr
 import type { Invitation, InvitationCreated, InvitationListParams, InvitationStatus } from "@/lib/types";
 import { toPositiveInt, useUrlState } from "@/lib/url-state";
 
-const DEFAULTS = { status: "", team: "", page: "1", page_size: "25" };
+const DEFAULTS = { status: "", team: "", role: "", page: "1", page_size: "25" };
+
+const ROLES = ["MEMBER", "TEAM_LEAD", "ADMIN"] as const;
+
+/** Where an invited person will work: their team, or for an Admin the whole portal. */
+export function invitationPlace(invitation: Pick<Invitation, "role" | "team">): string {
+  return invitation.role === "ADMIN" ? "The whole portal" : (invitation.team?.name ?? "No team yet");
+}
 
 const STATUS_VIEW: Record<InvitationStatus, { label: string; tone: "warning" | "success" | "neutral" | "danger" }> = {
   pending: { label: "Pending", tone: "warning" },
@@ -41,7 +48,8 @@ export function InvitationStatusTag({ status }: { status: InvitationStatus }) {
   return <Tag tone={view.tone}>{view.label}</Tag>;
 }
 
-function RowActions({
+/** Resend (anything not yet accepted) and Revoke (a pending link) for one invitation. */
+export function InvitationRowActions({
   invitation,
   onResent,
 }: {
@@ -100,8 +108,9 @@ function RowActions({
 
 /**
  * Invitations sent by this person's scope (an Admin sees all, a Team Lead those
- * for their team), with their state and the two things that can be done to one:
- * send a fresh link, or revoke it.
+ * for the members of their team), with their state and the two things that can be
+ * done to one: send a fresh link, or revoke it. Only an Admin is offered "Invite Admin"
+ * and the role filter; the API never lists an Admin's invitation for a Team Lead.
  */
 export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
   const me = useMe();
@@ -113,11 +122,13 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
   const params: InvitationListParams = {
     status: state.status || undefined,
     team_id: isAdmin ? state.team || undefined : undefined,
+    // Only an Admin has other roles to choose from; a Team Lead's list holds their own members whatever is sent.
+    role: isAdmin && (ROLES as readonly string[]).includes(state.role) ? state.role : undefined,
     page: toPositiveInt(state.page, 1),
     page_size: toPositiveInt(state.page_size, 25),
   };
   const list = useInvitations(params);
-  const filtered = Boolean(state.status || state.team);
+  const filtered = Boolean(state.status || state.team || (isAdmin && state.role));
 
   const columns: Column<Invitation>[] = [
     {
@@ -136,7 +147,7 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
       cell: (row) => (
         <div className="flex flex-col gap-0.5">
           <span>{roleLabel(row.role)}</span>
-          <span className="text-2sm text-muted-foreground">{row.team?.name ?? "No team yet"}</span>
+          <span className="text-2sm text-muted-foreground">{invitationPlace(row)}</span>
         </div>
       ),
     },
@@ -169,7 +180,7 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
       id: "actions",
       header: <span className="sr-only">Actions</span>,
       align: "right",
-      cell: (row) => <RowActions invitation={row} onResent={setResent} />,
+      cell: (row) => <InvitationRowActions invitation={row} onResent={setResent} />,
     },
   ];
 
@@ -181,10 +192,16 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
         actions={
           <>
             {isAdmin && (
-              <Button variant="outline" onClick={() => setInviting({ role: "TEAM_LEAD" })}>
-                <MailPlus data-icon="inline-start" />
-                Create Team Lead
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => setInviting({ role: "ADMIN" })}>
+                  <ShieldPlus data-icon="inline-start" />
+                  Invite Admin
+                </Button>
+                <Button variant="outline" onClick={() => setInviting({ role: "TEAM_LEAD" })}>
+                  <MailPlus data-icon="inline-start" />
+                  Create Team Lead
+                </Button>
+              </>
             )}
             <Button onClick={() => setInviting(preset ?? { role: "MEMBER" })}>
               <MailPlus data-icon="inline-start" />
@@ -193,7 +210,7 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
           </>
         }
       />
-      <FilterBar canClear={filtered} onClear={() => setState({ status: "", team: "" })}>
+      <FilterBar canClear={filtered} onClear={() => setState({ status: "", team: "", role: "" })}>
         <FilterSelect
           label="Status"
           allLabel="All statuses"
@@ -201,6 +218,15 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
           onChange={(status) => setState({ status })}
           options={(Object.keys(STATUS_VIEW) as InvitationStatus[]).map((status) => ({ value: status, label: STATUS_VIEW[status].label }))}
         />
+        {isAdmin && (
+          <FilterSelect
+            label="Role"
+            allLabel="All roles"
+            value={state.role}
+            onChange={(role) => setState({ role })}
+            options={ROLES.map((role) => ({ value: role, label: roleLabel(role) }))}
+          />
+        )}
         {isAdmin && (
           <FilterSelect
             label="Team"
@@ -222,7 +248,11 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
         onRetry={() => list.refetch()}
         empty={
           filtered ? (
-            <EmptyState icon={SearchX} title="No invitations match these filters" description="Choose another status or clear the filters." />
+            <EmptyState
+              icon={SearchX}
+              title="No invitations match these filters"
+              description="Choose another status, role or team, or clear the filters."
+            />
           ) : (
             <EmptyState
               icon={MailPlus}
@@ -246,10 +276,11 @@ export function InvitationsView({ preset }: { preset?: InvitationPreset }) {
               <InvitationStatusTag status={row.status} />
             </div>
             <p className="text-2sm text-muted-foreground">
-              {roleLabel(row.role)}, {row.team?.name ?? "no team yet"}. Sent {formatDateTime(row.created_at)}
+              {roleLabel(row.role)}, {row.role === "ADMIN" ? "the whole portal" : (row.team?.name ?? "no team yet")}. Sent{" "}
+              {formatDateTime(row.created_at)}
               {row.delivery === "email" ? " by e-mail." : ", link shared by hand."}
             </p>
-            <RowActions invitation={row} onResent={setResent} />
+            <InvitationRowActions invitation={row} onResent={setResent} />
           </div>
         )}
         pagination={

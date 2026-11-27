@@ -2,7 +2,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -18,10 +18,15 @@ router = APIRouter(prefix="/api/invitations", tags=["invitations"])
 
 
 def scoped(principal: Principal):
+    """The invitations the caller may see and act on. An Admin: all of them. A Team Lead: those of members of the
+    team they lead. Invitations of Admins and Team Leads (and any without a team) are never in a Team Lead's scope."""
     stmt = select(Invitation)
-    if principal.is_team_lead:
-        stmt = stmt.where(Invitation.team_id == principal.user.team_id, Invitation.invited_role == "MEMBER")
-    return stmt
+    if principal.is_admin:
+        return stmt
+    team_id = principal.user.team_id if principal.is_team_lead else None
+    if team_id is None:                                       # no team (or not a manager): nothing, not "team IS NULL"
+        return stmt.where(false())
+    return stmt.where(Invitation.team_id == team_id, Invitation.invited_role == "MEMBER")
 
 
 async def created_out(db: AsyncSession, invitation: Invitation, url: str, sent: bool) -> InvitationCreated:
@@ -45,6 +50,10 @@ async def throttle(request: Request, settings: Settings, sender_id, address: str
 @router.post("", response_model=InvitationCreated, status_code=201)
 async def create_invitation(data: InvitationCreate, request: Request, principal: Principal = Depends(managers),
                             db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)):
+    if not principal.is_admin and data.role != "MEMBER":
+        # Refused before anything is counted or looked up: a Team Lead asking for an Admin (or a Team Lead) must not
+        # be able to use up the hourly allowance of the address an Admin is about to invite.
+        raise HTTPException(403, "Team Leads can only invite members into their own team")
     portal = await settings_service.load(db, settings)
     await throttle(request, settings, principal.user.id, data.email)
     invitation, url, sent = await service.create_invitation(db, settings, request.app.state.emailer, principal, data,
@@ -57,10 +66,13 @@ async def create_invitation(data: InvitationCreate, request: Request, principal:
 @router.get("", response_model=Page[InvitationOut])
 async def list_invitations(principal: Principal = Depends(managers), db: AsyncSession = Depends(get_db),
                            status: str | None = Query(default=None, pattern="^(pending|accepted|expired|revoked)$"),
+                           role: str | None = Query(default=None, pattern="^(ADMIN|TEAM_LEAD|MEMBER)$"),
                            team_id: uuid.UUID | None = None, page: int = 1, page_size: int = 50):
     stmt = scoped(principal).order_by(Invitation.created_at.desc())
     if team_id and principal.is_admin:
         stmt = stmt.where(Invitation.team_id == team_id)
+    if role:                                                  # narrows the caller's scope, never widens it
+        stmt = stmt.where(Invitation.invited_role == role)
     rows = list((await db.execute(stmt.limit(1000))).scalars())
     outs = await service.invitations_out(db, rows)
     if status:
@@ -95,7 +107,8 @@ async def revoke_invitation(invitation_id: uuid.UUID, request: Request, principa
     invitation = await _own(db, principal, invitation_id)
     if service.invitation_status(invitation) == "pending":
         invitation.revoked_at = service.utcnow()
-        audit(db, principal.user, "invitation.revoked", "user", invitation.user_id, invitation.team_id, {}, client_ip(request))
+        audit(db, principal.user, "invitation.revoked", "user", invitation.user_id, invitation.team_id,
+              {"role": invitation.invited_role}, client_ip(request))
     out = (await service.invitations_out(db, [invitation]))[0]
     await db.commit()
     return out

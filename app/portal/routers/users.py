@@ -90,6 +90,8 @@ async def update_user(user_id: uuid.UUID, data: UserUpdate, request: Request, pr
             raise HTTPException(409, "You cannot deactivate your own account")
         if data.is_active and principal.is_team_lead and await people.deactivated_by_admin(db, [user.id]):
             raise HTTPException(403, "This account was deactivated by an administrator. Only an administrator can reactivate it.")
+        if not data.is_active and user.role == "ADMIN":
+            await people.ensure_another_admin(db, user)              # never the last Admin who can sign in
         user.is_active = data.is_active
         if not data.is_active:
             await security.revoke_user_sessions(db, user.id)       # a deactivated account is signed out everywhere

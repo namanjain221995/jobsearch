@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountPanels } from "@/components/views/account-settings";
+import { AdminAccountsPanels } from "@/components/views/admin-accounts";
 import { AtsHealthPanels } from "@/components/views/ats-health";
 import { ApiError, errorMessage } from "@/lib/api";
 import { formatDateTime, humanize } from "@/lib/format";
@@ -821,6 +822,7 @@ const TABS = [
   { value: "portal", label: "Portal" },
   { value: "integrations", label: "Integrations" },
   { value: "ats", label: "ATS Platforms" },
+  { value: "admins", label: "Admins" },
   { value: "account", label: "My Account" },
 ];
 
@@ -887,7 +889,7 @@ function TestModePanel() {
   );
 }
 
-/** Admin "Settings": portal-wide settings, the state of the integrations, and the Admin's own account. */
+/** Admin "Settings": portal-wide settings, the state of the integrations, the Admin accounts, and the Admin's own account. */
 export function AdminSettingsView() {
   const [state, setState] = useUrlState(TAB_DEFAULTS);
   const tab = TABS.some((item) => item.value === state.tab) ? state.tab : "portal";
@@ -898,7 +900,7 @@ export function AdminSettingsView() {
     <>
       <PageHeader
         title="Settings"
-        description="Limits and defaults for the whole portal, the services it depends on, and your own account."
+        description="Limits and defaults for the whole portal, the services it depends on, who is an Admin, and your own account."
       />
       {settings.data?.test_mode && <TestModePanel />}
       <Tabs value={tab} onValueChange={(next) => setState({ tab: next })} className="gap-5">
@@ -933,6 +935,9 @@ export function AdminSettingsView() {
         </TabsContent>
         <TabsContent value="ats">
           <AtsHealthPanels onOpenIntegrations={() => setState({ tab: "integrations" })} />
+        </TabsContent>
+        <TabsContent value="admins">
+          <AdminAccountsPanels />
         </TabsContent>
         <TabsContent value="account">
           <AccountPanels />

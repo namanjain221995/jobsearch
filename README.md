@@ -88,7 +88,7 @@ Services: `postgres`, `redis`, `migrate` (runs `alembic upgrade head`, then exit
 
 There is no public registration.
 
-1. The Admin creates a Team Lead (with a new or existing team). A Team Lead adds members to their own team.
+1. The Admin creates a Team Lead (with a new or existing team). A Team Lead adds members to their own team. An Admin can also invite a further Admin (Settings, tab "Admins", or "Invite Admin" on the Invitations screen): such an invitation has no team, only an Admin can create, resend, revoke or see it, and its link works only while the Admin who issued it is still an active Admin. The last Admin who can sign in cannot be deactivated, and nobody can deactivate themselves.
 2. The system creates an invitation: a random token that is stored only as a hash, works once and expires after 48 hours. Role and team are fixed on the server when the invitation is created.
 3. With SMTP configured the link is e-mailed. Without SMTP the person who created the invitation sees the link and copies it; the app never claims an e-mail was sent when it was not. A send counts only when the mail server accepted the message. The connection is encrypted (STARTTLS, or TLS from the start on port 465) and the server's certificate is verified; a server without encryption or with an untrusted certificate gets neither the SMTP password nor the message.
 4. The invited person opens `/invite/accept?token=…`, chooses a password and signs in.

@@ -59,10 +59,16 @@ class Emailer:
 
 
 def invitation_mail(name: str, team: str | None, role: str, url: str, hours: int) -> tuple[str, str]:
-    where = f" to join {team}" if team else ""
-    title = "Team Lead" if role == "TEAM_LEAD" else "team member"
+    if role == "ADMIN":
+        # An Admin belongs to no team. The mail says what the account can do, so a link that reached the wrong
+        # person is recognised as one that matters.
+        invited = ("You have been invited as an Administrator. An Administrator can see and change everything "
+                   "in the portal: every team, every person, every candidate and every setting.")
+    else:
+        where = f" to join {team}" if team else ""
+        invited = f"You have been invited{where} as a {'Team Lead' if role == 'TEAM_LEAD' else 'team member'}."
     return ("You are invited to AI Job Finder",
-            f"Hello {name},\n\nYou have been invited{where} as a {title}.\n"
+            f"Hello {name},\n\n{invited}\n"
             f"Create your password to activate the account:\n\n{url}\n\n"
             f"The link works once and expires in {hours} hours.\nIf you did not expect this message, ignore it.\n")
 

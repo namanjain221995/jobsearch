@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { MailCheck, MailWarning } from "lucide-react";
+import { MailCheck, MailWarning, ShieldAlert } from "lucide-react";
 import { z } from "@/lib/zod";
 
 import { CopyField } from "@/components/shared/copy-field";
@@ -25,6 +25,27 @@ import { formatDateTime, roleLabel } from "@/lib/format";
 import { applyServerErrors, isGeneralError, personNameSchema } from "@/lib/forms";
 import { useCreateInvitation, useTeams } from "@/lib/queries";
 import type { InvitationCreate, InvitationCreated } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+/**
+ * Said wherever an Admin is invited, before the invitation is sent: what the new account will be able to do.
+ * It is information, not an error, so it is not announced as an alert.
+ */
+export function AdminAccessWarning({ className }: { className?: string }) {
+  return (
+    <div
+      data-slot="admin-access-warning"
+      className={cn("flex items-start gap-2.5 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm", className)}
+    >
+      <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+      <p>
+        <span className="font-medium">An Admin can see and change everything in the portal:</span> every team, every Team Lead, member and
+        candidate, every job and application, all settings, and the other Admin accounts. Invite only a person you would trust with all of
+        it.
+      </p>
+    </div>
+  );
+}
 
 /**
  * What the creator sees right after an invitation (or a fresh link) was issued,
@@ -60,8 +81,7 @@ export function InvitationResult({ invitation }: { invitation: InvitationCreated
         </FormMessage>
       ) : (
         <FormMessage>
-          No e-mail was sent and the server returned no link. Use Resend on the Invitations page to create a new
-          one.
+          No e-mail was sent and the server returned no link. Use Resend to create a new one.
         </FormMessage>
       )}
       {hasLink && <CopyField label="Invitation link" value={invitation.invite_url} />}
@@ -73,7 +93,7 @@ export function InvitationResult({ invitation }: { invitation: InvitationCreated
         <dt className="text-muted-foreground">Joins as</dt>
         <dd>
           {roleLabel(invitation.role)}
-          {invitation.team ? `, ${invitation.team.name}` : ", no team yet"}
+          {invitation.role === "ADMIN" ? ", the whole portal" : invitation.team ? `, ${invitation.team.name}` : ", no team yet"}
         </dd>
         <dt className="text-muted-foreground">Link valid until</dt>
         <dd>{formatDateTime(invitation.expires_at)}</dd>
@@ -81,7 +101,9 @@ export function InvitationResult({ invitation }: { invitation: InvitationCreated
       <p className="text-2sm text-muted-foreground">
         {hasLink
           ? `The link works once. Whoever opens it chooses the password for this account, so share it only with ${invitation.name}.`
-          : "The link works once. If the e-mail does not arrive, send a new one with Resend on the Invitations page."}
+          : invitation.role === "ADMIN"
+            ? "The link works once. If the e-mail does not arrive, send a new one with Resend under Settings, Admins."
+            : "The link works once. If the e-mail does not arrive, send a new one with Resend on the Invitations page."}
       </p>
     </div>
   );
@@ -91,7 +113,7 @@ const schema = z
   .object({
     name: personNameSchema,
     email: z.email("Enter a valid e-mail address."),
-    role: z.enum(["MEMBER", "TEAM_LEAD"]),
+    role: z.enum(["MEMBER", "TEAM_LEAD", "ADMIN"]),
     team_choice: z.enum(["existing", "new", "none"]),
     team_id: z.string(),
     team_name: z.string().trim().max(120, "Use at most 120 characters."),
@@ -108,8 +130,11 @@ const schema = z
 type Values = z.infer<typeof schema>;
 
 export interface InvitationPreset {
-  /** Fix the role (a Team Lead can only invite members; "Create Team Lead" only creates leads). */
-  role?: "MEMBER" | "TEAM_LEAD";
+  /**
+   * Fix the role (a Team Lead can only invite members; "Create Team Lead" only creates leads;
+   * "Invite Admin" only creates Admins, and only an Admin is ever offered it).
+   */
+  role?: "MEMBER" | "TEAM_LEAD" | "ADMIN";
   /** Preselect a team (inviting from a team's page). */
   teamId?: string;
 }
@@ -126,7 +151,7 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
       email: "",
       role: preset.role ?? "MEMBER",
       // A Team Lead invites into their own team, which the API fills in.
-      team_choice: !isAdmin ? "none" : preset.role === "TEAM_LEAD" && !preset.teamId ? "new" : "existing",
+      team_choice: !isAdmin || preset.role === "ADMIN" ? "none" : preset.role === "TEAM_LEAD" && !preset.teamId ? "new" : "existing",
       team_id: preset.teamId ?? "",
       team_name: "",
       team_description: "",
@@ -146,7 +171,8 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
       role: isAdmin ? values.role : "MEMBER",
       team_description: "",
     };
-    if (isAdmin && values.team_choice === "existing") body.team_id = values.team_id;
+    // An Admin belongs to no team: nothing about a team is sent (the API refuses it).
+    if (isAdmin && values.role !== "ADMIN" && values.team_choice === "existing") body.team_id = values.team_id;
     if (isAdmin && values.role === "TEAM_LEAD" && values.team_choice === "new") {
       body.team_name = values.team_name;
       body.team_description = values.team_description;
@@ -186,7 +212,7 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
                   value={field.value}
                   onValueChange={(value) => {
                     field.onChange(value);
-                    form.setValue("team_choice", value === "TEAM_LEAD" ? "new" : "existing");
+                    form.setValue("team_choice", value === "ADMIN" ? "none" : value === "TEAM_LEAD" ? "new" : "existing");
                     form.setValue("team_id", "");
                   }}
                 >
@@ -196,6 +222,7 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
                   <SelectContent>
                     <SelectItem value="MEMBER">Member (recruiter)</SelectItem>
                     <SelectItem value="TEAM_LEAD">Team Lead</SelectItem>
+                    <SelectItem value="ADMIN">Admin (the whole portal)</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -227,7 +254,9 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
         />
       )}
 
-      {isAdmin && teamChoice === "existing" && (
+      {isAdmin && role === "ADMIN" && <AdminAccessWarning />}
+
+      {isAdmin && role !== "ADMIN" && teamChoice === "existing" && (
         <Controller
           control={form.control}
           name="team_id"
@@ -300,7 +329,8 @@ function InvitationForm({ preset, onCreated, onCancel }: { preset: InvitationPre
  * Invite a person. Accounts only ever come into being this way.
  * Members and Team Leads are employees; candidates are never invited (they have no account).
  * A Team Lead invites members into their own team; an Admin can invite a member
- * into any team or create a Team Lead, optionally together with a new team.
+ * into any team, create a Team Lead, optionally together with a new team, or invite
+ * a further Admin (no team; the form says what an Admin can do before it is sent).
  */
 export function InvitationDialog({
   open,
@@ -315,7 +345,7 @@ export function InvitationDialog({
 }) {
   const [created, setCreated] = useState<InvitationCreated | null>(null);
   const [formKey, setFormKey] = useState(0);
-  const heading = title ?? (preset.role === "TEAM_LEAD" ? "Create Team Lead" : "Add Member");
+  const heading = title ?? (preset.role === "ADMIN" ? "Invite Admin" : preset.role === "TEAM_LEAD" ? "Create Team Lead" : "Add Member");
 
   const close = (next: boolean) => {
     onOpenChange(next);
@@ -335,7 +365,7 @@ export function InvitationDialog({
               ? created.email_sent
                 ? `${created.name} chooses a password with the link in the e-mail. The account works from then on.`
                 : `The account works once ${created.name} has opened the link and chosen a password.`
-              : preset.role === "TEAM_LEAD"
+              : preset.role === "TEAM_LEAD" || preset.role === "ADMIN"
                 ? "They get a link to choose their password. No account works until they do."
                 : "For an employee who will work as a recruiter. They get a link to choose their password; no account works until they do. Candidates are added under Candidates and need no invitation."}
           </DialogDescription>

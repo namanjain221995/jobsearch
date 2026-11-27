@@ -2767,9 +2767,118 @@ def step_admin_more(browser):
     ctx.close()
 
 
+def step_admins(browser):
+    print("== admin: Settings, tab Admins: accounts, invite an Admin, resend, revoke; a Team Lead sees none of it")
+    ctx = new_context(browser)
+    page = ctx.new_page()
+    login(page, "admin@example.com", expect_home="/admin/dashboard")
+    page.goto(BASE + "/admin/settings?tab=admins")
+    page.wait_for_load_state("networkidle")
+    check("Settings has the tab Admins, and the address opens it", page.get_by_role("tab", name="Admins", exact=True).get_attribute("aria-selected") == "true")
+    accounts = page.locator('[data-slot="data-table"]').filter(has=page.get_by_text("admin@example.com")).first
+    accounts.wait_for(timeout=15000)
+    check("the Admin accounts list shows the signed-in Admin, marked as You, with the account's status",
+          "You" in accounts.inner_text() and "Active" in accounts.inner_text(), accounts.inner_text()[:120])
+    check("the list has a last sign-in for the signed-in Admin", "Never signed in" not in accounts.inner_text())
+    check("the form says plainly what an Admin can do, before anything is sent",
+          page.locator('[data-slot="admin-access-warning"]').filter(visible=True).filter(has_text="can see and change everything in the portal").count() == 1)
+    name, email = f"Ada Second {STAMP}", f"ada.second.{STAMP}@example.com"
+    page.get_by_label("Full name").fill(name)
+    page.get_by_label("E-mail").fill("not-an-address")
+    page.get_by_role("button", name="Invite Admin").click()
+    check("a wrong e-mail address is refused in the form", page.get_by_text("Enter a valid e-mail address.").first.is_visible())
+    page.get_by_label("E-mail").fill(email)
+    with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/invitations")) as sent:
+        page.get_by_role("button", name="Invite Admin").click()
+    body = sent.value.post_data_json or {}
+    check("the invitation asks for the role ADMIN and no team", body.get("role") == "ADMIN" and not body.get("team_id") and not body.get("team_name"), str(body))
+    page.get_by_label("Invitation link").wait_for(timeout=15000)
+    first_link = page.get_by_label("Invitation link").input_value()
+    check("without a mail server the link is shown once, and the page says no e-mail was sent",
+          "/invite/accept?token=" in first_link and page.get_by_text("No e-mail was sent").first.is_visible())
+    pending = page.locator('[data-slot="data-table"]').filter(has=page.get_by_text(email)).first
+    pending.wait_for(timeout=15000)
+    check("the invitation is listed as pending, with who sent it", "Pending" in pending.inner_text() and "by " in pending.inner_text(), pending.inner_text()[:160])
+    check("an invited Admin is not listed as an account before choosing a password", email not in accounts.inner_text())
+    no_overflow(page, "settings, Admins")
+    shot(page, "settings_admins")
+
+    # the invited person sees what the account will be
+    guest = browser.new_context(viewport={"width": A.w, "height": A.h})
+    gpage = guest.new_page()
+    gpage.goto(local(first_link))
+    gpage.get_by_role("heading", name=f"Welcome, {name}").wait_for(timeout=15000)
+    check("the page that accepts the invitation names the role Admin, all teams, and what an Admin can do",
+          gpage.get_by_text("Admin", exact=True).first.is_visible() and gpage.get_by_text("All teams").is_visible()
+          and gpage.get_by_text("can see and change everything in the portal").is_visible())
+
+    # resend: a new link, the old one is dead; revoke: the new one is dead as well
+    pending.get_by_role("button", name=f"Resend the invitation for {name}").click()
+    fresh = page.get_by_role("dialog", name="New invitation link")
+    fresh.wait_for(timeout=15000)
+    second_link = fresh.get_by_label("Invitation link").input_value()
+    check("Resend gives a new link", "/invite/accept?token=" in second_link and second_link != first_link)
+    fresh.get_by_role("button", name="Done").click()
+    with expecting("/api/invitations/validate"):
+        gpage.goto(local(first_link))
+        gpage.get_by_role("heading", name="This invitation cannot be used").wait_for(timeout=15000)
+        check("the link that was replaced no longer works", True)
+        pending.get_by_role("button", name=f"Revoke the invitation for {name}").click()
+        page.get_by_role("alertdialog").get_by_role("button", name="Revoke invitation").click()
+        toast(page, "Invitation revoked")
+        gpage.goto(local(second_link))
+        gpage.get_by_role("heading", name="This invitation cannot be used").wait_for(timeout=15000)
+        check("a revoked Admin invitation gives no account", True)
+    guest.close()
+    expect(pending).to_contain_text("Revoked", timeout=10000)
+    again = pending.get_by_role("button", name=f"Resend the invitation for {name}")
+    again.wait_for(timeout=10000)                       # the confirmation dialog hides the page from role queries while it closes
+    check("the revoked invitation stays listed, as revoked, and can be sent again",
+          again.is_visible() and pending.get_by_role("button", name=f"Revoke the invitation for {name}").count() == 0)
+
+    # the Invitations screen offers the same, for an Admin only
+    page.goto(BASE + "/admin/invitations")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("button", name="Invite Admin").click()
+    dialog = page.get_by_role("dialog", name="Invite Admin")
+    dialog.wait_for(timeout=10000)
+    check("Invite Admin on the Invitations screen shows the same warning and asks for no team",
+          dialog.locator('[data-slot="admin-access-warning"]').is_visible() and dialog.get_by_role("combobox").count() == 0)
+    dialog.get_by_role("button", name="Cancel").click()
+    pick_option(page, page, "Role", "Admin")
+    page.wait_for_url(re.compile(r"role=ADMIN"), timeout=10000)
+    page.get_by_text(email).first.wait_for(timeout=15000)
+    check("the role filter narrows the list to Admin invitations", "The whole portal" in page.locator('[data-slot="data-table"]').first.inner_text())
+    ctx.close()
+
+    ctx = new_context(browser)
+    page = ctx.new_page()
+    login(page, "lead.alpha@example.com", expect_home="/tl/dashboard")
+    page.goto(BASE + "/admin/settings?tab=admins")
+    page.wait_for_load_state("networkidle")
+    check("a Team Lead opening Settings, Admins is sent to their own area", "/tl/" in page.url, page.url)
+    page.goto(BASE + "/tl/settings?tab=admins")
+    page.wait_for_load_state("networkidle")
+    check("a Team Lead's settings have no Admins tab and no Admin list",
+          page.get_by_role("tab", name="Admins").count() == 0 and "Admin accounts" not in page.locator("main").inner_text())
+    page.goto(BASE + "/tl/invitations")
+    page.wait_for_load_state("networkidle")
+    check("a Team Lead's Invitations screen offers neither Invite Admin nor a role filter",
+          page.get_by_role("button", name="Invite Admin").count() == 0 and page.get_by_role("combobox", name="Role").count() == 0)
+    listed = api(page, "/api/invitations?role=ADMIN")
+    people = api(page, "/api/users?role=ADMIN")
+    check("the API gives a Team Lead no Admin invitation and no Admin account", listed.get("total") == 0 and people.get("items") == [], f"{listed} / {people}")
+    with expecting("/api/invitations"):
+        refused = send(page, "POST", "/api/invitations", {"name": "Eve Lead", "email": f"eve.{STAMP}@example.com", "role": "ADMIN"})
+    check("the API refuses a Team Lead who asks for an Admin invitation", refused == 403, str(refused))
+    ctx.close()
+
+
 STEPS = {"auth": step_auth, "member": step_member, "my_candidates": step_my_candidates, "invite": step_invite, "search": step_search,
          "candidates": step_candidates, "search_form": step_search_form, "people": step_people,
-         "tracking": step_tracking, "review": step_review, "admin": step_admin, "admin_more": step_admin_more, "misc": step_misc, "stubbed": step_stubbed, "running": step_running}
+         "tracking": step_tracking, "review": step_review, "admin": step_admin, "admin_more": step_admin_more, "misc": step_misc, "stubbed": step_stubbed, "running": step_running,
+         # Last: these leave an invited Admin and a revoked invitation behind, which no earlier step should have to count.
+         "admins": step_admins}
 
 with sync_playwright() as pw:
     # Nothing in this run may reach a real external site: every host except this machine fails to resolve.
